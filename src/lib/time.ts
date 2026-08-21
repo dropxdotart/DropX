@@ -1,0 +1,39 @@
+const ET = 'America/New_York'
+
+// UTC-minus-ET offset (minutes) at a given instant, DST-aware. Formats the
+// instant into ET wall-clock fields, reinterprets those fields as UTC, and
+// diffs against the real instant — a standard dependency-free technique for
+// converting between an IANA zone's civil time and an absolute instant.
+function etOffsetMinutes(date: Date): number {
+  const dtf = new Intl.DateTimeFormat('en-US', {
+    timeZone: ET,
+    hourCycle: 'h23',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  })
+  const parts = Object.fromEntries(dtf.formatToParts(date).map((p) => [p.type, p.value]))
+  const asUTC = Date.UTC(
+    Number(parts.year), Number(parts.month) - 1, Number(parts.day),
+    Number(parts.hour), Number(parts.minute), Number(parts.second)
+  )
+  return (asUTC - date.getTime()) / 60000
+}
+
+// Returns today's [start, end) window (as absolute instants) for the given
+// ET hour range, e.g. etWindowToday(12, 19) for 12PM–7PM Eastern today.
+export function etWindowToday(startHour: number, endHour: number) {
+  const now = new Date()
+  const offset = etOffsetMinutes(now)
+  const dtf = new Intl.DateTimeFormat('en-US', {
+    timeZone: ET, year: 'numeric', month: '2-digit', day: '2-digit',
+  })
+  const parts = Object.fromEntries(dtf.formatToParts(now).map((p) => [p.type, p.value]))
+  const y = Number(parts.year), m = Number(parts.month) - 1, d = Number(parts.day)
+  const start = new Date(Date.UTC(y, m, d, startHour, 0, 0) - offset * 60000)
+  const end = new Date(Date.UTC(y, m, d, endHour, 0, 0) - offset * 60000)
+  return { start, end, now }
+}
