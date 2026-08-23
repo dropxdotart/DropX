@@ -39,19 +39,19 @@ export default async function ProfilePage() {
         </Card>
 
         <div className="grid grid-cols-2 gap-4">
-          <Card className="border-white/10 bg-card/60 backdrop-blur-sm text-center">
+          <Card className="border-[color:var(--neon-orange)]/25 bg-card/60 backdrop-blur-sm text-center">
             <CardContent className="space-y-1 py-2">
               <div className="flex items-center justify-center gap-1.5 text-3xl font-bold">
-                <Flame className="w-6 h-6 text-[color:var(--neon-orange)]" fill="currentColor" />
+                <Flame className="w-6 h-6 text-[color:var(--neon-orange)] drop-shadow-[0_0_6px_oklch(0.8_0.2_55/0.6)]" fill="currentColor" />
                 {profile?.current_streak ?? 0}
               </div>
               <p className="text-xs text-muted-foreground">Current streak</p>
             </CardContent>
           </Card>
-          <Card className="border-white/10 bg-card/60 backdrop-blur-sm text-center">
+          <Card className="border-[color:var(--neon-cyan)]/25 bg-card/60 backdrop-blur-sm text-center">
             <CardContent className="space-y-1 py-2">
               <div className="flex items-center justify-center gap-1.5 text-3xl font-bold">
-                <Trophy className="w-6 h-6 text-[color:var(--neon-cyan)]" fill="currentColor" />
+                <Trophy className="w-6 h-6 text-[color:var(--neon-cyan)] drop-shadow-[0_0_6px_oklch(0.84_0.17_195/0.6)]" fill="currentColor" />
                 {profile?.longest_streak ?? 0}
               </div>
               <p className="text-xs text-muted-foreground">Longest streak</p>
