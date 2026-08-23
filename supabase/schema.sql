@@ -3,6 +3,7 @@ create extension if not exists "uuid-ossp";
 
 -- ─── TYPES ───────────────────────────────────────────────────────────────────
 create type challenge_type as enum ('multiple_choice', 'text');
+create type user_role as enum ('user', 'mod', 'admin');
 
 -- ─── CHALLENGES ──────────────────────────────────────────────────────────────
 -- A pool of authored challenges. `drop_at` is null while a challenge sits in
@@ -28,6 +29,9 @@ create table profiles (
   current_streak int not null default 0,
   longest_streak int not null default 0,
   last_answered_date date,
+  role user_role not null default 'user',
+  badges text[] not null default '{}',
+  strike_count int not null default 0,
   created_at timestamptz not null default now()
 );
 

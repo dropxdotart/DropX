@@ -2,7 +2,8 @@ import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
-import { Flame, Trophy, Sparkles } from 'lucide-react'
+import { Badge } from '@/components/ui/badge'
+import { Flame, Trophy, Sparkles, ShieldCheck } from 'lucide-react'
 
 export default async function ProfilePage() {
   const supabase = await createClient()
@@ -33,9 +34,26 @@ export default async function ProfilePage() {
                 </Avatar>
               </div>
             </div>
-            <div className="min-w-0">
-              <CardTitle className="text-xl truncate">{profile?.username ?? user.email}</CardTitle>
+            <div className="min-w-0 space-y-1.5">
+              <div className="flex items-center gap-2 flex-wrap">
+                <CardTitle className="text-xl truncate">{profile?.username ?? user.email}</CardTitle>
+                {profile?.role && profile.role !== 'user' && (
+                  <Badge className="gap-1 border-0 gradient-hero text-white font-semibold capitalize">
+                    <ShieldCheck className="w-3 h-3" />
+                    {profile.role}
+                  </Badge>
+                )}
+              </div>
               <p className="text-sm text-muted-foreground truncate">{user.email}</p>
+              {profile?.badges && profile.badges.length > 0 && (
+                <div className="flex items-center gap-1.5 flex-wrap pt-0.5">
+                  {profile.badges.map((badge: string) => (
+                    <Badge key={badge} variant="secondary" className="text-xs">
+                      {badge}
+                    </Badge>
+                  ))}
+                </div>
+              )}
             </div>
           </CardContent>
         </Card>

@@ -23,10 +23,15 @@ export type Response = {
   answered_at: string
 }
 
+export type UserRole = 'user' | 'mod' | 'admin'
+
 export type Profile = {
   id: string
   username: string | null
   current_streak: number
   longest_streak: number
   last_answered_date: string | null
+  role: UserRole
+  badges: string[]
+  strike_count: number
 }
