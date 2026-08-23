@@ -35,3 +35,28 @@ export type Profile = {
   badges: string[]
   strike_count: number
 }
+
+export type PublicProfile = Pick<Profile, 'id' | 'username' | 'role' | 'badges'>
+
+export type Comment = {
+  id: string
+  user_id: string
+  response_id: string
+  body: string
+  created_at: string
+  profiles: PublicProfile
+}
+
+export type FeedItem = {
+  id: string
+  user_id: string
+  answer: string
+  is_correct: boolean
+  answered_at: string
+  profiles: PublicProfile
+  challenges: Pick<Challenge, 'prompt' | 'type'>
+  likeCount: number
+  likedByMe: boolean
+  comments: Comment[]
+  authorFollowedByMe: boolean
+}

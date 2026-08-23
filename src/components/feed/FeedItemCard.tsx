@@ -1,0 +1,188 @@
+'use client'
+
+import { useState, useTransition } from 'react'
+import { Card, CardContent } from '@/components/ui/card'
+import { Avatar, AvatarFallback } from '@/components/ui/avatar'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Heart, MessageCircle, ShieldCheck, CheckCircle2, XCircle, UserPlus, UserCheck, Loader2 } from 'lucide-react'
+import { toast } from 'sonner'
+import { cn } from '@/lib/utils'
+import { timeAgo } from '@/lib/time'
+import { toggleLike, addComment, toggleFollow } from '@/app/feed/actions'
+import type { FeedItem } from '@/lib/types'
+
+function UserAvatar({ username, size = 8 }: { username: string | null; size?: number }) {
+  return (
+    <div className="gradient-ring rounded-full p-[2px] shrink-0">
+      <Avatar className={`w-${size} h-${size} ring-1 ring-background`}>
+        <AvatarFallback className="bg-secondary text-xs">
+          {username?.[0]?.toUpperCase() ?? 'U'}
+        </AvatarFallback>
+      </Avatar>
+    </div>
+  )
+}
+
+export default function FeedItemCard({ item, currentUserId }: { item: FeedItem; currentUserId: string }) {
+  const [liked, setLiked] = useState(item.likedByMe)
+  const [likeCount, setLikeCount] = useState(item.likeCount)
+  const [following, setFollowing] = useState(item.authorFollowedByMe)
+  const [comments, setComments] = useState(item.comments)
+  const [commentBody, setCommentBody] = useState('')
+  const [isPending, startTransition] = useTransition()
+
+  const isOwn = item.user_id === currentUserId
+
+  const handleLike = () => {
+    const next = !liked
+    setLiked(next)
+    setLikeCount((c) => c + (next ? 1 : -1))
+    startTransition(async () => {
+      try {
+        await toggleLike(item.id)
+      } catch (err) {
+        setLiked(!next)
+        setLikeCount((c) => c + (next ? -1 : 1))
+        toast.error(err instanceof Error ? err.message : 'Something went wrong')
+      }
+    })
+  }
+
+  const handleFollow = () => {
+    const next = !following
+    setFollowing(next)
+    startTransition(async () => {
+      try {
+        await toggleFollow(item.user_id)
+      } catch (err) {
+        setFollowing(!next)
+        toast.error(err instanceof Error ? err.message : 'Something went wrong')
+      }
+    })
+  }
+
+  const handleComment = (e: React.FormEvent) => {
+    e.preventDefault()
+    const body = commentBody.trim()
+    if (!body) return
+    setCommentBody('')
+    startTransition(async () => {
+      try {
+        await addComment(item.id, body)
+        setComments((prev) => [
+          ...prev,
+          {
+            id: `optimistic-${Date.now()}`,
+            user_id: currentUserId,
+            response_id: item.id,
+            body,
+            created_at: new Date().toISOString(),
+            profiles: { id: currentUserId, username: 'You', role: 'user', badges: [] },
+          },
+        ])
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : 'Something went wrong')
+      }
+    })
+  }
+
+  return (
+    <Card className="border-white/10 bg-card/60 backdrop-blur-sm">
+      <CardContent className="space-y-3">
+        <div className="flex items-center gap-2.5">
+          <UserAvatar username={item.profiles.username} />
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <span className="text-sm font-semibold truncate">{item.profiles.username ?? 'Someone'}</span>
+              {item.profiles.role !== 'user' && (
+                <Badge className="gap-0.5 border-0 gradient-hero text-white text-[10px] px-1.5 py-0 capitalize">
+                  <ShieldCheck className="w-2.5 h-2.5" />
+                  {item.profiles.role}
+                </Badge>
+              )}
+              {item.profiles.badges?.map((badge) => (
+                <Badge key={badge} variant="secondary" className="text-[10px] px-1.5 py-0">
+                  {badge}
+                </Badge>
+              ))}
+            </div>
+            <p className="text-xs text-muted-foreground">{timeAgo(item.answered_at)}</p>
+          </div>
+          {!isOwn && (
+            <Button
+              size="sm"
+              variant={following ? 'secondary' : 'outline'}
+              className="h-7 px-2 text-xs shrink-0"
+              onClick={handleFollow}
+              disabled={isPending}
+            >
+              {following ? <UserCheck className="w-3.5 h-3.5" /> : <UserPlus className="w-3.5 h-3.5" />}
+              {following ? 'Following' : 'Follow'}
+            </Button>
+          )}
+        </div>
+
+        <div className="rounded-lg bg-white/5 border border-white/10 p-3 space-y-1.5">
+          <p className="text-sm text-muted-foreground">{item.challenges.prompt}</p>
+          <div className="flex items-center gap-1.5 text-sm font-medium">
+            {item.is_correct ? (
+              <CheckCircle2 className="w-4 h-4 text-green-400 shrink-0" />
+            ) : (
+              <XCircle className="w-4 h-4 text-destructive shrink-0" />
+            )}
+            {item.answer}
+          </div>
+        </div>
+
+        <div className="flex items-center gap-4">
+          <button
+            type="button"
+            onClick={handleLike}
+            disabled={isPending}
+            className={cn(
+              'flex items-center gap-1.5 text-sm transition-colors',
+              liked ? 'text-[color:var(--neon-pink)]' : 'text-muted-foreground hover:text-foreground'
+            )}
+          >
+            <Heart className="w-4 h-4" fill={liked ? 'currentColor' : 'none'} />
+            {likeCount > 0 && likeCount}
+          </button>
+          <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
+            <MessageCircle className="w-4 h-4" />
+            {comments.length > 0 && comments.length}
+          </div>
+        </div>
+
+        {comments.length > 0 && (
+          <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+            {comments.map((c) => (
+              <div key={c.id} className="flex items-start gap-2">
+                <UserAvatar username={c.profiles?.username ?? null} size={6} />
+                <div className="min-w-0 flex-1 rounded-lg bg-white/5 px-2.5 py-1.5">
+                  <p className="text-xs font-semibold">{c.profiles?.username ?? 'Someone'}</p>
+                  <p className="text-sm break-words">{c.body}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <form onSubmit={handleComment} className="flex gap-2">
+          <Input
+            placeholder="Add a comment..."
+            value={commentBody}
+            onChange={(e) => setCommentBody(e.target.value)}
+            disabled={isPending}
+            className="h-9 rounded-lg border-white/10 bg-white/5 text-sm"
+            maxLength={500}
+          />
+          <Button type="submit" size="sm" className="h-9 shrink-0" disabled={isPending || !commentBody.trim()}>
+            {isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Post'}
+          </Button>
+        </form>
+      </CardContent>
+    </Card>
+  )
+}
