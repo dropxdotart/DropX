@@ -45,13 +45,13 @@ export default async function Home() {
   if (!user) {
     return (
       <div className="flex flex-1 flex-col items-center justify-center px-4 py-12 gap-4">
-        <Card className="w-full max-w-sm text-center">
+        <Card className="w-full max-w-sm text-center border-white/10 bg-card/60 backdrop-blur-sm glow-violet">
           <CardHeader>
-            <CardTitle>Today&apos;s challenge is live</CardTitle>
+            <CardTitle className="text-lg">Today&apos;s challenge is live</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <p className="text-muted-foreground">{publicChallenge.prompt}</p>
-            <Link href="/auth" className={cn(buttonVariants(), 'w-full')}>
+            <Link href="/auth" className={cn(buttonVariants(), 'w-full glow-violet')}>
               Sign in to answer
             </Link>
           </CardContent>

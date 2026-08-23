@@ -1,6 +1,7 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Flame, CheckCircle2, XCircle } from 'lucide-react'
+import { cn } from '@/lib/utils'
 import type { Challenge } from '@/lib/types'
 
 export default function ResultCard({
@@ -19,16 +20,18 @@ export default function ResultCard({
   currentStreak?: number
 }) {
   return (
-    <Card className="w-full max-w-sm">
+    <Card className="w-full max-w-sm border-white/10 bg-card/60 backdrop-blur-sm">
       <CardHeader className="text-center space-y-2">
         <div className="flex justify-center">
-          {isCorrect ? (
-            <CheckCircle2 className="w-10 h-10 text-green-500" />
-          ) : (
-            <XCircle className="w-10 h-10 text-destructive" />
-          )}
+          <div className={cn('rounded-full p-3', isCorrect ? 'glow-green bg-green-500/10' : 'glow-pink bg-destructive/10')}>
+            {isCorrect ? (
+              <CheckCircle2 className="w-9 h-9 text-green-400" />
+            ) : (
+              <XCircle className="w-9 h-9 text-destructive" />
+            )}
+          </div>
         </div>
-        <CardTitle>{isCorrect ? 'Correct!' : 'Not quite'}</CardTitle>
+        <CardTitle className="text-lg">{isCorrect ? 'Correct!' : 'Not quite'}</CardTitle>
       </CardHeader>
       <CardContent className="space-y-4 text-center">
         <p className="text-muted-foreground">{challenge.prompt}</p>
@@ -40,8 +43,8 @@ export default function ResultCard({
         </div>
         {explanation && <p className="text-sm text-muted-foreground">{explanation}</p>}
         {typeof currentStreak === 'number' && (
-          <Badge variant="secondary" className="gap-1">
-            <Flame className="w-3.5 h-3.5 text-orange-500" />
+          <Badge className="gap-1 border-0 bg-gradient-to-r from-[color:var(--neon-orange)] to-[color:var(--neon-pink)] text-black font-semibold px-3 py-1">
+            <Flame className="w-3.5 h-3.5" fill="currentColor" />
             {currentStreak} day streak
           </Badge>
         )}

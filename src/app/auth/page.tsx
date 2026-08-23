@@ -47,8 +47,10 @@ export default function AuthPage() {
     <div className="min-h-[calc(100vh-4rem)] flex items-center justify-center px-4">
       <div className="w-full max-w-sm space-y-8">
         <div className="text-center space-y-2">
-          <div className="flex justify-center">
-            <Zap className="w-10 h-10 text-primary" />
+          <div className="flex justify-center mb-2">
+            <div className="rounded-full bg-white/5 p-4 glow-violet">
+              <Zap className="w-8 h-8 text-[color:var(--neon-violet)]" fill="currentColor" />
+            </div>
           </div>
           <h1 className="text-2xl font-bold">
             {mode === 'login' ? 'Welcome back' : 'Create account'}
@@ -60,42 +62,47 @@ export default function AuthPage() {
           </p>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
-          {mode === 'signup' && (
+        <div className="rounded-2xl border border-white/10 bg-card/60 backdrop-blur-sm p-6">
+          <form onSubmit={handleSubmit} className="space-y-3.5">
+            {mode === 'signup' && (
+              <Input
+                placeholder="Username"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                required
+                minLength={3}
+                className="h-11 rounded-xl border-white/10 bg-white/5 focus-visible:ring-[color:var(--neon-violet)]/50"
+              />
+            )}
             <Input
-              placeholder="Username"
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
+              type="email"
+              placeholder="Email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
               required
-              minLength={3}
+              className="h-11 rounded-xl border-white/10 bg-white/5 focus-visible:ring-[color:var(--neon-violet)]/50"
             />
-          )}
-          <Input
-            type="email"
-            placeholder="Email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            required
-          />
-          <Input
-            type="password"
-            placeholder="Password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            required
-            minLength={6}
-          />
-          <Button type="submit" className="w-full" disabled={loading}>
-            {loading && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-            {mode === 'login' ? 'Sign in' : 'Create account'}
-          </Button>
-        </form>
+            <Input
+              type="password"
+              placeholder="Password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              required
+              minLength={6}
+              className="h-11 rounded-xl border-white/10 bg-white/5 focus-visible:ring-[color:var(--neon-violet)]/50"
+            />
+            <Button type="submit" className="w-full h-11 rounded-xl glow-violet" disabled={loading}>
+              {loading && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+              {mode === 'login' ? 'Sign in' : 'Create account'}
+            </Button>
+          </form>
+        </div>
 
         <p className="text-center text-sm text-muted-foreground">
           {mode === 'login' ? "Don't have an account? " : 'Already have an account? '}
           <button
             onClick={() => setMode(mode === 'login' ? 'signup' : 'login')}
-            className="text-primary hover:underline font-medium"
+            className="text-[color:var(--neon-cyan)] hover:underline font-medium"
           >
             {mode === 'login' ? 'Sign up' : 'Sign in'}
           </button>

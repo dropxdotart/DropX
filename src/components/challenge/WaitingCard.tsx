@@ -18,12 +18,14 @@ export default function WaitingCard() {
   }, [router])
 
   return (
-    <Card className="w-full max-w-sm text-center">
+    <Card className="w-full max-w-sm text-center border-white/10 bg-card/60 backdrop-blur-sm">
       <CardHeader>
         <div className="flex justify-center mb-2">
-          <Zap className="w-8 h-8 text-primary" />
+          <div className="rounded-full bg-white/5 p-4 glow-violet animate-pulse-glow">
+            <Zap className="w-8 h-8 text-[color:var(--neon-violet)]" fill="currentColor" />
+          </div>
         </div>
-        <CardTitle>Today&apos;s challenge hasn&apos;t dropped yet</CardTitle>
+        <CardTitle className="text-lg">Today&apos;s challenge hasn&apos;t dropped yet</CardTitle>
       </CardHeader>
       <CardContent>
         <p className="text-muted-foreground">

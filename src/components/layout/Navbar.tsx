@@ -49,27 +49,27 @@ export default function Navbar() {
   }
 
   return (
-    <nav className="border-b border-border bg-background/80 backdrop-blur-sm sticky top-0 z-50">
+    <nav className="border-b border-white/10 bg-background/70 backdrop-blur-md sticky top-0 z-50">
       <div className="max-w-3xl mx-auto px-4 sm:px-6">
         <div className="flex items-center justify-between h-16">
           <Link href="/" className="flex items-center gap-2 font-bold text-xl">
-            <Zap className="w-6 h-6 text-primary" />
-            <span>DropX</span>
+            <Zap className="w-6 h-6 text-[color:var(--neon-violet)] drop-shadow-[0_0_8px_oklch(0.62_0.24_300/0.8)]" fill="currentColor" />
+            <span className="gradient-text">DropX</span>
           </Link>
 
           <div className="flex items-center gap-3">
             {user ? (
               <>
                 {profile && (
-                  <div className="flex items-center gap-1 text-sm text-muted-foreground">
-                    <Flame className="w-4 h-4 text-orange-500" />
+                  <div className="flex items-center gap-1 text-sm font-medium bg-white/5 border border-white/10 rounded-full px-2.5 py-1">
+                    <Flame className="w-3.5 h-3.5 text-[color:var(--neon-orange)]" fill="currentColor" />
                     {profile.current_streak}
                   </div>
                 )}
                 <DropdownMenu>
                   <DropdownMenuTrigger className="rounded-full focus:outline-none focus:ring-2 focus:ring-primary">
-                    <Avatar className="w-8 h-8 cursor-pointer">
-                      <AvatarFallback>
+                    <Avatar className="w-8 h-8 cursor-pointer ring-2 ring-[color:var(--neon-violet)]/50">
+                      <AvatarFallback className="bg-secondary">
                         {profile?.username?.[0]?.toUpperCase() ?? 'U'}
                       </AvatarFallback>
                     </Avatar>
@@ -88,7 +88,7 @@ export default function Navbar() {
                 </DropdownMenu>
               </>
             ) : (
-              <Link href="/auth" className={cn(buttonVariants({ size: 'sm' }))}>Sign in</Link>
+              <Link href="/auth" className={cn(buttonVariants({ size: 'sm' }), 'glow-violet')}>Sign in</Link>
             )}
           </div>
         </div>

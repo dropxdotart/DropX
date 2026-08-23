@@ -26,6 +26,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       className={`${geistSans.variable} ${geistMono.variable} dark h-full antialiased`}
     >
       <body className="min-h-full flex flex-col bg-background text-foreground">
+        <div className="ambient-glow pointer-events-none fixed inset-0 -z-10" />
         <Navbar />
         <main className="flex flex-1 flex-col">{children}</main>
         <Toaster />

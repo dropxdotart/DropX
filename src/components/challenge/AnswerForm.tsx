@@ -6,6 +6,7 @@ import { Input } from '@/components/ui/input'
 import { Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { submitAnswer } from '@/app/actions'
+import { cn } from '@/lib/utils'
 import type { Challenge } from '@/lib/types'
 import ResultCard from './ResultCard'
 
@@ -43,16 +44,19 @@ export default function AnswerForm({ challenge }: { challenge: Challenge }) {
   }
 
   return (
-    <div className="w-full max-w-sm space-y-3">
-      <p className="text-lg font-medium text-center">{challenge.prompt}</p>
+    <div className="w-full max-w-sm space-y-5">
+      <p className="text-xl font-semibold text-center leading-snug">{challenge.prompt}</p>
 
       {challenge.type === 'multiple_choice' && challenge.choices ? (
-        <div className="grid gap-2">
+        <div className="grid gap-2.5">
           {challenge.choices.map((choice) => (
             <Button
               key={choice}
               variant="outline"
-              className="justify-start h-auto py-3"
+              className={cn(
+                'justify-start h-auto py-3.5 rounded-xl border-white/10 bg-white/5 backdrop-blur-sm transition-all hover:border-[color:var(--neon-violet)]/60 hover:bg-white/10 hover:glow-violet',
+                selected === choice && submitting && 'border-[color:var(--neon-violet)]/70 glow-violet'
+              )}
               disabled={submitting}
               onClick={() => {
                 setSelected(choice)
@@ -77,8 +81,9 @@ export default function AnswerForm({ challenge }: { challenge: Challenge }) {
             value={selected}
             onChange={(e) => setSelected(e.target.value)}
             disabled={submitting}
+            className="h-11 rounded-xl border-white/10 bg-white/5 focus-visible:ring-[color:var(--neon-violet)]/50"
           />
-          <Button type="submit" disabled={submitting}>
+          <Button type="submit" disabled={submitting} className="h-11 rounded-xl glow-violet">
             {submitting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
             Submit
           </Button>
