@@ -50,44 +50,45 @@
 
 :root,
 .dark {
-  --background: oklch(0.13 0.03 290);
+  --background: oklch(0.07 0.025 290);
   --foreground: oklch(0.97 0.01 290);
-  --card: oklch(0.21 0.045 290);
+  --card: oklch(0.14 0.035 290);
   --card-foreground: oklch(0.97 0.01 290);
-  --popover: oklch(0.22 0.045 290);
+  --popover: oklch(0.15 0.035 290);
   --popover-foreground: oklch(0.97 0.01 290);
-  --primary: oklch(0.7 0.27 300);
+  --primary: oklch(0.58 0.25 295);
   --primary-foreground: oklch(0.99 0.005 300);
-  --secondary: oklch(0.27 0.045 290);
+  --secondary: oklch(0.19 0.04 290);
   --secondary-foreground: oklch(0.97 0.01 290);
-  --muted: oklch(0.25 0.035 290);
-  --muted-foreground: oklch(0.74 0.03 290);
-  --accent: oklch(0.32 0.06 290);
+  --muted: oklch(0.18 0.03 290);
+  --muted-foreground: oklch(0.68 0.03 290);
+  --accent: oklch(0.24 0.05 290);
   --accent-foreground: oklch(0.97 0.01 290);
-  --destructive: oklch(0.66 0.24 18);
-  --border: oklch(1 0 0 / 14%);
-  --input: oklch(1 0 0 / 11%);
-  --ring: oklch(0.72 0.24 300 / 65%);
-  --chart-1: oklch(0.7 0.27 300);
+  --destructive: oklch(0.62 0.22 355);
+  --border: oklch(1 0 0 / 12%);
+  --input: oklch(1 0 0 / 9%);
+  --ring: oklch(0.58 0.25 295 / 60%);
+  --chart-1: oklch(0.58 0.25 295);
   --chart-2: oklch(0.84 0.17 195);
-  --chart-3: oklch(0.8 0.2 55);
-  --chart-4: oklch(0.74 0.25 350);
-  --chart-5: oklch(0.65 0.22 340);
+  --chart-3: oklch(0.75 0.16 45);
+  --chart-4: oklch(0.62 0.22 355);
+  --chart-5: oklch(0.5 0.2 320);
   --radius: 1.1rem;
-  --sidebar: oklch(0.18 0.04 290);
+  --sidebar: oklch(0.1 0.03 290);
   --sidebar-foreground: oklch(0.97 0.01 290);
-  --sidebar-primary: oklch(0.7 0.27 300);
+  --sidebar-primary: oklch(0.58 0.25 295);
   --sidebar-primary-foreground: oklch(0.99 0.005 300);
-  --sidebar-accent: oklch(0.27 0.045 290);
+  --sidebar-accent: oklch(0.19 0.04 290);
   --sidebar-accent-foreground: oklch(0.97 0.01 290);
-  --sidebar-border: oklch(1 0 0 / 14%);
-  --sidebar-ring: oklch(0.72 0.24 300 / 65%);
+  --sidebar-border: oklch(1 0 0 / 12%);
+  --sidebar-ring: oklch(0.58 0.25 295 / 60%);
 
-  /* Neon accents beyond the base shadcn token set. */
-  --neon-violet: oklch(0.7 0.27 300);
+  /* Neon accents — calibrated to the coral-orange / hot-pink / violet
+     ring gradient from the reference avatar. */
+  --neon-violet: oklch(0.58 0.25 295);
   --neon-cyan: oklch(0.84 0.17 195);
-  --neon-pink: oklch(0.74 0.25 350);
-  --neon-orange: oklch(0.8 0.2 55);
+  --neon-pink: oklch(0.62 0.22 355);
+  --neon-orange: oklch(0.75 0.16 45);
 }
 
 @layer base {
@@ -106,10 +107,10 @@
   /* Fixed ambient glow blobs behind all page content. */
   .ambient-glow {
     background-image:
-      radial-gradient(60rem 40rem at 15% -10%, oklch(0.48 0.24 300 / 0.5), transparent 60%),
-      radial-gradient(50rem 35rem at 110% 10%, oklch(0.48 0.2 195 / 0.42), transparent 60%),
-      radial-gradient(45rem 30rem at 50% 120%, oklch(0.48 0.22 350 / 0.38), transparent 60%),
-      radial-gradient(40rem 28rem at -5% 65%, oklch(0.5 0.2 55 / 0.28), transparent 60%);
+      radial-gradient(60rem 40rem at 15% -10%, oklch(0.38 0.22 295 / 0.5), transparent 60%),
+      radial-gradient(50rem 35rem at 110% 10%, oklch(0.4 0.18 195 / 0.35), transparent 60%),
+      radial-gradient(45rem 30rem at 50% 120%, oklch(0.4 0.2 355 / 0.4), transparent 60%),
+      radial-gradient(40rem 28rem at -5% 65%, oklch(0.42 0.16 45 / 0.3), transparent 60%);
   }
 
   /* Soft ambient bloom, not a hard-edged neon-tube ring — no tight shadow
@@ -117,20 +118,20 @@
      and spread) so it doesn't bleed into surrounding content. */
   .glow-violet {
     box-shadow:
-      0 0 14px 1px oklch(0.7 0.27 300 / 0.3),
-      0 0 32px 4px oklch(0.62 0.24 340 / 0.16);
+      0 0 14px 1px oklch(0.58 0.25 295 / 0.35),
+      0 0 32px 4px oklch(0.5 0.22 320 / 0.18);
   }
 
   .glow-orange {
     box-shadow:
-      0 0 14px 1px oklch(0.8 0.2 55 / 0.3),
-      0 0 32px 4px oklch(0.74 0.25 350 / 0.14);
+      0 0 14px 1px oklch(0.75 0.16 45 / 0.35),
+      0 0 32px 4px oklch(0.62 0.22 355 / 0.16);
   }
 
   .glow-cyan {
     box-shadow:
       0 0 14px 1px oklch(0.84 0.17 195 / 0.3),
-      0 0 32px 4px oklch(0.7 0.27 300 / 0.14);
+      0 0 32px 4px oklch(0.58 0.25 295 / 0.14);
   }
 
   .glow-green {
@@ -139,21 +140,22 @@
 
   .glow-pink {
     box-shadow:
-      0 0 14px 1px oklch(0.74 0.25 350 / 0.3),
-      0 0 32px 4px oklch(0.7 0.27 300 / 0.14);
+      0 0 14px 1px oklch(0.62 0.22 355 / 0.35),
+      0 0 32px 4px oklch(0.58 0.25 295 / 0.16);
   }
 
+  /* The exact 3-stop sweep from the reference avatar ring. */
   .gradient-hero {
     background-image: linear-gradient(
       135deg,
-      oklch(0.58 0.27 300) 0%,
-      oklch(0.6 0.27 340) 45%,
-      oklch(0.7 0.22 40) 100%
+      oklch(0.5 0.24 295) 0%,
+      oklch(0.55 0.22 355) 50%,
+      oklch(0.72 0.17 45) 100%
     );
   }
 
   .gradient-text {
-    background-image: linear-gradient(90deg, oklch(0.84 0.19 300), oklch(0.84 0.17 195));
+    background-image: linear-gradient(90deg, oklch(0.68 0.22 295), oklch(0.84 0.17 195));
     background-clip: text;
     -webkit-background-clip: text;
     color: transparent;
