@@ -1,10 +1,11 @@
 'use client'
 
 import { useState } from 'react'
+import Image from 'next/image'
 import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Zap, Loader2, Puzzle, Brain, Lightbulb, HelpCircle, Sparkles } from 'lucide-react'
+import { Loader2, Puzzle, Brain, Lightbulb, HelpCircle, Sparkles } from 'lucide-react'
 import { toast } from 'sonner'
 import { useRouter } from 'next/navigation'
 
@@ -57,8 +58,8 @@ export default function AuthPage() {
       <div className="w-full max-w-sm space-y-8">
         <div className="text-center space-y-2">
           <div className="flex justify-center mb-2">
-            <div className="rounded-full bg-white/5 p-4 glow-violet">
-              <Zap className="w-8 h-8 text-[color:var(--neon-violet)]" fill="currentColor" />
+            <div className="rounded-full bg-white/5 p-3 glow-violet">
+              <Image src="/dropx-icon.png" alt="DropX" width={40} height={40} priority />
             </div>
           </div>
           <h1 className="font-heading text-2xl font-bold tracking-wide">

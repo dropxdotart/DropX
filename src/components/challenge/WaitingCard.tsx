@@ -2,8 +2,8 @@
 
 import { useEffect } from 'react'
 import { useRouter } from 'next/navigation'
+import Image from 'next/image'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Zap } from 'lucide-react'
 
 const POLL_MS = 45_000
 
@@ -21,8 +21,8 @@ export default function WaitingCard() {
     <Card className="w-full max-w-sm text-center border-white/10 bg-card/60 backdrop-blur-sm">
       <CardHeader>
         <div className="flex justify-center mb-2">
-          <div className="rounded-full bg-white/5 p-4 glow-violet animate-pulse-glow">
-            <Zap className="w-8 h-8 text-[color:var(--neon-violet)]" fill="currentColor" />
+          <div className="rounded-full bg-white/5 p-3 glow-violet animate-pulse-glow">
+            <Image src="/dropx-icon.png" alt="" width={32} height={32} />
           </div>
         </div>
         <CardTitle className="text-lg">Today&apos;s challenge hasn&apos;t dropped yet</CardTitle>

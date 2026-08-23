@@ -1,6 +1,7 @@
 'use client'
 
 import Link from 'next/link'
+import Image from 'next/image'
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { buttonVariants } from '@/components/ui/button'
@@ -13,7 +14,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { Flame, LogOut, User, Zap } from 'lucide-react'
+import { Flame, LogOut, User } from 'lucide-react'
 import type { User as SupabaseUser } from '@supabase/supabase-js'
 import type { Profile } from '@/lib/types'
 
@@ -53,8 +54,10 @@ export default function Navbar() {
       <div className="max-w-3xl mx-auto px-4 sm:px-6">
         <div className="flex items-center justify-between h-16">
           <Link href="/" className="flex items-center gap-2 font-heading font-bold text-xl tracking-wide">
-            <Zap className="w-6 h-6 text-[color:var(--neon-violet)] drop-shadow-[0_0_8px_oklch(0.62_0.24_300/0.8)]" fill="currentColor" />
-            <span className="gradient-text">DropX</span>
+            <Image src="/dropx-icon.png" alt="" width={28} height={28} className="drop-shadow-[0_0_8px_oklch(0.58_0.25_295/0.6)]" priority />
+            <span>
+              Drop<span className="gradient-text">X</span>
+            </span>
           </Link>
 
           <div className="flex items-center gap-3">

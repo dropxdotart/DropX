@@ -16,8 +16,14 @@ const orbitron = Orbitron({
 });
 
 export const metadata: Metadata = {
+  metadataBase: new URL("https://dropdotx.vercel.app"),
   title: "DropX",
   description: "A new challenge drops every day.",
+  openGraph: {
+    title: "DropX",
+    description: "A new challenge drops every day.",
+    images: ["/dropx-logo-full.png"],
+  },
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

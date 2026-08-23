@@ -40,3 +40,6 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# raw design source files, not app assets — see public/ for the ones in use
+/Xdrop logos/
