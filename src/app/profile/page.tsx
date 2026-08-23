@@ -2,7 +2,7 @@ import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
-import { Flame, Trophy } from 'lucide-react'
+import { Flame, Trophy, Sparkles } from 'lucide-react'
 
 export default async function ProfilePage() {
   const supabase = await createClient()
@@ -18,13 +18,19 @@ export default async function ProfilePage() {
   return (
     <div className="flex flex-1 flex-col items-center px-4 py-10">
       <div className="w-full max-w-sm space-y-4">
-        <Card className="border-white/10 bg-card/60 backdrop-blur-sm">
+        <Card className="border-white/10 bg-card/60 backdrop-blur-sm overflow-visible">
           <CardContent className="flex items-center gap-4">
-            <Avatar className="w-16 h-16 ring-2 ring-[color:var(--neon-violet)] glow-violet">
-              <AvatarFallback className="text-xl bg-secondary">
-                {profile?.username?.[0]?.toUpperCase() ?? 'U'}
-              </AvatarFallback>
-            </Avatar>
+            <div className="relative glow-violet rounded-full">
+              <Sparkles className="absolute -top-2 -left-2 w-3.5 h-3.5 text-[color:var(--neon-pink)]" fill="currentColor" />
+              <Sparkles className="absolute -bottom-1.5 -right-1.5 w-3 h-3 text-[color:var(--neon-cyan)]" fill="currentColor" />
+              <div className="gradient-ring rounded-full p-[3px]">
+                <Avatar className="w-16 h-16 ring-2 ring-background">
+                  <AvatarFallback className="text-xl bg-secondary">
+                    {profile?.username?.[0]?.toUpperCase() ?? 'U'}
+                  </AvatarFallback>
+                </Avatar>
+              </div>
+            </div>
             <div className="min-w-0">
               <CardTitle className="text-xl truncate">{profile?.username ?? user.email}</CardTitle>
               <p className="text-sm text-muted-foreground truncate">{user.email}</p>

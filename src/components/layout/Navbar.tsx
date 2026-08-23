@@ -68,11 +68,13 @@ export default function Navbar() {
                 )}
                 <DropdownMenu>
                   <DropdownMenuTrigger className="rounded-full focus:outline-none focus:ring-2 focus:ring-primary">
-                    <Avatar className="w-8 h-8 cursor-pointer ring-2 ring-[color:var(--neon-violet)]/50">
-                      <AvatarFallback className="bg-secondary">
-                        {profile?.username?.[0]?.toUpperCase() ?? 'U'}
-                      </AvatarFallback>
-                    </Avatar>
+                    <div className="gradient-ring rounded-full p-[2px] cursor-pointer">
+                      <Avatar className="w-8 h-8 ring-1 ring-background">
+                        <AvatarFallback className="bg-secondary">
+                          {profile?.username?.[0]?.toUpperCase() ?? 'U'}
+                        </AvatarFallback>
+                      </Avatar>
+                    </div>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end" className="w-48">
                     <DropdownMenuItem onClick={() => window.location.href = '/profile'}>

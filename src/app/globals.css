@@ -111,22 +111,28 @@
       radial-gradient(45rem 30rem at 50% 120%, oklch(0.48 0.22 350 / 0.35), transparent 60%);
   }
 
+  /* Soft ambient bloom, not a hard-edged neon-tube ring — no tight shadow
+     layer sitting right at the border. */
   .glow-violet {
     box-shadow:
-      0 0 1px 1px oklch(0.7 0.27 300 / 0.55),
-      0 0 50px -6px oklch(0.7 0.27 300 / 0.75);
+      0 0 28px 6px oklch(0.7 0.27 300 / 0.22),
+      0 0 70px 18px oklch(0.62 0.24 340 / 0.16);
   }
 
   .glow-orange {
-    box-shadow: 0 0 32px -5px oklch(0.8 0.2 55 / 0.75);
+    box-shadow:
+      0 0 28px 6px oklch(0.8 0.2 55 / 0.22),
+      0 0 70px 18px oklch(0.74 0.25 350 / 0.14);
   }
 
   .glow-green {
-    box-shadow: 0 0 32px -5px oklch(0.78 0.22 145 / 0.75);
+    box-shadow: 0 0 28px 6px oklch(0.78 0.22 145 / 0.24);
   }
 
   .glow-pink {
-    box-shadow: 0 0 32px -5px oklch(0.74 0.25 350 / 0.75);
+    box-shadow:
+      0 0 28px 6px oklch(0.74 0.25 350 / 0.22),
+      0 0 70px 18px oklch(0.7 0.27 300 / 0.14);
   }
 
   .gradient-hero {
@@ -143,6 +149,17 @@
     background-clip: text;
     -webkit-background-clip: text;
     color: transparent;
+  }
+
+  /* Multi-color gradient ring wrapper for avatars — pair with a padded
+     inner element (bg-background) to reveal the ring. */
+  .gradient-ring {
+    background-image: linear-gradient(
+      135deg,
+      var(--neon-violet) 0%,
+      var(--neon-pink) 55%,
+      var(--neon-orange) 100%
+    );
   }
 }
 
