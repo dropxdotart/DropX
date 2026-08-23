@@ -47,11 +47,11 @@ export default function AuthPage() {
     <div className="relative min-h-[calc(100vh-4rem)] flex items-center justify-center px-4 overflow-hidden">
       {/* Decorative trivia/puzzle motifs — placeholder until real artwork is ready. */}
       <div className="pointer-events-none absolute inset-0 -z-10">
-        <Puzzle className="absolute -left-4 top-[12%] w-24 h-24 text-[color:var(--neon-violet)]/10 -rotate-12" />
-        <Brain className="absolute right-[6%] top-[8%] w-28 h-28 text-[color:var(--neon-cyan)]/10 rotate-6" />
-        <HelpCircle className="absolute left-[10%] bottom-[14%] w-20 h-20 text-[color:var(--neon-pink)]/10 -rotate-6" />
-        <Lightbulb className="absolute right-[10%] bottom-[10%] w-24 h-24 text-[color:var(--neon-orange)]/10 rotate-12" />
-        <Sparkles className="absolute left-[45%] top-[4%] w-14 h-14 text-[color:var(--neon-violet)]/10" />
+        <Puzzle className="absolute -left-4 top-[12%] w-24 h-24 text-[color:var(--neon-violet)]/20 -rotate-12" />
+        <Brain className="absolute right-[6%] top-[8%] w-28 h-28 text-[color:var(--neon-cyan)]/20 rotate-6" />
+        <HelpCircle className="absolute left-[10%] bottom-[14%] w-20 h-20 text-[color:var(--neon-pink)]/20 -rotate-6" />
+        <Lightbulb className="absolute right-[10%] bottom-[10%] w-24 h-24 text-[color:var(--neon-orange)]/20 rotate-12" />
+        <Sparkles className="absolute left-[45%] top-[4%] w-14 h-14 text-[color:var(--neon-violet)]/20" />
       </div>
 
       <div className="w-full max-w-sm space-y-8">
