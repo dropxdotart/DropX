@@ -53,11 +53,9 @@ export default function Navbar() {
     <nav className="border-b border-white/10 bg-background/70 backdrop-blur-md sticky top-0 z-50">
       <div className="max-w-3xl mx-auto px-4 sm:px-6">
         <div className="flex items-center justify-between h-16">
-          <Link href="/" className="flex items-center gap-2 font-heading font-bold text-xl tracking-wide">
+          <Link href="/" className="flex items-center gap-2">
             <Image src="/dropx-icon.png" alt="" width={28} height={28} className="drop-shadow-[0_0_8px_oklch(0.58_0.25_295/0.6)]" priority />
-            <span>
-              Drop<span className="gradient-text">X</span>
-            </span>
+            <Image src="/dropx-text.png" alt="DropX" width={124} height={26} priority />
           </Link>
 
           <div className="flex items-center gap-3">

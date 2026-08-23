@@ -58,8 +58,8 @@ export default function AuthPage() {
       <div className="w-full max-w-sm space-y-8">
         <div className="text-center space-y-2">
           <div className="flex justify-center mb-2">
-            <div className="rounded-full bg-white/5 p-3 glow-violet">
-              <Image src="/dropx-icon.png" alt="DropX" width={40} height={40} priority />
+            <div className="rounded-full bg-white/5 p-4 glow-violet">
+              <Image src="/dropx-icon.png" alt="DropX" width={72} height={72} priority />
             </div>
           </div>
           <h1 className="font-heading text-2xl font-bold tracking-wide">
