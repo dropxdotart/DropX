@@ -1,8 +1,5 @@
-import Link from 'next/link'
+import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
-import { buttonVariants } from '@/components/ui/button'
-import { cn } from '@/lib/utils'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import WaitingCard from '@/components/challenge/WaitingCard'
 import AnswerForm from '@/components/challenge/AnswerForm'
 import ResultCard from '@/components/challenge/ResultCard'
@@ -12,6 +9,9 @@ import { etWindowToday } from '@/lib/time'
 export default async function Home() {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
+
+  // Signed-out visitors never see challenge status — they land on sign-in.
+  if (!user) redirect('/auth')
 
   // Scope to today's window so a challenge that dropped on a *previous* day
   // (and was never answered) doesn't linger as "today's" challenge.
@@ -40,24 +40,6 @@ export default async function Home() {
     prompt: challenge.prompt,
     choices: challenge.choices,
     created_at: challenge.created_at,
-  }
-
-  if (!user) {
-    return (
-      <div className="flex flex-1 flex-col items-center justify-center px-4 py-12 gap-4">
-        <Card className="w-full max-w-sm text-center border-white/10 bg-card/60 backdrop-blur-sm glow-violet">
-          <CardHeader>
-            <CardTitle className="text-lg">Today&apos;s challenge is live</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <p className="text-muted-foreground">{publicChallenge.prompt}</p>
-            <Link href="/auth" className={cn(buttonVariants(), 'w-full glow-violet')}>
-              Sign in to answer
-            </Link>
-          </CardContent>
-        </Card>
-      </div>
-    )
   }
 
   const { data: response } = await supabase
