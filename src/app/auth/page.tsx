@@ -52,7 +52,7 @@ export default function AuthPage() {
               <Zap className="w-8 h-8 text-[color:var(--neon-violet)]" fill="currentColor" />
             </div>
           </div>
-          <h1 className="text-2xl font-bold">
+          <h1 className="font-heading text-2xl font-bold tracking-wide">
             {mode === 'login' ? 'Welcome back' : 'Create account'}
           </h1>
           <p className="text-muted-foreground text-sm">

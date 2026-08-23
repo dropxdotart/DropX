@@ -52,7 +52,7 @@ export default function Navbar() {
     <nav className="border-b border-white/10 bg-background/70 backdrop-blur-md sticky top-0 z-50">
       <div className="max-w-3xl mx-auto px-4 sm:px-6">
         <div className="flex items-center justify-between h-16">
-          <Link href="/" className="flex items-center gap-2 font-bold text-xl">
+          <Link href="/" className="flex items-center gap-2 font-heading font-bold text-xl tracking-wide">
             <Zap className="w-6 h-6 text-[color:var(--neon-violet)] drop-shadow-[0_0_8px_oklch(0.62_0.24_300/0.8)]" fill="currentColor" />
             <span className="gradient-text">DropX</span>
           </Link>
