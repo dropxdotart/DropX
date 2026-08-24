@@ -48,6 +48,12 @@ async function moderatePhoto(responseId: string, approve: boolean): Promise<Mode
     return { alreadyHandled: true }
   }
 
+  await admin.from('moderation_log').insert({
+    response_id: updated.id,
+    moderator_id: user.id,
+    decision: approve ? 'approved' : 'rejected',
+  })
+
   if (approve) {
     const dropAt = (updated.challenges as unknown as { drop_at: string } | null)?.drop_at
     if (dropAt) await updateStreakForAnswer(admin, updated.user_id, dropAt)

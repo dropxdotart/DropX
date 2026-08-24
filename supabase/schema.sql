@@ -5,20 +5,37 @@ create extension if not exists "uuid-ossp";
 create type challenge_type as enum ('multiple_choice', 'text', 'photo');
 create type user_role as enum ('user', 'mod', 'admin');
 create type moderation_status as enum ('pending', 'approved', 'rejected');
+create type account_status as enum ('active', 'suspended', 'banned');
+
+-- ─── APP CONFIG ──────────────────────────────────────────────────────────────
+-- Singleton row (the boolean PK + check forces exactly one) — the drop
+-- window and photo grace period are admin-editable, not hardcoded constants.
+create table app_config (
+  id boolean primary key default true check (id),
+  drop_window_start_hour int not null default 12,
+  drop_window_end_hour int not null default 19,
+  photo_grace_minutes int not null default 10,
+  updated_at timestamptz not null default now()
+);
+insert into app_config (id) values (true);
 
 -- ─── CHALLENGES ──────────────────────────────────────────────────────────────
 -- A pool of authored challenges. `drop_at` is null while a challenge sits in
 -- the pool, and is filled in by the daily drop job (see /api/cron/drop) once
 -- it's picked and given a random moment inside the day's window — that keeps
 -- the exact drop time unknown until it actually happens (see RLS below).
+-- `scheduled_date`, when set, tells the drop job to prefer this challenge for
+-- that specific date instead of picking randomly from the pool.
 create table challenges (
   id uuid primary key default uuid_generate_v4(),
   drop_at timestamptz unique,
+  scheduled_date date unique,
   type challenge_type not null default 'multiple_choice',
   prompt text not null,
   choices jsonb,
   correct_answer text not null,
   explanation text,
+  tags text[] not null default '{}',
   created_at timestamptz not null default now()
 );
 
@@ -38,15 +55,25 @@ create table profiles (
   strike_count int not null default 0,
   show_everyone_tab boolean not null default true,
   share_to_everyone boolean not null default true,
+  account_status account_status not null default 'active',
   created_at timestamptz not null default now()
 );
 
 -- display_name can only change once every 48 hours — enforced here (not
 -- just in application code) so it holds even against a direct table update,
 -- and display_name_changed_at is always trigger-set, never client-supplied.
+-- The bypass flag lets admin_set_identity() (below) skip the cooldown for an
+-- admin-initiated override — set via set_config's is_local=true, so it's
+-- scoped to the current transaction and can't leak into a concurrent
+-- session's own update.
 create function public.enforce_display_name_cooldown()
 returns trigger as $$
 begin
+  if coalesce(current_setting('app.bypass_display_name_cooldown', true), 'false') = 'true' then
+    new.display_name_changed_at := now();
+    return new;
+  end if;
+
   if new.display_name is distinct from old.display_name then
     if old.display_name_changed_at is not null
        and now() - old.display_name_changed_at < interval '48 hours' then
@@ -63,6 +90,28 @@ $$ language plpgsql security definer set search_path = public;
 create trigger enforce_display_name_cooldown
   before update on profiles
   for each row execute procedure enforce_display_name_cooldown();
+
+-- Admin-only override for a user's tag/display name, bypassing both the
+-- normal RLS "own profile only" restriction (this is a SECURITY DEFINER
+-- function, so it runs with the privileges of its owner, not the caller)
+-- and the cooldown above. Caller authorization (role = 'admin') is checked
+-- in the application layer before this is invoked, same pattern as the
+-- mod-approval actions using the service-role client.
+create function public.admin_set_identity(
+  target_id uuid,
+  new_username text,
+  new_display_name text
+)
+returns void as $$
+begin
+  perform set_config('app.bypass_display_name_cooldown', 'true', true);
+  update profiles
+  set
+    username = coalesce(new_username, username),
+    display_name = coalesce(new_display_name, display_name)
+  where id = target_id;
+end;
+$$ language plpgsql security definer set search_path = public;
 
 -- ─── RESPONSES ───────────────────────────────────────────────────────────────
 -- One row per (user, challenge) answer. Unique constraint enforces one attempt.
@@ -116,6 +165,40 @@ create table follows (
   check (follower_id <> followed_id)
 );
 
+-- ─── STRIKES ─────────────────────────────────────────────────────────────────
+-- The real audit trail profiles.strike_count never had — that column is a
+-- fast-read cache kept in sync by the trigger below, not the source of truth.
+create table strikes (
+  id uuid primary key default uuid_generate_v4(),
+  user_id uuid not null references profiles(id) on delete cascade,
+  issued_by uuid not null references profiles(id),
+  reason text,
+  response_id uuid references responses(id) on delete set null,
+  created_at timestamptz not null default now()
+);
+
+create function public.increment_strike_count()
+returns trigger as $$
+begin
+  update profiles set strike_count = strike_count + 1 where id = new.user_id;
+  return new;
+end;
+$$ language plpgsql security definer set search_path = public;
+
+create trigger increment_strike_count
+  after insert on strikes
+  for each row execute procedure increment_strike_count();
+
+-- ─── MODERATION LOG ──────────────────────────────────────────────────────────
+-- Audit trail for every approve/reject/reversal decision on a response.
+create table moderation_log (
+  id uuid primary key default uuid_generate_v4(),
+  response_id uuid not null references responses(id) on delete cascade,
+  moderator_id uuid not null references profiles(id),
+  decision moderation_status not null,
+  created_at timestamptz not null default now()
+);
+
 -- Auto-create a profile row when a user signs up.
 create function public.handle_new_user()
 returns trigger as $$
@@ -137,12 +220,54 @@ alter table responses enable row level security;
 alter table likes enable row level security;
 alter table comments enable row level security;
 alter table follows enable row level security;
+alter table app_config enable row level security;
+alter table strikes enable row level security;
+alter table moderation_log enable row level security;
+
+create policy "Authenticated users can view app config" on app_config
+  for select to authenticated using (true);
+
+create policy "Admins can update app config" on app_config
+  for update to authenticated using (
+    exists (select 1 from profiles where id = auth.uid() and role = 'admin')
+  );
+
+create policy "Users can view their own strikes" on strikes
+  for select to authenticated using (user_id = auth.uid());
+
+create policy "Admins can view all strikes" on strikes
+  for select to authenticated using (
+    exists (select 1 from profiles where id = auth.uid() and role = 'admin')
+  );
+
+create policy "Admins can view moderation log" on moderation_log
+  for select to authenticated using (
+    exists (select 1 from profiles where id = auth.uid() and role = 'admin')
+  );
 
 -- Also hides pool challenges (drop_at is null) from clients entirely, since
 -- null <= now() is never true — only the admin (service role) client used by
 -- the cron job can see/pick from the pool.
 create policy "Dropped challenges are readable" on challenges
   for select using (drop_at <= now());
+
+-- Admins additionally see/write the full pool (not just dropped items) —
+-- challenges have only ever been written by the service-role cron/admin
+-- client until now; this is for the signed-in admin writing through the UI.
+create policy "Admins can view all challenges" on challenges
+  for select to authenticated using (
+    exists (select 1 from profiles where id = auth.uid() and role = 'admin')
+  );
+
+create policy "Admins can insert challenges" on challenges
+  for insert to authenticated with check (
+    exists (select 1 from profiles where id = auth.uid() and role = 'admin')
+  );
+
+create policy "Admins can update challenges" on challenges
+  for update to authenticated using (
+    exists (select 1 from profiles where id = auth.uid() and role = 'admin')
+  );
 
 -- Profiles (username/badges/role) are visible to any signed-in user so the
 -- feed can show who answered what.
@@ -173,16 +298,20 @@ as $$
 $$;
 
 -- Your own responses are always visible to you; others' are visible once
--- approved, or while still pending within a 10-minute grace window — a
--- photo response that never gets moderated just stops matching this policy
--- once its own timestamp ages past the window (no cron needed).
+-- approved, or while still pending within the admin-configurable grace
+-- window (app_config.photo_grace_minutes) — a photo response that never
+-- gets moderated just stops matching this policy once its own timestamp
+-- ages past the window (no cron needed).
 create policy "Responses visible after you've answered that challenge" on responses
   for select to authenticated using (
     has_answered(challenge_id)
     and (
       user_id = auth.uid()
       or moderation_status = 'approved'
-      or (moderation_status = 'pending' and answered_at > now() - interval '10 minutes')
+      or (
+        moderation_status = 'pending'
+        and answered_at > now() - ((select photo_grace_minutes from app_config) * interval '1 minute')
+      )
     )
   );
 

@@ -1,23 +1,26 @@
 import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { etWindowToday } from '@/lib/time'
+import { etWindowToday, etDateToday } from '@/lib/time'
+import { getAppConfig } from '@/lib/config'
 
 // Fired once daily by Vercel Cron (see vercel.json), safely after the window
-// opens. Picks the oldest un-dropped challenge from the pool and gives it a
-// random drop_at somewhere inside today's 12PM–7PM ET window, so the exact
-// moment stays unknown to players until it happens (see challenges RLS).
+// opens. Prefers a challenge an admin scheduled for today (challenges.
+// scheduled_date); if none, falls back to the oldest un-dropped pool item,
+// same as before. Either way it gets a random drop_at somewhere inside
+// today's admin-configurable ET window, so the exact moment stays unknown
+// to players until it happens (see challenges RLS).
 export async function GET(request: Request) {
   const authHeader = request.headers.get('authorization')
   if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  const { start, end, now } = etWindowToday(12, 19)
+  const supabase = createAdminClient()
+  const config = await getAppConfig(supabase)
+  const { start, end, now } = etWindowToday(config.drop_window_start_hour, config.drop_window_end_hour)
   if (now < start || now > end) {
     return NextResponse.json({ skipped: 'outside drop window' })
   }
-
-  const supabase = createAdminClient()
 
   const { data: alreadyDropped } = await supabase
     .from('challenges')
@@ -30,13 +33,23 @@ export async function GET(request: Request) {
     return NextResponse.json({ skipped: 'already dropped today' })
   }
 
-  const { data: next } = await supabase
+  const { data: scheduled } = await supabase
     .from('challenges')
     .select('id')
+    .eq('scheduled_date', etDateToday())
     .is('drop_at', null)
-    .order('created_at', { ascending: true })
-    .limit(1)
     .maybeSingle()
+
+  const { data: next } = scheduled
+    ? { data: scheduled }
+    : await supabase
+        .from('challenges')
+        .select('id')
+        .is('drop_at', null)
+        .is('scheduled_date', null)
+        .order('created_at', { ascending: true })
+        .limit(1)
+        .maybeSingle()
 
   if (!next) {
     return NextResponse.json({ skipped: 'pool is empty' })
@@ -53,5 +66,5 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
 
-  return NextResponse.json({ dropped: next.id, drop_at: dropAt.toISOString() })
+  return NextResponse.json({ dropped: next.id, drop_at: dropAt.toISOString(), scheduled: !!scheduled })
 }

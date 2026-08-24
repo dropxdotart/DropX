@@ -1,11 +1,11 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import Image from 'next/image'
 import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Loader2, Puzzle, Brain, Lightbulb, HelpCircle, Sparkles } from 'lucide-react'
+import { Loader2, Puzzle, Brain, Lightbulb, HelpCircle, Sparkles, ShieldAlert } from 'lucide-react'
 import { toast } from 'sonner'
 import { useRouter } from 'next/navigation'
 
@@ -15,8 +15,15 @@ export default function AuthPage() {
   const [password, setPassword] = useState('')
   const [username, setUsername] = useState('')
   const [loading, setLoading] = useState(false)
+  const [blocked, setBlocked] = useState<string | null>(null)
   const supabase = createClient()
   const router = useRouter()
+
+  // Read via window.location rather than useSearchParams() so this page can
+  // stay statically prerendered (useSearchParams forces a Suspense boundary).
+  useEffect(() => {
+    setBlocked(new URLSearchParams(window.location.search).get('blocked'))
+  }, [])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -56,6 +63,16 @@ export default function AuthPage() {
       </div>
 
       <div className="w-full max-w-sm space-y-8">
+        {blocked && (
+          <div className="flex items-start gap-2.5 rounded-xl border border-destructive/30 bg-destructive/10 p-3.5 text-sm text-destructive">
+            <ShieldAlert className="w-4 h-4 shrink-0 mt-0.5" />
+            <span>
+              {blocked === 'banned'
+                ? 'This account has been banned.'
+                : 'This account is temporarily suspended.'}
+            </span>
+          </div>
+        )}
         <div className="text-center space-y-2">
           <div className="flex justify-center mb-2">
             <div className="rounded-full bg-white/5 p-4 glow-violet">

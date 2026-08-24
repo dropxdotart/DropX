@@ -14,6 +14,12 @@ export type ChallengeWithAnswer = Challenge & {
   explanation: string | null
 }
 
+export type ChallengeAdmin = ChallengeWithAnswer & {
+  drop_at: string | null
+  scheduled_date: string | null
+  tags: string[]
+}
+
 export type ModerationStatus = 'pending' | 'approved' | 'rejected'
 
 export type Response = {
@@ -28,6 +34,7 @@ export type Response = {
 }
 
 export type UserRole = 'user' | 'mod' | 'admin'
+export type AccountStatus = 'active' | 'suspended' | 'banned'
 
 export type Profile = {
   id: string
@@ -42,6 +49,31 @@ export type Profile = {
   strike_count: number
   show_everyone_tab: boolean
   share_to_everyone: boolean
+  account_status: AccountStatus
+}
+
+export type Strike = {
+  id: string
+  user_id: string
+  issued_by: string
+  reason: string | null
+  response_id: string | null
+  created_at: string
+  issuer: Pick<PublicProfile, 'username' | 'display_name'>
+}
+
+export type ModerationLogEntry = {
+  id: string
+  response_id: string
+  moderator_id: string
+  decision: ModerationStatus
+  created_at: string
+  moderator: Pick<PublicProfile, 'username' | 'display_name'>
+  response: {
+    user_id: string
+    photo_url: string | null
+    profiles: Pick<PublicProfile, 'username' | 'display_name'>
+  }
 }
 
 export type PublicProfile = Pick<Profile, 'id' | 'username' | 'display_name' | 'role' | 'badges'>

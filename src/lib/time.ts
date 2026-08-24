@@ -38,6 +38,22 @@ export function etWindowToday(startHour: number, endHour: number) {
   return { start, end, now }
 }
 
+// Today's ET calendar date as 'YYYY-MM-DD', for matching against a
+// `date` column (e.g. challenges.scheduled_date) — deliberately not derived
+// from a UTC Date's own getters, since a scheduled_date is a civil date in
+// ET, not a UTC one.
+export function etDateToday(): string {
+  const dtf = new Intl.DateTimeFormat('en-CA', { timeZone: ET })
+  return dtf.format(new Date())
+}
+
+// Formats a 24h hour (0-23) as a short 12h label, e.g. 12 -> "12 PM", 19 -> "7 PM".
+export function formatHourLabel(hour: number): string {
+  const period = hour < 12 ? 'AM' : 'PM'
+  const twelveHour = hour % 12 === 0 ? 12 : hour % 12
+  return `${twelveHour} ${period}`
+}
+
 // Short relative-time label for feed timestamps, e.g. "5m ago", "3h ago".
 export function timeAgo(iso: string): string {
   const seconds = Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000)

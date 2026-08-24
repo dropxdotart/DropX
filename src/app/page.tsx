@@ -5,7 +5,8 @@ import AnswerForm from '@/components/challenge/AnswerForm'
 import ResultCard from '@/components/challenge/ResultCard'
 import PendingReviewCard from '@/components/challenge/PendingReviewCard'
 import type { Challenge, ChallengeWithAnswer } from '@/lib/types'
-import { etWindowToday } from '@/lib/time'
+import { etWindowToday, formatHourLabel } from '@/lib/time'
+import { getAppConfig } from '@/lib/config'
 
 export default async function Home() {
   const supabase = await createClient()
@@ -16,7 +17,8 @@ export default async function Home() {
 
   // Scope to today's window so a challenge that dropped on a *previous* day
   // (and was never answered) doesn't linger as "today's" challenge.
-  const { start, end } = etWindowToday(12, 19)
+  const config = await getAppConfig(supabase)
+  const { start, end } = etWindowToday(config.drop_window_start_hour, config.drop_window_end_hour)
   const { data: challenge } = await supabase
     .from('challenges')
     .select('*')
@@ -25,9 +27,10 @@ export default async function Home() {
     .maybeSingle<ChallengeWithAnswer>()
 
   if (!challenge) {
+    const windowLabel = `${formatHourLabel(config.drop_window_start_hour)}–${formatHourLabel(config.drop_window_end_hour)}`
     return (
       <div className="flex flex-1 flex-col items-center justify-center px-4 py-12">
-        <WaitingCard />
+        <WaitingCard windowLabel={windowLabel} />
       </div>
     )
   }

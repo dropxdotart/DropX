@@ -9,7 +9,7 @@ const POLL_MS = 45_000
 
 // The drop time is intentionally random within the window, so this never
 // shows a countdown to an exact moment — it just quietly checks back.
-export default function WaitingCard() {
+export default function WaitingCard({ windowLabel }: { windowLabel: string }) {
   const router = useRouter()
 
   useEffect(() => {
@@ -29,7 +29,7 @@ export default function WaitingCard() {
       </CardHeader>
       <CardContent>
         <p className="text-muted-foreground">
-          It drops sometime between 12–7 PM ET. Check back — this page will update on its own.
+          It drops sometime between {windowLabel} ET. Check back — this page will update on its own.
         </p>
       </CardContent>
     </Card>

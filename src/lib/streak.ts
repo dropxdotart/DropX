@@ -42,3 +42,28 @@ export async function updateStreakForAnswer(
 
   return { currentStreak, longestStreak }
 }
+
+// The blunt "fix a support case" tool — a direct override, not run through
+// the day-consecutiveness math above. Used by both /admin/users and the mod
+// support tool (src/app/mod/support), on the service-role client since it's
+// writing a profile the caller doesn't own.
+export async function manuallyAdjustStreak(
+  supabase: SupabaseClient,
+  userId: string,
+  currentStreak: number
+): Promise<void> {
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('longest_streak')
+    .eq('id', userId)
+    .single()
+
+  const longestStreak = Math.max(profile?.longest_streak ?? 0, currentStreak)
+
+  const { error } = await supabase
+    .from('profiles')
+    .update({ current_streak: currentStreak, longest_streak: longestStreak })
+    .eq('id', userId)
+
+  if (error) throw new Error(error.message)
+}
