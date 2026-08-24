@@ -18,7 +18,13 @@ export default function FeedTabs({
   const [tab, setTab] = useState<'friends' | 'everyone'>('friends')
 
   const friendsItems = items.filter((i) => i.user_id === currentUserId || i.authorFollowedByMe)
-  const visibleItems = showEveryoneTab && tab === 'everyone' ? items : friendsItems
+  // Everyone still always includes your own posts and people you follow,
+  // regardless of their share_to_everyone setting — that toggle only
+  // controls whether *other, unrelated* viewers see you there.
+  const everyoneItems = items.filter(
+    (i) => i.user_id === currentUserId || i.authorFollowedByMe || i.profiles.share_to_everyone
+  )
+  const visibleItems = showEveryoneTab && tab === 'everyone' ? everyoneItems : friendsItems
 
   return (
     <div className="w-full max-w-sm space-y-4">

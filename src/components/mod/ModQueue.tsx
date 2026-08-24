@@ -49,7 +49,7 @@ function QueueCard({ item, onHandled }: { item: ModQueueItem; onHandled: (id: st
       </div>
       <div className="p-3 space-y-3">
         <div>
-          <p className="text-sm font-semibold">{item.profiles?.username ?? 'Someone'}</p>
+          <p className="text-sm font-semibold">{item.profiles?.display_name ?? item.profiles?.username ?? 'Someone'}</p>
           <p className="text-xs text-muted-foreground truncate">{item.challenges.prompt}</p>
         </div>
         <div className="grid grid-cols-2 gap-2.5">

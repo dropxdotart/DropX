@@ -52,50 +52,51 @@ export default function Navbar() {
   return (
     <nav className="border-b border-white/10 bg-background/70 backdrop-blur-md sticky top-0 z-50">
       <div className="max-w-3xl mx-auto px-4 sm:px-6">
-        <div className="flex items-center justify-between h-16">
-          <Link href="/" className="flex items-center gap-2">
-            <Image src="/dropx-icon.png" alt="" width={28} height={28} className="drop-shadow-[0_0_8px_oklch(0.58_0.25_295/0.6)]" priority />
-            <Image src="/dropx-text.png" alt="DropX" width={124} height={26} priority />
+        <div className="grid grid-cols-[1fr_auto_1fr] items-center h-14">
+          <div className="flex items-center">
+            {user && profile && (
+              <div className="flex items-center gap-1 text-sm font-medium bg-white/5 border border-white/10 rounded-full px-2.5 py-1">
+                <Flame className="w-3.5 h-3.5 text-[color:var(--neon-orange)]" fill="currentColor" />
+                {profile.current_streak}
+              </div>
+            )}
+          </div>
+
+          <Link href="/" className="flex items-center gap-1.5 justify-self-center">
+            <Image src="/dropx-icon.png" alt="" width={20} height={20} className="drop-shadow-[0_0_6px_oklch(0.58_0.25_295/0.6)]" priority />
+            <Image src="/dropx-text.png" alt="DropX" width={88} height={19} priority />
           </Link>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center justify-end gap-3">
             {user ? (
-              <>
-                {profile && (
-                  <div className="flex items-center gap-1 text-sm font-medium bg-white/5 border border-white/10 rounded-full px-2.5 py-1">
-                    <Flame className="w-3.5 h-3.5 text-[color:var(--neon-orange)]" fill="currentColor" />
-                    {profile.current_streak}
+              <DropdownMenu>
+                <DropdownMenuTrigger className="rounded-full focus:outline-none focus:ring-2 focus:ring-primary">
+                  <div className="gradient-ring rounded-full p-[2px] cursor-pointer">
+                    <Avatar className="w-8 h-8 ring-1 ring-background">
+                      <AvatarFallback className="bg-secondary">
+                        {(profile?.display_name ?? profile?.username)?.[0]?.toUpperCase() ?? 'U'}
+                      </AvatarFallback>
+                    </Avatar>
                   </div>
-                )}
-                <DropdownMenu>
-                  <DropdownMenuTrigger className="rounded-full focus:outline-none focus:ring-2 focus:ring-primary">
-                    <div className="gradient-ring rounded-full p-[2px] cursor-pointer">
-                      <Avatar className="w-8 h-8 ring-1 ring-background">
-                        <AvatarFallback className="bg-secondary">
-                          {profile?.username?.[0]?.toUpperCase() ?? 'U'}
-                        </AvatarFallback>
-                      </Avatar>
-                    </div>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" className="w-48">
-                    <DropdownMenuItem onClick={() => window.location.href = '/profile'}>
-                      <User className="w-4 h-4 mr-2" />
-                      Profile
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-48">
+                  <DropdownMenuItem onClick={() => window.location.href = '/profile'}>
+                    <User className="w-4 h-4 mr-2" />
+                    Profile
+                  </DropdownMenuItem>
+                  {(profile?.role === 'mod' || profile?.role === 'admin') && (
+                    <DropdownMenuItem onClick={() => window.location.href = '/mod'}>
+                      <ShieldCheck className="w-4 h-4 mr-2" />
+                      Moderate
                     </DropdownMenuItem>
-                    {(profile?.role === 'mod' || profile?.role === 'admin') && (
-                      <DropdownMenuItem onClick={() => window.location.href = '/mod'}>
-                        <ShieldCheck className="w-4 h-4 mr-2" />
-                        Moderate
-                      </DropdownMenuItem>
-                    )}
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem onClick={handleSignOut} className="text-destructive">
-                      <LogOut className="w-4 h-4 mr-2" />
-                      Sign out
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              </>
+                  )}
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={handleSignOut} className="text-destructive">
+                    <LogOut className="w-4 h-4 mr-2" />
+                    Sign out
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
             ) : (
               <Link href="/auth" className={cn(buttonVariants({ size: 'sm' }), 'glow-violet')}>Sign in</Link>
             )}

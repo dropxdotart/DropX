@@ -5,7 +5,7 @@ import Image from 'next/image'
 import { usePathname } from 'next/navigation'
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { Rss, User } from 'lucide-react'
+import { LayoutGrid } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 export default function BottomNav() {
@@ -23,15 +23,17 @@ export default function BottomNav() {
 
   if (!signedIn) return null
 
+  // Profile is deliberately not a tab here — it's reached from the avatar
+  // (PFP) in the top bar instead, matching how BeReal/Snap treat "you" as
+  // an icon rather than a nav destination.
   const tabs = [
     { href: '/', label: 'Drop' },
     { href: '/feed', label: 'Feed' },
-    { href: '/profile', label: 'Profile' },
   ] as const
 
   return (
     <nav className="fixed bottom-0 inset-x-0 z-50 border-t border-white/10 bg-background/90 backdrop-blur-md">
-      <div className="max-w-3xl mx-auto grid grid-cols-3">
+      <div className="max-w-3xl mx-auto grid grid-cols-2">
         {tabs.map((tab) => {
           const active = pathname === tab.href
           return (
@@ -51,10 +53,8 @@ export default function BottomNav() {
                   height={20}
                   className={active ? 'drop-shadow-[0_0_6px_oklch(0.58_0.25_295/0.7)]' : 'opacity-70'}
                 />
-              ) : tab.href === '/feed' ? (
-                <Rss className="w-5 h-5" />
               ) : (
-                <User className="w-5 h-5" />
+                <LayoutGrid className="w-5 h-5" />
               )}
               {tab.label}
             </Link>

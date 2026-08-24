@@ -20,7 +20,7 @@ export default async function ModPage() {
 
   const { data: items } = await supabase
     .from('responses')
-    .select('id, photo_url, answered_at, profiles(username), challenges(prompt)')
+    .select('id, photo_url, answered_at, profiles(username, display_name), challenges(prompt)')
     .eq('moderation_status', 'pending')
     .order('answered_at', { ascending: true })
 

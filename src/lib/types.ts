@@ -32,6 +32,8 @@ export type UserRole = 'user' | 'mod' | 'admin'
 export type Profile = {
   id: string
   username: string | null
+  display_name: string | null
+  display_name_changed_at: string | null
   current_streak: number
   longest_streak: number
   last_answered_date: string | null
@@ -39,9 +41,10 @@ export type Profile = {
   badges: string[]
   strike_count: number
   show_everyone_tab: boolean
+  share_to_everyone: boolean
 }
 
-export type PublicProfile = Pick<Profile, 'id' | 'username' | 'role' | 'badges'>
+export type PublicProfile = Pick<Profile, 'id' | 'username' | 'display_name' | 'role' | 'badges'>
 
 export type Comment = {
   id: string
@@ -56,7 +59,7 @@ export type ModQueueItem = {
   id: string
   photo_url: string
   answered_at: string
-  profiles: Pick<PublicProfile, 'username'>
+  profiles: Pick<PublicProfile, 'username' | 'display_name'>
   challenges: Pick<Challenge, 'prompt'>
 }
 
@@ -67,7 +70,7 @@ export type FeedItem = {
   is_correct: boolean | null
   photo_url: string | null
   answered_at: string
-  profiles: PublicProfile
+  profiles: PublicProfile & Pick<Profile, 'share_to_everyone'>
   challenges: Pick<Challenge, 'prompt' | 'type'>
   likeCount: number
   likedByMe: boolean

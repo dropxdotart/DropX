@@ -2,7 +2,7 @@ import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import FeedTabs from '@/components/feed/FeedTabs'
 import { Rss } from 'lucide-react'
-import type { FeedItem, PublicProfile } from '@/lib/types'
+import type { FeedItem } from '@/lib/types'
 
 export default async function FeedPage() {
   const supabase = await createClient()
@@ -17,7 +17,7 @@ export default async function FeedPage() {
 
   const { data: responses } = await supabase
     .from('responses')
-    .select('id, user_id, answer, is_correct, photo_url, answered_at, profiles(id, username, role, badges), challenges(prompt, type)')
+    .select('id, user_id, answer, is_correct, photo_url, answered_at, profiles(id, username, display_name, role, badges, share_to_everyone), challenges(prompt, type)')
     .order('answered_at', { ascending: false })
     .limit(50)
 
@@ -39,7 +39,7 @@ export default async function FeedPage() {
     supabase.from('likes').select('user_id, response_id').in('response_id', responseIds),
     supabase
       .from('comments')
-      .select('id, user_id, response_id, body, created_at, profiles(id, username, role, badges)')
+      .select('id, user_id, response_id, body, created_at, profiles(id, username, display_name, role, badges)')
       .in('response_id', responseIds)
       .order('created_at', { ascending: true }),
     supabase.from('follows').select('followed_id').eq('follower_id', user.id).in('followed_id', authorIds),
@@ -57,7 +57,7 @@ export default async function FeedPage() {
       is_correct: r.is_correct,
       photo_url: r.photo_url,
       answered_at: r.answered_at,
-      profiles: r.profiles as unknown as PublicProfile,
+      profiles: r.profiles as unknown as FeedItem['profiles'],
       challenges: r.challenges as unknown as FeedItem['challenges'],
       likeCount: responseLikes.length,
       likedByMe: responseLikes.some((l) => l.user_id === user.id),

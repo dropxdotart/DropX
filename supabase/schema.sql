@@ -23,10 +23,13 @@ create table challenges (
 );
 
 -- ─── PROFILES ────────────────────────────────────────────────────────────────
--- One row per user; tracks streaks.
+-- One row per user; tracks streaks. `username` is the permanent, unique
+-- @tag; `display_name` is the editable name shown around the app.
 create table profiles (
   id uuid primary key references auth.users(id) on delete cascade,
   username text unique,
+  display_name text,
+  display_name_changed_at timestamptz,
   current_streak int not null default 0,
   longest_streak int not null default 0,
   last_answered_date date,
@@ -34,8 +37,32 @@ create table profiles (
   badges text[] not null default '{}',
   strike_count int not null default 0,
   show_everyone_tab boolean not null default true,
+  share_to_everyone boolean not null default true,
   created_at timestamptz not null default now()
 );
+
+-- display_name can only change once every 48 hours — enforced here (not
+-- just in application code) so it holds even against a direct table update,
+-- and display_name_changed_at is always trigger-set, never client-supplied.
+create function public.enforce_display_name_cooldown()
+returns trigger as $$
+begin
+  if new.display_name is distinct from old.display_name then
+    if old.display_name_changed_at is not null
+       and now() - old.display_name_changed_at < interval '48 hours' then
+      raise exception 'display_name can only be changed once every 48 hours';
+    end if;
+    new.display_name_changed_at := now();
+  else
+    new.display_name_changed_at := old.display_name_changed_at;
+  end if;
+  return new;
+end;
+$$ language plpgsql security definer set search_path = public;
+
+create trigger enforce_display_name_cooldown
+  before update on profiles
+  for each row execute procedure enforce_display_name_cooldown();
 
 -- ─── RESPONSES ───────────────────────────────────────────────────────────────
 -- One row per (user, challenge) answer. Unique constraint enforces one attempt.

@@ -1,9 +1,10 @@
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent } from '@/components/ui/card'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
 import SettingsCard from '@/components/profile/SettingsCard'
+import DisplayNameEditor from '@/components/profile/DisplayNameEditor'
 import { Flame, Trophy, Sparkles, ShieldCheck } from 'lucide-react'
 
 export default async function ProfilePage() {
@@ -30,14 +31,18 @@ export default async function ProfilePage() {
               <div className="gradient-ring rounded-full p-1">
                 <Avatar className="w-24 h-24 ring-2 ring-background">
                   <AvatarFallback className="text-3xl bg-secondary">
-                    {profile?.username?.[0]?.toUpperCase() ?? 'U'}
+                    {(profile?.display_name ?? profile?.username)?.[0]?.toUpperCase() ?? 'U'}
                   </AvatarFallback>
                 </Avatar>
               </div>
             </div>
             <div className="min-w-0 space-y-1.5">
               <div className="flex items-center gap-2 flex-wrap">
-                <CardTitle className="text-xl truncate">{profile?.username ?? user.email}</CardTitle>
+                <DisplayNameEditor
+                  initialName={profile?.display_name ?? profile?.username ?? user.email ?? 'You'}
+                  username={profile?.username ?? null}
+                  changedAt={profile?.display_name_changed_at ?? null}
+                />
                 {profile?.role && profile.role !== 'user' && (
                   <Badge className="gap-1 border-0 gradient-hero text-white font-semibold capitalize">
                     <ShieldCheck className="w-3 h-3" />
@@ -45,7 +50,6 @@ export default async function ProfilePage() {
                   </Badge>
                 )}
               </div>
-              <p className="text-sm text-muted-foreground truncate">{user.email}</p>
               {profile?.badges && profile.badges.length > 0 && (
                 <div className="flex items-center gap-1.5 flex-wrap pt-0.5">
                   {profile.badges.map((badge: string) => (
@@ -80,7 +84,10 @@ export default async function ProfilePage() {
           </Card>
         </div>
 
-        <SettingsCard initialShowEveryone={profile?.show_everyone_tab ?? true} />
+        <SettingsCard
+          initialShowEveryone={profile?.show_everyone_tab ?? true}
+          initialShareToEveryone={profile?.share_to_everyone ?? true}
+        />
       </div>
     </div>
   )

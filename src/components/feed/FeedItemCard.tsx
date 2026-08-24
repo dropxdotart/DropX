@@ -79,7 +79,7 @@ export default function FeedItemCard({ item, currentUserId }: { item: FeedItem; 
             response_id: item.id,
             body,
             created_at: new Date().toISOString(),
-            profiles: { id: currentUserId, username: 'You', role: 'user', badges: [] },
+            profiles: { id: currentUserId, username: 'You', display_name: null, role: 'user', badges: [] },
           },
         ])
       } catch (err) {
@@ -92,10 +92,13 @@ export default function FeedItemCard({ item, currentUserId }: { item: FeedItem; 
     <Card className="border-white/10 bg-card/60 backdrop-blur-sm">
       <CardContent className="space-y-3">
         <div className="flex items-center gap-2.5">
-          <UserAvatar username={item.profiles.username} />
+          <UserAvatar username={item.profiles.display_name ?? item.profiles.username} />
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-1.5 flex-wrap">
-              <span className="text-sm font-semibold truncate">{item.profiles.username ?? 'Someone'}</span>
+              <span className="text-sm font-semibold truncate">{item.profiles.display_name ?? item.profiles.username ?? 'Someone'}</span>
+              {item.profiles.username && (
+                <span className="text-xs text-muted-foreground truncate">@{item.profiles.username}</span>
+              )}
               {item.profiles.role !== 'user' && (
                 <Badge className="gap-0.5 border-0 gradient-hero text-white text-[10px] px-1.5 py-0 capitalize">
                   <ShieldCheck className="w-2.5 h-2.5" />
@@ -175,9 +178,9 @@ export default function FeedItemCard({ item, currentUserId }: { item: FeedItem; 
           <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
             {comments.map((c) => (
               <div key={c.id} className="flex items-start gap-2">
-                <UserAvatar username={c.profiles?.username ?? null} size={6} />
+                <UserAvatar username={c.profiles?.display_name ?? c.profiles?.username ?? null} size={6} />
                 <div className="min-w-0 flex-1 rounded-lg bg-white/5 px-2.5 py-1.5">
-                  <p className="text-xs font-semibold">{c.profiles?.username ?? 'Someone'}</p>
+                  <p className="text-xs font-semibold">{c.profiles?.display_name ?? c.profiles?.username ?? 'Someone'}</p>
                   <p className="text-sm break-words">{c.body}</p>
                 </div>
               </div>
