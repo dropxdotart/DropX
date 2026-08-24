@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
+import SettingsCard from '@/components/profile/SettingsCard'
 import { Flame, Trophy, Sparkles, ShieldCheck } from 'lucide-react'
 
 export default async function ProfilePage() {
@@ -78,6 +79,8 @@ export default async function ProfilePage() {
             </CardContent>
           </Card>
         </div>
+
+        <SettingsCard initialShowEveryone={profile?.show_everyone_tab ?? true} />
       </div>
     </div>
   )

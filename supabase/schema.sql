@@ -2,8 +2,9 @@
 create extension if not exists "uuid-ossp";
 
 -- ─── TYPES ───────────────────────────────────────────────────────────────────
-create type challenge_type as enum ('multiple_choice', 'text');
+create type challenge_type as enum ('multiple_choice', 'text', 'photo');
 create type user_role as enum ('user', 'mod', 'admin');
+create type moderation_status as enum ('pending', 'approved', 'rejected');
 
 -- ─── CHALLENGES ──────────────────────────────────────────────────────────────
 -- A pool of authored challenges. `drop_at` is null while a challenge sits in
@@ -32,17 +33,23 @@ create table profiles (
   role user_role not null default 'user',
   badges text[] not null default '{}',
   strike_count int not null default 0,
+  show_everyone_tab boolean not null default true,
   created_at timestamptz not null default now()
 );
 
 -- ─── RESPONSES ───────────────────────────────────────────────────────────────
 -- One row per (user, challenge) answer. Unique constraint enforces one attempt.
+-- `is_correct` is null for a photo response until a mod approves/rejects it
+-- (moderation_status starts 'pending'); text/multiple_choice grade instantly
+-- and are inserted already 'approved' with is_correct set.
 create table responses (
   id uuid primary key default uuid_generate_v4(),
   user_id uuid not null references auth.users(id) on delete cascade,
   challenge_id uuid not null references challenges(id) on delete cascade,
   answer text not null,
-  is_correct boolean not null,
+  is_correct boolean,
+  photo_url text,
+  moderation_status moderation_status not null default 'approved',
   answered_at timestamptz not null default now(),
   unique (user_id, challenge_id)
 );
@@ -138,8 +145,45 @@ as $$
   );
 $$;
 
+-- Your own responses are always visible to you; others' are visible once
+-- approved, or while still pending within a 10-minute grace window — a
+-- photo response that never gets moderated just stops matching this policy
+-- once its own timestamp ages past the window (no cron needed).
 create policy "Responses visible after you've answered that challenge" on responses
-  for select to authenticated using (has_answered(challenge_id));
+  for select to authenticated using (
+    has_answered(challenge_id)
+    and (
+      user_id = auth.uid()
+      or moderation_status = 'approved'
+      or (moderation_status = 'pending' and answered_at > now() - interval '10 minutes')
+    )
+  );
+
+-- Mods/admins see every pending item regardless of the spoiler gate above
+-- (they may not have personally answered that challenge).
+create policy "Mods can view all pending responses" on responses
+  for select to authenticated using (
+    moderation_status = 'pending'
+    and exists (select 1 from profiles where id = auth.uid() and role in ('mod', 'admin'))
+  );
+
+-- The `moderation_status = 'pending'` guard here (mirrored in the app's own
+-- UPDATE ... WHERE clause) is what makes concurrent approve/deny from two
+-- mods race-safe: whichever request's row lock commits first flips the
+-- status, so the second one's WHERE clause (and this policy) no longer
+-- match the row. `using` and `with check` are deliberately different here —
+-- an UPDATE policy with only `using` implicitly reuses it as the check too,
+-- which would reject the mod's own update for moving status away from
+-- 'pending' (the entire point of approving/rejecting something).
+create policy "Mods can moderate pending responses" on responses
+  for update to authenticated
+  using (
+    moderation_status = 'pending'
+    and exists (select 1 from profiles where id = auth.uid() and role in ('mod', 'admin'))
+  )
+  with check (
+    exists (select 1 from profiles where id = auth.uid() and role in ('mod', 'admin'))
+  );
 
 create policy "Users can insert own responses" on responses
   for insert with check (auth.uid() = user_id);

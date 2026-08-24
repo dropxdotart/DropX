@@ -6,7 +6,7 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Heart, MessageCircle, ShieldCheck, CheckCircle2, XCircle, UserPlus, UserCheck, Loader2 } from 'lucide-react'
+import { Heart, MessageCircle, ShieldCheck, CheckCircle2, XCircle, UserPlus, UserCheck, Loader2, Clock } from 'lucide-react'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import { timeAgo } from '@/lib/time'
@@ -124,16 +124,32 @@ export default function FeedItemCard({ item, currentUserId }: { item: FeedItem; 
           )}
         </div>
 
-        <div className="rounded-lg bg-white/5 border border-white/10 p-3 space-y-1.5">
-          <p className="text-sm text-muted-foreground">{item.challenges.prompt}</p>
-          <div className="flex items-center gap-1.5 text-sm font-medium">
-            {item.is_correct ? (
-              <CheckCircle2 className="w-4 h-4 text-green-400 shrink-0" />
-            ) : (
-              <XCircle className="w-4 h-4 text-destructive shrink-0" />
+        <div className="rounded-lg bg-white/5 border border-white/10 overflow-hidden">
+          <div className="p-3 space-y-1.5">
+            <p className="text-sm text-muted-foreground">{item.challenges.prompt}</p>
+            {!item.photo_url && (
+              <div className="flex items-center gap-1.5 text-sm font-medium">
+                {item.is_correct ? (
+                  <CheckCircle2 className="w-4 h-4 text-green-400 shrink-0" />
+                ) : (
+                  <XCircle className="w-4 h-4 text-destructive shrink-0" />
+                )}
+                {item.answer}
+              </div>
             )}
-            {item.answer}
           </div>
+          {item.photo_url && (
+            <div className="relative">
+              {/* eslint-disable-next-line @next/next/no-img-element -- external Storage URL, no known dimensions */}
+              <img src={item.photo_url} alt="" className="w-full aspect-square object-cover" />
+              {item.is_correct === null && (
+                <span className="absolute top-2 right-2 flex items-center gap-1 text-[10px] font-semibold bg-black/60 backdrop-blur-sm text-[color:var(--neon-orange)] px-2 py-1 rounded-full">
+                  <Clock className="w-3 h-3" />
+                  Under review
+                </span>
+              )}
+            </div>
+          )}
         </div>
 
         <div className="flex items-center gap-4">

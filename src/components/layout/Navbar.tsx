@@ -14,7 +14,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { Flame, LogOut, User, Rss } from 'lucide-react'
+import { Flame, LogOut, User, ShieldCheck } from 'lucide-react'
 import type { User as SupabaseUser } from '@supabase/supabase-js'
 import type { Profile } from '@/lib/types'
 
@@ -61,9 +61,6 @@ export default function Navbar() {
           <div className="flex items-center gap-3">
             {user ? (
               <>
-                <Link href="/feed" className="text-muted-foreground hover:text-foreground transition-colors">
-                  <Rss className="w-5 h-5" />
-                </Link>
                 {profile && (
                   <div className="flex items-center gap-1 text-sm font-medium bg-white/5 border border-white/10 rounded-full px-2.5 py-1">
                     <Flame className="w-3.5 h-3.5 text-[color:var(--neon-orange)]" fill="currentColor" />
@@ -85,6 +82,12 @@ export default function Navbar() {
                       <User className="w-4 h-4 mr-2" />
                       Profile
                     </DropdownMenuItem>
+                    {(profile?.role === 'mod' || profile?.role === 'admin') && (
+                      <DropdownMenuItem onClick={() => window.location.href = '/mod'}>
+                        <ShieldCheck className="w-4 h-4 mr-2" />
+                        Moderate
+                      </DropdownMenuItem>
+                    )}
                     <DropdownMenuSeparator />
                     <DropdownMenuItem onClick={handleSignOut} className="text-destructive">
                       <LogOut className="w-4 h-4 mr-2" />

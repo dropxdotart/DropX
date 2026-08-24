@@ -2,24 +2,13 @@
 
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
+import { updateStreakForAnswer } from '@/lib/streak'
 
 type SubmitResult = {
   isCorrect: boolean
   correctAnswer: string
   explanation: string | null
   currentStreak: number
-}
-
-// Streak "days" are tracked in UTC to keep the math independent of each
-// player's local timezone — a challenge's drop_at date is its day.
-function toDateString(iso: string): string {
-  return new Date(iso).toISOString().slice(0, 10)
-}
-
-function addDays(dateString: string, days: number): string {
-  const d = new Date(dateString + 'T00:00:00Z')
-  d.setUTCDate(d.getUTCDate() + days)
-  return d.toISOString().slice(0, 10)
 }
 
 export async function submitAnswer(challengeId: string, answer: string): Promise<SubmitResult> {
@@ -45,29 +34,16 @@ export async function submitAnswer(challengeId: string, answer: string): Promise
     throw new Error(insertError.message)
   }
 
-  const { data: profile } = await supabase
-    .from('profiles')
-    .select('*')
-    .eq('id', user.id)
-    .single()
-
-  const challengeDate = toDateString(challenge.drop_at)
-  let currentStreak = profile?.current_streak ?? 0
-  let longestStreak = profile?.longest_streak ?? 0
-
+  let currentStreak = 0
   if (!insertError) {
-    const yesterday = addDays(challengeDate, -1)
-    currentStreak = profile?.last_answered_date === yesterday ? currentStreak + 1 : 1
-    longestStreak = Math.max(longestStreak, currentStreak)
-
-    await supabase
+    ;({ currentStreak } = await updateStreakForAnswer(supabase, user.id, challenge.drop_at))
+  } else {
+    const { data: profile } = await supabase
       .from('profiles')
-      .update({
-        current_streak: currentStreak,
-        longest_streak: longestStreak,
-        last_answered_date: challengeDate,
-      })
+      .select('current_streak')
       .eq('id', user.id)
+      .single()
+    currentStreak = profile?.current_streak ?? 0
   }
 
   revalidatePath('/')
@@ -79,4 +55,31 @@ export async function submitAnswer(challengeId: string, answer: string): Promise
     explanation: challenge.explanation,
     currentStreak,
   }
+}
+
+// Photo challenges can't be auto-graded — the response inserts as 'pending'
+// and is_correct stays null until a mod approves/rejects it in /mod
+// (see submitPhotoAnswer's sibling, approvePhoto/rejectPhoto in
+// src/app/mod/actions.ts). No streak update happens here; that only
+// happens once a mod approves.
+export async function submitPhotoAnswer(challengeId: string, photoUrl: string): Promise<void> {
+  const supabase = await createClient()
+
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) throw new Error('Sign in to answer')
+
+  const { error: insertError } = await supabase.from('responses').insert({
+    user_id: user.id,
+    challenge_id: challengeId,
+    answer: photoUrl,
+    photo_url: photoUrl,
+    is_correct: null,
+    moderation_status: 'pending',
+  })
+
+  if (insertError && insertError.code !== '23505') {
+    throw new Error(insertError.message)
+  }
+
+  revalidatePath('/')
 }

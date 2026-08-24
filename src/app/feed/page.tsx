@@ -1,6 +1,6 @@
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
-import FeedItemCard from '@/components/feed/FeedItemCard'
+import FeedTabs from '@/components/feed/FeedTabs'
 import { Rss } from 'lucide-react'
 import type { FeedItem, PublicProfile } from '@/lib/types'
 
@@ -9,9 +9,15 @@ export default async function FeedPage() {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/auth')
 
+  const { data: myProfile } = await supabase
+    .from('profiles')
+    .select('show_everyone_tab')
+    .eq('id', user.id)
+    .single()
+
   const { data: responses } = await supabase
     .from('responses')
-    .select('id, user_id, answer, is_correct, answered_at, profiles(id, username, role, badges), challenges(prompt, type)')
+    .select('id, user_id, answer, is_correct, photo_url, answered_at, profiles(id, username, role, badges), challenges(prompt, type)')
     .order('answered_at', { ascending: false })
     .limit(50)
 
@@ -49,6 +55,7 @@ export default async function FeedPage() {
       user_id: r.user_id,
       answer: r.answer,
       is_correct: r.is_correct,
+      photo_url: r.photo_url,
       answered_at: r.answered_at,
       profiles: r.profiles as unknown as PublicProfile,
       challenges: r.challenges as unknown as FeedItem['challenges'],
@@ -61,11 +68,7 @@ export default async function FeedPage() {
 
   return (
     <div className="flex flex-1 flex-col items-center px-4 py-8">
-      <div className="w-full max-w-sm space-y-4">
-        {items.map((item) => (
-          <FeedItemCard key={item.id} item={item} currentUserId={user.id} />
-        ))}
-      </div>
+      <FeedTabs items={items} currentUserId={user.id} showEveryoneTab={myProfile?.show_everyone_tab ?? true} />
     </div>
   )
 }

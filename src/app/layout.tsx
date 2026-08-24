@@ -3,6 +3,7 @@ import { Space_Grotesk, Orbitron } from "next/font/google";
 import "./globals.css";
 import { Toaster } from "@/components/ui/sonner";
 import Navbar from "@/components/layout/Navbar";
+import BottomNav from "@/components/layout/BottomNav";
 
 const spaceGrotesk = Space_Grotesk({
   variable: "--font-space-grotesk",
@@ -35,7 +36,8 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       <body className="min-h-full flex flex-col bg-background text-foreground">
         <div className="ambient-glow pointer-events-none fixed inset-0 -z-10" />
         <Navbar />
-        <main className="flex flex-1 flex-col">{children}</main>
+        <main className="flex flex-1 flex-col pb-16">{children}</main>
+        <BottomNav />
         <Toaster />
       </body>
     </html>

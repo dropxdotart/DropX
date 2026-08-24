@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import WaitingCard from '@/components/challenge/WaitingCard'
 import AnswerForm from '@/components/challenge/AnswerForm'
 import ResultCard from '@/components/challenge/ResultCard'
+import PendingReviewCard from '@/components/challenge/PendingReviewCard'
 import type { Challenge, ChallengeWithAnswer } from '@/lib/types'
 import { etWindowToday } from '@/lib/time'
 
@@ -50,6 +51,15 @@ export default async function Home() {
     .maybeSingle()
 
   if (response) {
+    // Still awaiting a mod's decision — is_correct is only set once approved/rejected.
+    if (response.is_correct === null) {
+      return (
+        <div className="flex flex-1 flex-col items-center justify-center px-4 py-12">
+          <PendingReviewCard photoUrl={response.photo_url ?? ''} />
+        </div>
+      )
+    }
+
     const { data: profile } = await supabase
       .from('profiles')
       .select('current_streak')
@@ -65,6 +75,7 @@ export default async function Home() {
           correctAnswer={challenge.correct_answer}
           explanation={challenge.explanation}
           currentStreak={profile?.current_streak}
+          photoUrl={response.photo_url}
         />
       </div>
     )
