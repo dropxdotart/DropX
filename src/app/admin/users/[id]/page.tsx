@@ -1,12 +1,17 @@
 import { notFound } from 'next/navigation'
-import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
+import { getStreakCalendar } from '@/lib/streak'
 import { Card, CardContent } from '@/components/ui/card'
 import UserDetailControls from '../UserDetailControls'
 import type { Profile, Strike } from '@/lib/types'
 
 export default async function AdminUserDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
-  const supabase = await createClient()
+  // Authorization already happened in the admin layout — reads below use the
+  // admin client deliberately, not the caller's session, so an admin viewing
+  // someone else's data isn't silently filtered by that user's own privacy
+  // RLS (the same class of bug fixed earlier in /admin/moderation).
+  const supabase = createAdminClient()
 
   const { data: profile } = await supabase.from('profiles').select('*').eq('id', id).single()
   if (!profile) notFound()
@@ -17,6 +22,8 @@ export default async function AdminUserDetailPage({ params }: { params: Promise<
     .eq('user_id', id)
     .order('created_at', { ascending: false })
 
+  const streakDays = await getStreakCalendar(supabase, id, 60)
+
   return (
     <div className="space-y-4">
       <div>
@@ -24,9 +31,9 @@ export default async function AdminUserDetailPage({ params }: { params: Promise<
         <p className="text-sm text-muted-foreground">@{profile.username}</p>
       </div>
 
-      <UserDetailControls profile={profile as Profile} />
+      <UserDetailControls profile={profile as Profile} streakDays={streakDays} />
 
-      <Card className="border-white/10 bg-card/60">
+      <Card className="border-white/10 bg-card">
         <CardContent className="space-y-2 pt-4">
           <h3 className="text-sm font-medium">Strike history</h3>
           {(strikes ?? []).length === 0 ? (

@@ -3,7 +3,7 @@
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { updateStreakForAnswer } from '@/lib/streak'
+import { updateStreakForAnswer, setStreakDayOverride, recomputeStreakForUser, todayDateString } from '@/lib/streak'
 
 type ModerationResult = { alreadyHandled: boolean }
 
@@ -70,4 +70,20 @@ export async function approvePhoto(responseId: string): Promise<ModerationResult
 
 export async function rejectPhoto(responseId: string): Promise<ModerationResult> {
   return moderatePhoto(responseId, false)
+}
+
+// The narrow support-tool power: nudge a streak to include today, no
+// per-day rewriting. Full day-by-day correction stays admin-only, in
+// /admin/users — see toggleStreakDay there.
+export async function extendStreakToTodayAsMod(targetId: string): Promise<void> {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) throw new Error('Sign in required')
+  const { data: profile } = await supabase.from('profiles').select('role').eq('id', user.id).single()
+  if (profile?.role !== 'mod' && profile?.role !== 'admin') throw new Error('Not authorized')
+
+  const admin = createAdminClient()
+  await setStreakDayOverride(admin, targetId, todayDateString(), true, user.id)
+  await recomputeStreakForUser(admin, targetId)
+  revalidatePath('/mod')
 }

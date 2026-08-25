@@ -3,7 +3,8 @@
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { manuallyAdjustStreak } from '@/lib/streak'
+import { setStreakDayOverride, clearStreakDayOverride, recomputeStreakForUser, todayDateString } from '@/lib/streak'
+import { AVAILABLE_BADGES } from '@/lib/badges'
 import type { UserRole, AccountStatus } from '@/lib/types'
 
 async function requireAdmin() {
@@ -35,6 +36,8 @@ export async function updateAccountStatus(targetId: string, status: AccountStatu
 
 export async function updateBadges(targetId: string, badges: string[]): Promise<void> {
   await requireAdmin()
+  const invalid = badges.filter((b) => !AVAILABLE_BADGES.includes(b as (typeof AVAILABLE_BADGES)[number]))
+  if (invalid.length) throw new Error(`Unknown badge: ${invalid.join(', ')}`)
   const admin = createAdminClient()
   const { error } = await admin.from('profiles').update({ badges }).eq('id', targetId)
   if (error) throw new Error(error.message)
@@ -53,11 +56,33 @@ export async function issueStrike(targetId: string, reason: string): Promise<voi
   revalidatePath(`/admin/users/${targetId}`)
 }
 
-export async function adjustUserStreak(targetId: string, newStreak: number): Promise<void> {
-  await requireAdmin()
-  if (!Number.isInteger(newStreak) || newStreak < 0) throw new Error('Streak must be a non-negative whole number')
+// The actual correction lever: force a specific date to count (or not)
+// toward the streak, then recompute current_streak/longest_streak from the
+// full, now-corrected history. Admin-only — this rewrites what happened on a
+// specific day, a heavier power than the mod support tool's "extend to
+// today" nudge.
+export async function toggleStreakDay(targetId: string, date: string, counts: boolean): Promise<void> {
+  const adminId = await requireAdmin()
   const admin = createAdminClient()
-  await manuallyAdjustStreak(admin, targetId, newStreak)
+  await setStreakDayOverride(admin, targetId, date, counts, adminId)
+  await recomputeStreakForUser(admin, targetId)
+  revalidatePath(`/admin/users/${targetId}`)
+}
+
+// Reverts a date back to trusting the real response, undoing toggleStreakDay.
+export async function resetStreakDay(targetId: string, date: string): Promise<void> {
+  await requireAdmin()
+  const admin = createAdminClient()
+  await clearStreakDayOverride(admin, targetId, date)
+  await recomputeStreakForUser(admin, targetId)
+  revalidatePath(`/admin/users/${targetId}`)
+}
+
+export async function extendStreakToToday(targetId: string): Promise<void> {
+  const adminId = await requireAdmin()
+  const admin = createAdminClient()
+  await setStreakDayOverride(admin, targetId, todayDateString(), true, adminId)
+  await recomputeStreakForUser(admin, targetId)
   revalidatePath(`/admin/users/${targetId}`)
 }
 

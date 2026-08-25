@@ -14,7 +14,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { Flame, LogOut, User, ShieldCheck, LifeBuoy, Settings } from 'lucide-react'
+import { Flame, LogOut, User, ShieldCheck, Settings } from 'lucide-react'
 import type { User as SupabaseUser } from '@supabase/supabase-js'
 import type { Profile } from '@/lib/types'
 
@@ -85,16 +85,10 @@ export default function Navbar() {
                     Profile
                   </DropdownMenuItem>
                   {(profile?.role === 'mod' || profile?.role === 'admin') && (
-                    <>
-                      <DropdownMenuItem onClick={() => window.location.href = '/mod'}>
-                        <ShieldCheck className="w-4 h-4 mr-2" />
-                        Moderate
-                      </DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => window.location.href = '/mod/support'}>
-                        <LifeBuoy className="w-4 h-4 mr-2" />
-                        Support
-                      </DropdownMenuItem>
-                    </>
+                    <DropdownMenuItem onClick={() => window.location.href = '/mod'}>
+                      <ShieldCheck className="w-4 h-4 mr-2" />
+                      Moderate
+                    </DropdownMenuItem>
                   )}
                   {profile?.role === 'admin' && (
                     <DropdownMenuItem onClick={() => window.location.href = '/admin'}>

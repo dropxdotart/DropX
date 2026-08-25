@@ -56,7 +56,7 @@ export default function ChallengeForm({ existing }: { existing?: ChallengeAdmin 
   }
 
   return (
-    <Card className="border-white/10 bg-card/60">
+    <Card className="border-white/10 bg-card">
       <CardHeader>
         <CardTitle className="text-base">{existing ? 'Edit challenge' : 'New challenge'}</CardTitle>
       </CardHeader>

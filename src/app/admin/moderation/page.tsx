@@ -19,12 +19,12 @@ export default async function AdminModerationPage() {
   return (
     <div className="space-y-4">
       <p className="text-sm text-muted-foreground">{entries.length} decision{entries.length === 1 ? '' : 's'}</p>
-      <div className="space-y-2">
+      <div className="rounded-xl border border-white/10 bg-card divide-y divide-white/5">
         {entries.map((entry) => (
-          <div key={entry.id} className="flex items-center gap-3 rounded-xl border border-white/10 bg-card/60 p-3">
+          <div key={entry.id} className="flex items-center gap-3 p-2.5">
             {entry.response.photo_url && (
               // eslint-disable-next-line @next/next/no-img-element -- external Storage URL
-              <img src={entry.response.photo_url} alt="" className="w-12 h-12 rounded-lg object-cover shrink-0" />
+              <img src={entry.response.photo_url} alt="" className="w-10 h-10 rounded-lg object-cover shrink-0" />
             )}
             <div className="min-w-0 flex-1 text-sm">
               <p>
