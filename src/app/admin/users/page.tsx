@@ -3,6 +3,7 @@ import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
 import UserDetailDialog from './UserDetailDialog'
+import CreateUserDialog from './CreateUserDialog'
 
 export default async function AdminUsersPage({
   searchParams,
@@ -24,9 +25,12 @@ export default async function AdminUsersPage({
 
   return (
     <div className="space-y-4">
-      <form className="flex gap-2" action="/admin/users">
-        <Input name="q" defaultValue={q ?? ''} placeholder="Search by @username" className="max-w-xs" />
-      </form>
+      <div className="flex items-center justify-between gap-2">
+        <form className="flex gap-2" action="/admin/users">
+          <Input name="q" defaultValue={q ?? ''} placeholder="Search by @username" className="max-w-xs" />
+        </form>
+        <CreateUserDialog />
+      </div>
 
       <div className="rounded-xl border border-white/10 bg-card overflow-x-auto">
         <table className="w-full text-sm">

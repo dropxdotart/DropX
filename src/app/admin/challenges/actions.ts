@@ -2,6 +2,9 @@
 
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
+import { getAppConfig } from '@/lib/config'
+import { etWindowToday } from '@/lib/time'
+import { findTodaysDrop } from '@/lib/drop'
 import type { ChallengeType } from '@/lib/types'
 
 async function requireAdmin() {
@@ -71,6 +74,53 @@ export async function updateChallenge(id: string, input: ChallengeInput): Promis
 
   if (error) throw new Error(error.message)
   revalidatePath('/admin/challenges')
+}
+
+// Assigns (or clears, if date is null) a pool challenge's scheduled_date —
+// the narrow action the calendar UI uses, separate from updateChallenge
+// since a date-only change shouldn't require the full edit form's payload.
+export async function setScheduledDate(challengeId: string, date: string | null): Promise<void> {
+  const supabase = await requireAdmin()
+
+  const { data: existing } = await supabase.from('challenges').select('drop_at').eq('id', challengeId).single()
+  if (existing?.drop_at) throw new Error('This challenge has already been used and can no longer be scheduled')
+
+  const { error } = await supabase.from('challenges').update({ scheduled_date: date }).eq('id', challengeId)
+  if (error) {
+    if (error.code === '23505') throw new Error('Another challenge is already scheduled for that date')
+    throw new Error(error.message)
+  }
+  revalidatePath('/admin/challenges')
+}
+
+// Forces today's challenge (scheduled, or the oldest pool item) to drop
+// immediately instead of waiting for the cron job's randomized time later
+// in the window — deliberately bypasses the window check entirely, but
+// keeps the same "already dropped today" guard the cron route uses, so
+// this can never double-drop. The heavy confirmation lives in the UI
+// (src/app/admin/challenges/ChallengeCalendar.tsx), not here — this action
+// itself has no extra prompt, since by the time it's called the UI has
+// already gated it.
+export async function pushChallengeNow(): Promise<{ challengeId: string }> {
+  const supabase = await requireAdmin()
+
+  const config = await getAppConfig(supabase)
+  const { start, end } = etWindowToday(config.drop_window_start_hour, config.drop_window_end_hour)
+  const result = await findTodaysDrop(supabase, start, end)
+
+  if (result.status === 'already_dropped') throw new Error("Today's challenge has already dropped")
+  if (result.status === 'pool_empty') throw new Error('Nothing to push — no challenge is scheduled for today and the pool is empty')
+
+  const { error } = await supabase
+    .from('challenges')
+    .update({ drop_at: new Date().toISOString() })
+    .eq('id', result.challengeId)
+  if (error) throw new Error(error.message)
+
+  revalidatePath('/admin/challenges')
+  revalidatePath('/')
+  revalidatePath('/feed')
+  return { challengeId: result.challengeId }
 }
 
 export async function deleteChallenge(id: string): Promise<void> {

@@ -4,7 +4,9 @@ import { buttonVariants } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Plus } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { etDateToday } from '@/lib/time'
 import ChallengeRowActions from './ChallengeRowActions'
+import ChallengeCalendar from './ChallengeCalendar'
 import type { ChallengeAdmin } from '@/lib/types'
 
 export default async function AdminChallengesPage() {
@@ -40,6 +42,8 @@ export default async function AdminChallengesPage() {
         </Link>
       </div>
 
+      <ChallengeCalendar items={items} todayDate={etDateToday()} />
+
       <div className="rounded-xl border border-white/10 bg-card overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
@@ -68,7 +72,7 @@ export default async function AdminChallengesPage() {
                     {c.drop_at ? (
                       <span className="text-xs text-muted-foreground">Used {new Date(c.drop_at).toLocaleDateString()}</span>
                     ) : c.scheduled_date ? (
-                      <Badge className="gap-1 border-0 gradient-hero text-white text-[10px] px-1.5 py-0">
+                      <Badge variant="outline" className="gap-1 border-[color:var(--neon-violet)]/40 text-[color:var(--neon-violet)] text-[10px] px-1.5 py-0">
                         Scheduled {c.scheduled_date}
                       </Badge>
                     ) : (

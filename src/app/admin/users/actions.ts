@@ -16,6 +16,39 @@ async function requireAdmin() {
   return user.id
 }
 
+// Creates a real, real-login-capable account directly from the admin panel
+// — the admin sets the password themselves and shares it out of band (no
+// invite-email flow exists yet, since SMTP isn't set up — see task #11).
+// Distinct from Handlers' createBot: this needs a real email + a password
+// the actual person can use, not throwaway values nobody will ever type.
+export async function createRealUser(username: string, email: string, password: string): Promise<{ id: string }> {
+  await requireAdmin()
+
+  const trimmedUsername = username.trim().toLowerCase().replace(/[^a-z0-9_]/g, '')
+  if (trimmedUsername.length < 3) throw new Error('Username needs at least 3 letters/numbers')
+  const trimmedEmail = email.trim()
+  if (!trimmedEmail.includes('@')) throw new Error('A valid email is required')
+  if (password.length < 6) throw new Error('Password must be at least 6 characters')
+
+  const admin = createAdminClient()
+  const { data: authUser, error } = await admin.auth.admin.createUser({
+    email: trimmedEmail,
+    password,
+    email_confirm: true,
+    user_metadata: { username: trimmedUsername },
+  })
+  if (error || !authUser.user) {
+    if (error?.message.includes('already been registered')) throw new Error('That email is already in use')
+    if (error?.message.includes('duplicate key') && error.message.includes('username')) {
+      throw new Error('That username is already taken')
+    }
+    throw new Error(error?.message ?? 'Failed to create account')
+  }
+
+  revalidatePath('/admin/users')
+  return { id: authUser.user.id }
+}
+
 export async function updateUserRole(targetId: string, role: UserRole): Promise<void> {
   await requireAdmin()
   const admin = createAdminClient()
