@@ -44,7 +44,9 @@ create table challenges (
 -- @tag; `display_name` is the editable name shown around the app.
 create table profiles (
   id uuid primary key references auth.users(id) on delete cascade,
-  username text unique,
+  -- Always lowercase — enforced below, not just client-side, so two users
+  -- can never end up with handles that only differ by case.
+  username text unique check (username = lower(username)),
   display_name text,
   display_name_changed_at timestamptz,
   current_streak int not null default 0,
@@ -107,7 +109,7 @@ begin
   perform set_config('app.bypass_display_name_cooldown', 'true', true);
   update profiles
   set
-    username = coalesce(new_username, username),
+    username = coalesce(lower(new_username), username),
     display_name = coalesce(new_display_name, display_name)
   where id = target_id;
 end;
@@ -204,7 +206,7 @@ create function public.handle_new_user()
 returns trigger as $$
 begin
   insert into public.profiles (id, username)
-  values (new.id, new.raw_user_meta_data ->> 'username');
+  values (new.id, lower(new.raw_user_meta_data ->> 'username'));
   return new;
 end;
 $$ language plpgsql security definer set search_path = public;

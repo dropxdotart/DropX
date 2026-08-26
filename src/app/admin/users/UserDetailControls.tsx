@@ -160,7 +160,7 @@ export default function UserDetailControls({ profile, streakDays }: { profile: P
         </SectionCard>
 
         <SectionCard title="Identity override">
-          <Input value={newUsername} onChange={(e) => setNewUsername(e.target.value)} placeholder="@username" />
+          <Input value={newUsername} onChange={(e) => setNewUsername(e.target.value.toLowerCase())} placeholder="@username" />
           <Input value={newDisplayName} onChange={(e) => setNewDisplayName(e.target.value)} placeholder="Display name" />
           <Button
             size="sm"
