@@ -1,21 +1,29 @@
 'use client'
 
 import { useState, useTransition } from 'react'
+import Link from 'next/link'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Switch } from '@/components/ui/switch'
+import { Button } from '@/components/ui/button'
+import { ShieldCheck, Settings as SettingsIcon, LogOut } from 'lucide-react'
 import { toast } from 'sonner'
+import { createClient } from '@/lib/supabase/client'
 import { setShowEveryoneTab, setShareToEveryone } from '@/app/profile/actions'
+import type { UserRole } from '@/lib/types'
 
 export default function SettingsCard({
   initialShowEveryone,
   initialShareToEveryone,
+  role,
 }: {
   initialShowEveryone: boolean
   initialShareToEveryone: boolean
+  role: UserRole
 }) {
   const [showEveryone, setShowEveryone] = useState(initialShowEveryone)
   const [shareToEveryone, setShareToEveryoneState] = useState(initialShareToEveryone)
   const [, startTransition] = useTransition()
+  const supabase = createClient()
 
   const handleShowEveryoneChange = (checked: boolean) => {
     setShowEveryone(checked)
@@ -41,6 +49,11 @@ export default function SettingsCard({
     })
   }
 
+  const handleSignOut = async () => {
+    await supabase.auth.signOut()
+    window.location.href = '/'
+  }
+
   return (
     <Card className="border-white/10 bg-card/60 backdrop-blur-sm">
       <CardHeader>
@@ -61,6 +74,26 @@ export default function SettingsCard({
           </div>
           <Switch checked={shareToEveryone} onCheckedChange={handleShareChange} />
         </div>
+
+        {(role === 'mod' || role === 'admin') && (
+          <div className="pt-1 space-y-2 border-t border-white/5">
+            <Link href="/mod" className="flex items-center gap-2 text-sm font-medium pt-3 hover:text-[color:var(--neon-violet)] transition-colors">
+              <ShieldCheck className="w-4 h-4" />
+              Moderate
+            </Link>
+            {role === 'admin' && (
+              <Link href="/admin" className="flex items-center gap-2 text-sm font-medium hover:text-[color:var(--neon-violet)] transition-colors">
+                <SettingsIcon className="w-4 h-4" />
+                Admin
+              </Link>
+            )}
+          </div>
+        )}
+
+        <Button variant="destructive" size="sm" className="w-full" onClick={handleSignOut}>
+          <LogOut className="w-3.5 h-3.5 mr-1.5" />
+          Sign out
+        </Button>
       </CardContent>
     </Card>
   )

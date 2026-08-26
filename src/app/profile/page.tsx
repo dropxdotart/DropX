@@ -87,6 +87,7 @@ export default async function ProfilePage() {
         <SettingsCard
           initialShowEveryone={profile?.show_everyone_tab ?? true}
           initialShareToEveryone={profile?.share_to_everyone ?? true}
+          role={profile?.role ?? 'user'}
         />
       </div>
     </div>

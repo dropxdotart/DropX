@@ -5,8 +5,15 @@ import Image from 'next/image'
 import { usePathname } from 'next/navigation'
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { LayoutGrid } from 'lucide-react'
+import { LayoutGrid, Puzzle, Trophy, CircleUserRound } from 'lucide-react'
 import { cn } from '@/lib/utils'
+
+const SIDE_TABS = [
+  { href: '/feed', label: 'Feed', icon: LayoutGrid },
+  { href: '/play', label: 'Play', icon: Puzzle },
+  { href: '/leaderboard', label: 'Leaderboard', icon: Trophy },
+  { href: '/profile', label: 'Profile', icon: CircleUserRound },
+] as const
 
 export default function BottomNav() {
   const pathname = usePathname()
@@ -23,19 +30,16 @@ export default function BottomNav() {
 
   if (!signedIn) return null
 
-  // Profile is deliberately not a tab here — it's reached from the avatar
-  // (PFP) in the top bar instead, matching how BeReal/Snap treat "you" as
-  // an icon rather than a nav destination.
-  const tabs = [
-    { href: '/', label: 'Drop' },
-    { href: '/feed', label: 'Feed' },
-  ] as const
+  const dropActive = pathname === '/'
+  const leftTabs = SIDE_TABS.slice(0, 2)
+  const rightTabs = SIDE_TABS.slice(2)
 
   return (
     <nav className="fixed bottom-0 inset-x-0 z-50 border-t border-white/10 bg-background/90 backdrop-blur-md">
-      <div className="max-w-3xl mx-auto grid grid-cols-2">
-        {tabs.map((tab) => {
+      <div className="max-w-3xl mx-auto grid grid-cols-5 items-end">
+        {leftTabs.map((tab) => {
           const active = pathname === tab.href
+          const Icon = tab.icon
           return (
             <Link
               key={tab.href}
@@ -45,17 +49,39 @@ export default function BottomNav() {
                 active ? 'text-[color:var(--neon-violet)]' : 'text-muted-foreground hover:text-foreground'
               )}
             >
-              {tab.href === '/' ? (
-                <Image
-                  src="/dropx-icon.png"
-                  alt=""
-                  width={20}
-                  height={20}
-                  className={active ? 'drop-shadow-[0_0_6px_oklch(0.58_0.25_295/0.7)]' : 'opacity-70'}
-                />
-              ) : (
-                <LayoutGrid className="w-5 h-5" />
+              <Icon className="w-5 h-5" />
+              {tab.label}
+            </Link>
+          )
+        })}
+
+        <Link href="/" className="flex flex-col items-center -mt-4">
+          <div
+            className={cn(
+              'rounded-full p-3.5 gradient-hero glow-violet ring-4 ring-background transition-transform',
+              dropActive ? 'scale-105' : 'scale-100'
+            )}
+          >
+            <Image src="/dropx-icon.png" alt="Drop" width={26} height={26} />
+          </div>
+          <span className={cn('text-[10px] font-medium pt-1', dropActive ? 'text-[color:var(--neon-violet)]' : 'text-muted-foreground')}>
+            Drop
+          </span>
+        </Link>
+
+        {rightTabs.map((tab) => {
+          const active = pathname === tab.href
+          const Icon = tab.icon
+          return (
+            <Link
+              key={tab.href}
+              href={tab.href}
+              className={cn(
+                'flex flex-col items-center gap-1 py-2.5 text-xs font-medium transition-colors',
+                active ? 'text-[color:var(--neon-violet)]' : 'text-muted-foreground hover:text-foreground'
               )}
+            >
+              <Icon className="w-5 h-5" />
               {tab.label}
             </Link>
           )
