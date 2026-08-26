@@ -4,12 +4,11 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog'
 import { Badge } from '@/components/ui/badge'
-import { Loader2, ExternalLink } from 'lucide-react'
+import { Loader2, ExternalLink, Flame } from 'lucide-react'
 import { toast } from 'sonner'
-import { cn } from '@/lib/utils'
 import { getUserDetailData } from './actions'
 import UserDetailControls from './UserDetailControls'
-import StrikeHistory from './StrikeHistory'
+import { RoleBadge, StatusBadge, UserAvatar } from './UserBadges'
 import type { Profile, Strike, UserRole, AccountStatus } from '@/lib/types'
 import type { StreakDay } from '@/lib/streak'
 
@@ -45,9 +44,6 @@ export default function UserDetailDialog({
   const handleOpenChange = (next: boolean) => {
     setOpen(next)
     if (!next) {
-      // Drop the cached snapshot on close so reopening always re-fetches —
-      // otherwise a change made during this session (a streak edit, a role
-      // change) wouldn't show up until a full page reload.
       setData(null)
       return
     }
@@ -73,17 +69,7 @@ export default function UserDetailDialog({
           {username && <span className="text-muted-foreground ml-1.5">@{username}</span>}
         </td>
         <td className="p-2.5">
-          <Badge
-            variant="outline"
-            className={cn(
-              'capitalize text-[10px] px-1.5 py-0',
-              role === 'admin' && 'border-[color:var(--neon-violet)]/40 text-[color:var(--neon-violet)]',
-              role === 'mod' && 'border-[color:var(--neon-cyan)]/40 text-[color:var(--neon-cyan)]',
-              role === 'user' && 'border-white/15 text-muted-foreground'
-            )}
-          >
-            {role}
-          </Badge>
+          <RoleBadge role={role} />
         </td>
         <td className="p-2.5">
           {badges.length > 0 ? (
@@ -100,33 +86,48 @@ export default function UserDetailDialog({
           )}
         </td>
         <td className="p-2.5">
-          <Badge
-            variant="outline"
-            className={cn(
-              'capitalize text-[10px] px-1.5 py-0',
-              accountStatus !== 'active' ? 'border-destructive/40 text-destructive' : 'border-white/15 text-muted-foreground'
-            )}
-          >
-            {accountStatus}
-          </Badge>
+          <StatusBadge status={accountStatus} />
         </td>
         <td className="p-2.5 text-muted-foreground whitespace-nowrap">{joined}</td>
       </tr>
 
       <Dialog open={open} onOpenChange={handleOpenChange}>
-        <DialogContent className="sm:max-w-2xl max-h-[85vh] overflow-y-auto">
-          <DialogHeader>
-            <div className="flex items-center justify-between gap-2 pr-6">
-              <DialogTitle>{name}</DialogTitle>
-              <Link
-                href={`/admin/users/${userId}`}
-                className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1 shrink-0"
-              >
-                Open full page
-                <ExternalLink className="w-3 h-3" />
-              </Link>
+        <DialogContent className="sm:max-w-3xl max-h-[85vh] overflow-y-auto">
+          <Link
+            href={`/admin/users/${userId}`}
+            title="Open full page"
+            className="absolute top-2 right-10 inline-flex size-7 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          >
+            <ExternalLink className="w-3.5 h-3.5" />
+          </Link>
+
+          <DialogHeader className="flex-row items-start gap-3">
+            <UserAvatar name={name} role={role} />
+            <div className="min-w-0 flex-1 space-y-0.5 pr-16">
+              <div className="flex flex-wrap items-center gap-1.5">
+                <DialogTitle className="text-lg">{name}</DialogTitle>
+                <RoleBadge role={role} />
+                {accountStatus !== 'active' && <StatusBadge status={accountStatus} />}
+              </div>
+              {username && <DialogDescription>@{username}</DialogDescription>}
+              <p className="text-xs text-muted-foreground pt-0.5">
+                Joined {joined}
+                {data && (
+                  <>
+                    {' · '}
+                    {data.profile.last_answered_date
+                      ? `Last answered ${new Date(data.profile.last_answered_date + 'T00:00:00Z').toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`
+                      : 'Never answered'}
+                    {data.profile.current_streak > 0 && (
+                      <span className="ml-1.5 inline-flex items-center gap-0.5">
+                        <Flame className="w-3 h-3 text-[color:var(--neon-orange)]" fill="currentColor" />
+                        {data.profile.current_streak}
+                      </span>
+                    )}
+                  </>
+                )}
+              </p>
             </div>
-            {username && <DialogDescription>@{username}</DialogDescription>}
           </DialogHeader>
 
           {loading || !data ? (
@@ -134,10 +135,7 @@ export default function UserDetailDialog({
               <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
             </div>
           ) : (
-            <div className="space-y-4">
-              <UserDetailControls profile={data.profile} streakDays={data.streakDays} onMutated={refetch} />
-              <StrikeHistory strikes={data.strikes} />
-            </div>
+            <UserDetailControls profile={data.profile} streakDays={data.streakDays} strikes={data.strikes} onMutated={refetch} />
           )}
         </DialogContent>
       </Dialog>

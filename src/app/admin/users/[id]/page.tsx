@@ -2,7 +2,7 @@ import { notFound } from 'next/navigation'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getStreakCalendar } from '@/lib/streak'
 import UserDetailControls from '../UserDetailControls'
-import StrikeHistory from '../StrikeHistory'
+import { RoleBadge, StatusBadge, UserAvatar } from '../UserBadges'
 import type { Profile, Strike } from '@/lib/types'
 
 type StrikeWithIssuer = Strike & { issuer: { username: string | null; display_name: string | null } | null }
@@ -25,17 +25,27 @@ export default async function AdminUserDetailPage({ params }: { params: Promise<
     .order('created_at', { ascending: false })
 
   const streakDays = await getStreakCalendar(supabase, id, 120)
+  const name = profile.display_name ?? profile.username ?? 'Someone'
 
   return (
     <div className="space-y-4">
-      <div>
-        <h2 className="text-lg font-semibold">{profile.display_name ?? profile.username ?? 'Someone'}</h2>
-        <p className="text-sm text-muted-foreground">@{profile.username}</p>
+      <div className="flex items-start gap-3">
+        <UserAvatar name={name} role={profile.role} />
+        <div className="space-y-0.5">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <h2 className="text-lg font-semibold">{name}</h2>
+            <RoleBadge role={profile.role} />
+            {profile.account_status !== 'active' && <StatusBadge status={profile.account_status} />}
+          </div>
+          {profile.username && <p className="text-sm text-muted-foreground">@{profile.username}</p>}
+        </div>
       </div>
 
-      <UserDetailControls profile={profile as Profile} streakDays={streakDays} />
-
-      <StrikeHistory strikes={(strikes ?? []) as unknown as StrikeWithIssuer[]} />
+      <UserDetailControls
+        profile={profile as Profile}
+        streakDays={streakDays}
+        strikes={(strikes ?? []) as unknown as StrikeWithIssuer[]}
+      />
     </div>
   )
 }
