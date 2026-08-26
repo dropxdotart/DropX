@@ -2,6 +2,8 @@
 
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
+import { logAdminAction } from '@/lib/audit'
 
 export async function setShowEveryoneTab(show: boolean): Promise<void> {
   const supabase = await createClient()
@@ -45,6 +47,8 @@ export async function setDisplayName(displayName: string): Promise<void> {
   if (!trimmed) throw new Error('Display name cannot be empty')
   if (trimmed.length > 30) throw new Error('Display name must be 30 characters or fewer')
 
+  const { data: current } = await supabase.from('profiles').select('display_name').eq('id', user.id).single()
+
   const { error } = await supabase
     .from('profiles')
     .update({ display_name: trimmed })
@@ -56,6 +60,13 @@ export async function setDisplayName(displayName: string): Promise<void> {
     }
     throw new Error(error.message)
   }
+
+  await logAdminAction(createAdminClient(), {
+    actorId: user.id,
+    targetUserId: user.id,
+    action: 'display_name_changed',
+    detail: `Display name changed from "${current?.display_name ?? '—'}" to "${trimmed}"`,
+  })
 
   revalidatePath('/feed')
   revalidatePath('/profile')

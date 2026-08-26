@@ -27,6 +27,7 @@ export const ADMIN_ACTION_LABELS: Record<string, string> = {
   status_changed: 'Status changed',
   badges_updated: 'Badges updated',
   identity_overridden: 'Identity overridden',
+  display_name_changed: 'Display name changed',
   strike_issued: 'Strike issued',
   strike_revoked: 'Strike revoked',
   streak_day_overridden: 'Streak day edited',
