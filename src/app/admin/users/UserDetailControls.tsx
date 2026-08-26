@@ -70,6 +70,14 @@ export default function UserDetailControls({ profile, streakDays }: { profile: P
 
   return (
     <div className="space-y-4">
+      <p className="text-xs text-muted-foreground">
+        Joined {new Date(profile.created_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
+        {' · '}
+        {profile.last_answered_date
+          ? `Last answered ${new Date(profile.last_answered_date + 'T00:00:00Z').toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`
+          : 'Never answered'}
+      </p>
+
       <div className="grid gap-4 sm:grid-cols-2">
         <SectionCard title="Role">
           <Select value={role} onChange={(e) => setRole(e.target.value as UserRole)}>
@@ -77,7 +85,7 @@ export default function UserDetailControls({ profile, streakDays }: { profile: P
             <option value="mod">Mod</option>
             <option value="admin">Admin</option>
           </Select>
-          <Button size="sm" disabled={busy !== null || role === profile.role} onClick={saveRole}>
+          <Button size="sm" variant="secondary" disabled={busy !== null || role === profile.role} onClick={saveRole}>
             {busy === 'role' && <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />}
             Save role
           </Button>
@@ -91,6 +99,7 @@ export default function UserDetailControls({ profile, streakDays }: { profile: P
           </Select>
           <Button
             size="sm"
+            variant="secondary"
             disabled={busy !== null || status === profile.account_status}
             onClick={() => run('status', () => updateAccountStatus(profile.id, status), 'Status updated')}
           >
@@ -114,10 +123,12 @@ export default function UserDetailControls({ profile, streakDays }: { profile: P
                   className="outline-none"
                 >
                   <Badge
-                    variant={active ? 'default' : 'secondary'}
+                    variant="secondary"
                     className={cn(
                       'cursor-pointer select-none border transition-colors',
-                      active ? 'border-transparent gradient-hero text-white' : 'border-white/15 text-muted-foreground hover:text-foreground'
+                      active
+                        ? 'border-[color:var(--neon-violet)]/50 bg-[color:var(--neon-violet)]/15 text-white'
+                        : 'border-white/15 text-muted-foreground hover:text-foreground'
                     )}
                   >
                     {b}
@@ -128,6 +139,7 @@ export default function UserDetailControls({ profile, streakDays }: { profile: P
           </div>
           <Button
             size="sm"
+            variant="secondary"
             disabled={busy !== null}
             onClick={() => run('badges', () => updateBadges(profile.id, badges), 'Badges saved')}
           >
@@ -164,6 +176,7 @@ export default function UserDetailControls({ profile, streakDays }: { profile: P
           <Input value={newDisplayName} onChange={(e) => setNewDisplayName(e.target.value)} placeholder="Display name" />
           <Button
             size="sm"
+            variant="secondary"
             disabled={busy !== null}
             onClick={() =>
               run(

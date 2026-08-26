@@ -50,6 +50,8 @@ export type Profile = {
   show_everyone_tab: boolean
   share_to_everyone: boolean
   account_status: AccountStatus
+  created_at: string
+  is_bot: boolean
 }
 
 export type Strike = {

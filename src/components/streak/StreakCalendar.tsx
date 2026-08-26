@@ -120,13 +120,19 @@ export default function StreakCalendar({
               const dayNum = Number(cell.date.slice(8, 10))
               const key = cell.date
               const isPending = pendingKey === key
+              // Click activates a day (counts=true); click again to deactivate
+              // (counts=false) — a plain toggle, not a click-vs-hover trick, so
+              // there's nothing ambiguous about what a click does. Resetting an
+              // override back to the real answer is a separate, small,
+              // always-visible control so it can never intercept a click meant
+              // for the cell itself.
               return (
                 <div key={key} className="relative">
                   <button
                     type="button"
                     disabled={!editable || isPending}
                     onClick={() => editable && onToggleDay && run(key, () => onToggleDay(key, !cell.counts))}
-                    title={cell.counts ? 'Counts toward the streak' : cell.hasResponse ? 'Missed' : 'No activity'}
+                    title={cell.counts ? 'Counts toward the streak — click to remove' : cell.hasResponse ? 'Missed — click to count it' : 'No activity — click to count it'}
                     className={cn(
                       'w-full aspect-square rounded-md text-xs font-medium flex items-center justify-center transition-colors',
                       cell.counts ? 'bg-green-500/25 text-green-300' : cell.hasResponse ? 'bg-destructive/20 text-destructive' : 'bg-white/5 text-muted-foreground',
@@ -136,10 +142,7 @@ export default function StreakCalendar({
                   >
                     {isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : dayNum}
                   </button>
-                  {cell.overridden && (
-                    <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-[color:var(--neon-violet)] ring-1 ring-background" />
-                  )}
-                  {cell.overridden && onResetDay && editable && (
+                  {cell.overridden && onResetDay && editable ? (
                     <button
                       type="button"
                       title="Reset to actual answer"
@@ -148,10 +151,14 @@ export default function StreakCalendar({
                         e.stopPropagation()
                         run(key, () => onResetDay(key))
                       }}
-                      className="absolute inset-0 flex items-center justify-center opacity-0 hover:opacity-100 bg-black/70 rounded-md transition-opacity"
+                      className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-[color:var(--neon-violet)] ring-1 ring-background flex items-center justify-center hover:brightness-125"
                     >
-                      <RotateCcw className="w-3 h-3 text-white" />
+                      <RotateCcw className="w-2.5 h-2.5 text-white" />
                     </button>
+                  ) : (
+                    cell.overridden && (
+                      <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-[color:var(--neon-violet)] ring-1 ring-background" />
+                    )
                   )}
                 </div>
               )
