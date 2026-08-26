@@ -4,6 +4,16 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/* Admin is a dense data tool, not a brand moment — Orbitron (the sci-fi
+   display font used for the app's headings) reads as a game HUD when it's
+   sitting on every card title ("Role", "Streak", "Badges"...). Swap it for
+   the same geometric sans already used for body text, scoped to /admin only
+   so the consumer app's headings (logo, "Welcome back", challenge prompts)
+   keep the brand font. */
+.admin-scope {
+  --font-heading: var(--font-space-grotesk);
+}
+
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
