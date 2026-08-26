@@ -179,7 +179,9 @@ create table strikes (
   issued_by uuid not null references profiles(id),
   reason text,
   response_id uuid references responses(id) on delete set null,
-  created_at timestamptz not null default now()
+  created_at timestamptz not null default now(),
+  revoked_at timestamptz,
+  revoked_by uuid references profiles(id)
 );
 
 create function public.increment_strike_count()
@@ -194,6 +196,23 @@ create trigger increment_strike_count
   after insert on strikes
   for each row execute procedure increment_strike_count();
 
+-- Mirrors increment_strike_count: revoking a strike is a soft-delete (the
+-- row stays, with who/when it was reversed) rather than a real delete, so
+-- strike_count needs the matching decrement on the way back down.
+create function public.decrement_strike_count()
+returns trigger as $$
+begin
+  if new.revoked_at is not null and old.revoked_at is null then
+    update profiles set strike_count = greatest(strike_count - 1, 0) where id = new.user_id;
+  end if;
+  return new;
+end;
+$$ language plpgsql security definer set search_path = public;
+
+create trigger decrement_strike_count
+  after update on strikes
+  for each row execute procedure decrement_strike_count();
+
 -- ─── MODERATION LOG ──────────────────────────────────────────────────────────
 -- Audit trail for every approve/reject/reversal decision on a response.
 create table moderation_log (
@@ -201,6 +220,20 @@ create table moderation_log (
   response_id uuid not null references responses(id) on delete cascade,
   moderator_id uuid not null references profiles(id),
   decision moderation_status not null,
+  created_at timestamptz not null default now()
+);
+
+-- ─── ADMIN ACTIONS (per-user activity log) ──────────────────────────────────
+-- Every admin mutation made against a profile (role/status/badges/identity/
+-- strikes/streak edits) gets one row here, so the user detail view can show
+-- a single chronological "what happened to this account" timeline instead of
+-- piecing it together from five different tables.
+create table admin_actions (
+  id uuid primary key default uuid_generate_v4(),
+  target_user_id uuid not null references profiles(id) on delete cascade,
+  actor_id uuid not null references profiles(id),
+  action text not null,
+  detail text,
   created_at timestamptz not null default now()
 );
 
@@ -228,6 +261,7 @@ alter table follows enable row level security;
 alter table app_config enable row level security;
 alter table strikes enable row level security;
 alter table moderation_log enable row level security;
+alter table admin_actions enable row level security;
 
 create policy "Authenticated users can view app config" on app_config
   for select to authenticated using (true);
@@ -246,6 +280,11 @@ create policy "Admins can view all strikes" on strikes
   );
 
 create policy "Admins can view moderation log" on moderation_log
+  for select to authenticated using (
+    exists (select 1 from profiles where id = auth.uid() and role = 'admin')
+  );
+
+create policy "Admins can view admin actions" on admin_actions
   for select to authenticated using (
     exists (select 1 from profiles where id = auth.uid() and role = 'admin')
   );

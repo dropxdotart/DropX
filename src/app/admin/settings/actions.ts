@@ -2,6 +2,8 @@
 
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
+import { logAdminAction } from '@/lib/audit'
 import type { AppConfig } from '@/lib/config'
 
 export async function updateAppConfig(input: AppConfig): Promise<void> {
@@ -30,5 +32,10 @@ export async function updateAppConfig(input: AppConfig): Promise<void> {
     .eq('id', true)
 
   if (error) throw new Error(error.message)
+  await logAdminAction(createAdminClient(), {
+    actorId: user.id,
+    action: 'settings_updated',
+    detail: `Drop window ${input.drop_window_start_hour}:00–${input.drop_window_end_hour}:00, photo grace ${input.photo_grace_minutes}m`,
+  })
   revalidatePath('/admin/settings')
 }

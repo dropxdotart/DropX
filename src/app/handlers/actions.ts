@@ -8,6 +8,7 @@ import { updateStreakForAnswer, setStreakDayOverride, recomputeStreakForUser, to
 import { isHandler } from '@/lib/handlers'
 import { getAppConfig } from '@/lib/config'
 import { etWindowToday } from '@/lib/time'
+import { logAdminAction } from '@/lib/audit'
 
 async function requireHandler() {
   const supabase = await createClient()
@@ -68,6 +69,13 @@ export async function createBot(name: string): Promise<{ id: string; streak: num
     )
   )
   const { currentStreak } = await recomputeStreakForUser(admin, authUser.user.id)
+
+  await logAdminAction(admin, {
+    actorId: callerId,
+    targetUserId: authUser.user.id,
+    action: 'bot_created',
+    detail: `Bot created (@${username}), starting streak ${currentStreak}`,
+  })
 
   revalidatePath('/handlers')
   return { id: authUser.user.id, streak: currentStreak }

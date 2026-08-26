@@ -9,13 +9,17 @@ import { toast } from 'sonner'
 import { getUserDetailData } from './actions'
 import UserDetailControls from './UserDetailControls'
 import { RoleBadge, StatusBadge, UserAvatar } from './UserBadges'
-import type { Profile, Strike, UserRole, AccountStatus } from '@/lib/types'
+import type { Profile, Strike, AdminAction, UserRole, AccountStatus } from '@/lib/types'
 import type { StreakDay } from '@/lib/streak'
 
 type Data = {
   profile: Profile
-  strikes: (Strike & { issuer: { username: string | null; display_name: string | null } | null })[]
+  strikes: (Strike & {
+    issuer: { username: string | null; display_name: string | null } | null
+    revoker: { username: string | null; display_name: string | null } | null
+  })[]
   streakDays: StreakDay[]
+  actions: (AdminAction & { actor: { username: string | null; display_name: string | null } | null })[]
 }
 
 export default function UserDetailDialog({
@@ -135,7 +139,13 @@ export default function UserDetailDialog({
               <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
             </div>
           ) : (
-            <UserDetailControls profile={data.profile} streakDays={data.streakDays} strikes={data.strikes} onMutated={refetch} />
+            <UserDetailControls
+              profile={data.profile}
+              streakDays={data.streakDays}
+              strikes={data.strikes}
+              actions={data.actions}
+              onMutated={refetch}
+            />
           )}
         </DialogContent>
       </Dialog>

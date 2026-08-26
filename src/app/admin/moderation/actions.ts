@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { logAdminAction } from '@/lib/audit'
 
 // Flips a final decision (approved <-> rejected) and logs the reversal as
 // its own moderation_log entry, so the log shows full history rather than
@@ -18,7 +19,7 @@ export async function reverseModeration(responseId: string): Promise<void> {
   if (profile?.role !== 'admin') throw new Error('Not authorized')
 
   const admin = createAdminClient()
-  const { data: current } = await admin.from('responses').select('moderation_status').eq('id', responseId).single()
+  const { data: current } = await admin.from('responses').select('moderation_status, user_id, challenges(prompt)').eq('id', responseId).single()
   if (!current) throw new Error('Response not found')
   if (current.moderation_status === 'pending') throw new Error('Nothing to reverse — still pending')
 
@@ -34,6 +35,14 @@ export async function reverseModeration(responseId: string): Promise<void> {
     response_id: responseId,
     moderator_id: user.id,
     decision: newStatus,
+  })
+
+  const prompt = (current.challenges as unknown as { prompt: string } | null)?.prompt
+  await logAdminAction(admin, {
+    actorId: user.id,
+    targetUserId: current.user_id,
+    action: 'moderation_reversed',
+    detail: `Decision reversed to ${newStatus}${prompt ? ` on "${prompt}"` : ''}`,
   })
 
   revalidatePath('/admin/moderation')

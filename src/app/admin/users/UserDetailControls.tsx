@@ -7,25 +7,31 @@ import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Select } from '@/components/ui/select'
 import { Badge } from '@/components/ui/badge'
-import { Loader2 } from 'lucide-react'
+import { Loader2, Undo2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import { AVAILABLE_BADGES } from '@/lib/badges'
+import { ADMIN_ACTION_LABELS } from '@/lib/audit'
 import StreakCalendar from '@/components/streak/StreakCalendar'
 import {
   updateUserRole,
   updateAccountStatus,
   updateBadges,
   issueStrike,
+  revokeStrike,
   toggleStreakDay,
   resetStreakDay,
   extendStreakToToday,
   overrideIdentity,
 } from './actions'
-import type { Profile, Strike, UserRole, AccountStatus } from '@/lib/types'
+import type { Profile, Strike, AdminAction, UserRole, AccountStatus } from '@/lib/types'
 import type { StreakDay } from '@/lib/streak'
 
-type StrikeWithIssuer = Strike & { issuer: { username: string | null; display_name: string | null } | null }
+type StrikeWithIssuer = Strike & {
+  issuer: { username: string | null; display_name: string | null } | null
+  revoker: { username: string | null; display_name: string | null } | null
+}
+type ActionWithActor = AdminAction & { actor: { username: string | null; display_name: string | null } | null }
 
 function SectionCard({ title, action, children }: { title: string; action?: React.ReactNode; children: React.ReactNode }) {
   return (
@@ -47,11 +53,13 @@ export default function UserDetailControls({
   profile,
   streakDays,
   strikes,
+  actions,
   onMutated,
 }: {
   profile: Profile
   streakDays: StreakDay[]
   strikes: StrikeWithIssuer[]
+  actions: ActionWithActor[]
   // Only set inside the modal (UserDetailDialog) — that view holds its own
   // fetched copy of the data, so a mutation needs to explicitly trigger a
   // re-fetch to show up. The standalone page re-renders on its own (Server
@@ -85,12 +93,14 @@ export default function UserDetailControls({
   const saveRole = () => {
     if (role === 'admin' && !confirm(`Grant ${profile.username ?? 'this user'} admin access?`)) return
     if (role !== 'admin' && !confirm(`Change ${profile.username ?? 'this user'}'s role to "${role}"?`)) return
-    run('role', () => updateUserRole(profile.id, role), 'Role updated')
+    run('role', () => updateUserRole(profile.id, role, profile.role), 'Role updated')
   }
 
   const toggleBadge = (badge: string) => {
     setBadges((prev) => (prev.includes(badge) ? prev.filter((b) => b !== badge) : [...prev, badge]))
   }
+
+  const activeStrikeCount = strikes.filter((s) => !s.revoked_at).length
 
   return (
     <div className="space-y-4">
@@ -123,7 +133,7 @@ export default function UserDetailControls({
                 size="sm"
                 variant="secondary"
                 disabled={busy !== null || status === profile.account_status}
-                onClick={() => run('status', () => updateAccountStatus(profile.id, status), 'Status updated')}
+                onClick={() => run('status', () => updateAccountStatus(profile.id, status, profile.account_status), 'Status updated')}
               >
                 {busy === 'status' && <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />}
                 Save
@@ -143,7 +153,13 @@ export default function UserDetailControls({
                 size="sm"
                 variant="secondary"
                 disabled={busy !== null}
-                onClick={() => run('identity', () => overrideIdentity(profile.id, newUsername, newDisplayName), 'Identity updated')}
+                onClick={() =>
+                  run(
+                    'identity',
+                    () => overrideIdentity(profile.id, newUsername, newDisplayName, profile.username, profile.display_name),
+                    'Identity updated'
+                  )
+                }
               >
                 {busy === 'identity' && <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />}
                 Save
@@ -182,7 +198,7 @@ export default function UserDetailControls({
                 size="sm"
                 variant="secondary"
                 disabled={busy !== null}
-                onClick={() => run('badges', () => updateBadges(profile.id, badges), 'Badges saved')}
+                onClick={() => run('badges', () => updateBadges(profile.id, badges, profile.badges), 'Badges saved')}
               >
                 {busy === 'badges' && <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />}
                 Save badges
@@ -192,7 +208,7 @@ export default function UserDetailControls({
 
           <SectionCard
             title="Strikes"
-            action={strikes.length > 0 ? <Badge variant="destructive" className="text-[10px] px-1.5 py-0">{strikes.length}</Badge> : undefined}
+            action={activeStrikeCount > 0 ? <Badge variant="destructive" className="text-[10px] px-1.5 py-0">{activeStrikeCount}</Badge> : undefined}
           >
             <div className="flex gap-2">
               <Textarea
@@ -221,16 +237,39 @@ export default function UserDetailControls({
             {strikes.length === 0 ? (
               <p className="text-xs text-muted-foreground">No strikes.</p>
             ) : (
-              <div className="max-h-32 space-y-2 overflow-y-auto border-t border-white/10 pt-2">
-                {strikes.map((s) => (
-                  <div key={s.id} className="text-xs border-b border-white/5 pb-2 last:border-0 last:pb-0">
-                    <p className="text-muted-foreground">
-                      {new Date(s.created_at).toLocaleString()} — by{' '}
-                      {s.issuer?.display_name ?? s.issuer?.username ?? 'Someone'}
-                    </p>
-                    {s.reason && <p>{s.reason}</p>}
-                  </div>
-                ))}
+              <div className="max-h-40 space-y-2 overflow-y-auto border-t border-white/10 pt-2">
+                {strikes.map((s) => {
+                  const revoking = busy === `revoke-${s.id}`
+                  return (
+                    <div key={s.id} className="text-xs border-b border-white/5 pb-2 last:border-0 last:pb-0">
+                      <div className="flex items-start justify-between gap-2">
+                        <p className={cn('text-muted-foreground', s.revoked_at && 'line-through opacity-60')}>
+                          {new Date(s.created_at).toLocaleString()} — by{' '}
+                          {s.issuer?.display_name ?? s.issuer?.username ?? 'Someone'}
+                        </p>
+                        {!s.revoked_at && (
+                          <button
+                            type="button"
+                            title="Revoke this strike"
+                            disabled={busy !== null}
+                            onClick={() => run(`revoke-${s.id}`, () => revokeStrike(s.id), 'Strike revoked')}
+                            className="shrink-0 flex items-center gap-1 text-muted-foreground hover:text-foreground disabled:opacity-50"
+                          >
+                            {revoking ? <Loader2 className="w-3 h-3 animate-spin" /> : <Undo2 className="w-3 h-3" />}
+                            Revoke
+                          </button>
+                        )}
+                      </div>
+                      {s.reason && <p className={cn(s.revoked_at && 'line-through opacity-60')}>{s.reason}</p>}
+                      {s.revoked_at && (
+                        <p className="text-[color:var(--neon-violet)]">
+                          Revoked {new Date(s.revoked_at).toLocaleString()} by{' '}
+                          {s.revoker?.display_name ?? s.revoker?.username ?? 'Someone'}
+                        </p>
+                      )}
+                    </div>
+                  )
+                })}
               </div>
             )}
           </SectionCard>
@@ -257,6 +296,29 @@ export default function UserDetailControls({
               await onMutated?.()
             }}
           />
+        </CardContent>
+      </Card>
+
+      <Card className="border-white/10 bg-card">
+        <CardHeader><CardTitle className="text-sm">Activity</CardTitle></CardHeader>
+        <CardContent>
+          {actions.length === 0 ? (
+            <p className="text-xs text-muted-foreground">No admin actions on this account yet.</p>
+          ) : (
+            <div className="max-h-56 space-y-2 overflow-y-auto">
+              {actions.map((a) => (
+                <div key={a.id} className="text-xs border-b border-white/5 pb-2 last:border-0 last:pb-0">
+                  <p>
+                    <span className="font-medium text-white">{ADMIN_ACTION_LABELS[a.action] ?? a.action}</span>{' '}
+                    <span className="text-muted-foreground">
+                      by {a.actor?.display_name ?? a.actor?.username ?? 'Someone'} · {new Date(a.created_at).toLocaleString()}
+                    </span>
+                  </p>
+                  {a.detail && <p className="text-muted-foreground">{a.detail}</p>}
+                </div>
+              ))}
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>

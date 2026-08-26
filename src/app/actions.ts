@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { updateStreakForAnswer } from '@/lib/streak'
+import { logAdminAction } from '@/lib/audit'
 
 type SubmitResult = {
   id: string
@@ -123,6 +124,7 @@ export async function deleteMyResponse(responseId: string): Promise<void> {
   if (!updated) throw new Error('Nothing to delete')
 
   await admin.from('response_deletions').insert({ response_id: responseId, user_id: user.id })
+  await logAdminAction(admin, { actorId: user.id, targetUserId: user.id, action: 'answer_deleted', detail: 'Deleted their own answer' })
 
   revalidatePath('/')
   revalidatePath('/feed')

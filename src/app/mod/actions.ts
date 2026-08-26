@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { updateStreakForAnswer, setStreakDayOverride, recomputeStreakForUser, todayDateString } from '@/lib/streak'
+import { logAdminAction } from '@/lib/audit'
 
 type ModerationResult = { alreadyHandled: boolean }
 
@@ -37,7 +38,7 @@ async function moderatePhoto(responseId: string, approve: boolean): Promise<Mode
     .update({ moderation_status: approve ? 'approved' : 'rejected', is_correct: approve })
     .eq('id', responseId)
     .eq('moderation_status', 'pending')
-    .select('id, user_id, challenges(drop_at)')
+    .select('id, user_id, challenges(drop_at, prompt)')
     .maybeSingle()
 
   if (error) throw new Error(error.message)
@@ -54,8 +55,16 @@ async function moderatePhoto(responseId: string, approve: boolean): Promise<Mode
     decision: approve ? 'approved' : 'rejected',
   })
 
+  const challenge = updated.challenges as unknown as { drop_at: string; prompt: string } | null
+  await logAdminAction(admin, {
+    actorId: user.id,
+    targetUserId: updated.user_id,
+    action: approve ? 'photo_approved' : 'photo_rejected',
+    detail: challenge?.prompt ? `Photo answer to "${challenge.prompt}"` : null,
+  })
+
   if (approve) {
-    const dropAt = (updated.challenges as unknown as { drop_at: string } | null)?.drop_at
+    const dropAt = challenge?.drop_at
     if (dropAt) await updateStreakForAnswer(admin, updated.user_id, dropAt)
   }
 
@@ -85,5 +94,6 @@ export async function extendStreakToTodayAsMod(targetId: string): Promise<void> 
   const admin = createAdminClient()
   await setStreakDayOverride(admin, targetId, todayDateString(), true, user.id)
   await recomputeStreakForUser(admin, targetId)
+  await logAdminAction(admin, { actorId: user.id, targetUserId: targetId, action: 'streak_extended', detail: 'Streak extended to include today (mod support)' })
   revalidatePath('/mod')
 }

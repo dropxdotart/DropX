@@ -62,6 +62,19 @@ export type Strike = {
   response_id: string | null
   created_at: string
   issuer: Pick<PublicProfile, 'username' | 'display_name'>
+  revoked_at: string | null
+  revoked_by: string | null
+  revoker: Pick<PublicProfile, 'username' | 'display_name'> | null
+}
+
+export type AdminAction = {
+  id: string
+  target_user_id: string
+  actor_id: string
+  action: string
+  detail: string | null
+  created_at: string
+  actor: Pick<PublicProfile, 'username' | 'display_name'> | null
 }
 
 export type ModerationLogEntry = {
