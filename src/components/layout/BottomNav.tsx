@@ -55,16 +55,16 @@ export default function BottomNav() {
           )
         })}
 
-        <Link href="/" className="flex flex-col items-center -mt-4">
+        <Link href="/" className="flex flex-col items-center -mt-6">
           <div
             className={cn(
-              'rounded-full p-3.5 gradient-hero glow-violet ring-4 ring-background transition-transform',
+              'rounded-full p-4 gradient-hero glow-violet-lg ring-4 ring-background transition-transform',
               dropActive ? 'scale-105' : 'scale-100'
             )}
           >
-            <Image src="/dropx-icon.png" alt="Drop" width={26} height={26} />
+            <Image src="/dropx-icon.png" alt="Drop" width={30} height={30} />
           </div>
-          <span className={cn('text-[10px] font-medium pt-1', dropActive ? 'text-[color:var(--neon-violet)]' : 'text-muted-foreground')}>
+          <span className={cn('text-[11px] font-semibold pt-1.5', dropActive ? 'text-[color:var(--neon-violet)]' : 'text-white/70')}>
             Drop
           </span>
         </Link>

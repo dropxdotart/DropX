@@ -70,6 +70,7 @@ export default function AnswerForm({ challenge }: { challenge: Challenge }) {
   if (result) {
     return (
       <ResultCard
+        responseId={result.id}
         challenge={challenge}
         answer={givenAnswer}
         isCorrect={result.isCorrect}

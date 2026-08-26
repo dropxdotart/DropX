@@ -3,9 +3,9 @@
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { setStreakDayOverride, clearStreakDayOverride, recomputeStreakForUser, todayDateString } from '@/lib/streak'
+import { setStreakDayOverride, clearStreakDayOverride, recomputeStreakForUser, getStreakCalendar, todayDateString } from '@/lib/streak'
 import { AVAILABLE_BADGES } from '@/lib/badges'
-import type { UserRole, AccountStatus } from '@/lib/types'
+import type { UserRole, AccountStatus, Profile } from '@/lib/types'
 
 async function requireAdmin() {
   const supabase = await createClient()
@@ -84,6 +84,24 @@ export async function extendStreakToToday(targetId: string): Promise<void> {
   await setStreakDayOverride(admin, targetId, todayDateString(), true, adminId)
   await recomputeStreakForUser(admin, targetId)
   revalidatePath(`/admin/users/${targetId}`)
+}
+
+export async function getUserDetailData(targetId: string) {
+  await requireAdmin()
+  const admin = createAdminClient()
+
+  const { data: profile } = await admin.from('profiles').select('*').eq('id', targetId).single()
+  if (!profile) throw new Error('User not found')
+
+  const { data: strikes } = await admin
+    .from('strikes')
+    .select('id, reason, created_at, issued_by, issuer:profiles!issued_by(username, display_name)')
+    .eq('user_id', targetId)
+    .order('created_at', { ascending: false })
+
+  const streakDays = await getStreakCalendar(admin, targetId, 120)
+
+  return { profile: profile as Profile, strikes: strikes ?? [], streakDays }
 }
 
 export async function overrideIdentity(

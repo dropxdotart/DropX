@@ -161,4 +161,4 @@ export async function clearStreakDayOverride(supabase: SupabaseClient, userId: s
   if (error) throw new Error(error.message)
 }
 
-export { todayDateString }
+export { todayDateString, addDays, toDateString }

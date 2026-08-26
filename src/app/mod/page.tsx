@@ -50,7 +50,7 @@ export default async function ModPage({
       .maybeSingle()
     if (found) {
       supportUser = found
-      streakDays = await getStreakCalendar(admin, found.id, 60)
+      streakDays = await getStreakCalendar(admin, found.id, 120)
     }
   }
 

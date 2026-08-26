@@ -5,20 +5,24 @@ import Link from 'next/link'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Switch } from '@/components/ui/switch'
 import { Button } from '@/components/ui/button'
-import { ShieldCheck, Settings as SettingsIcon, LogOut } from 'lucide-react'
+import { ShieldCheck, Settings as SettingsIcon, LogOut, Bot } from 'lucide-react'
 import { toast } from 'sonner'
 import { createClient } from '@/lib/supabase/client'
 import { setShowEveryoneTab, setShareToEveryone } from '@/app/profile/actions'
+import { isHandler } from '@/lib/handlers'
+import { cn } from '@/lib/utils'
 import type { UserRole } from '@/lib/types'
 
 export default function SettingsCard({
   initialShowEveryone,
   initialShareToEveryone,
   role,
+  badges,
 }: {
   initialShowEveryone: boolean
   initialShareToEveryone: boolean
   role: UserRole
+  badges: string[]
 }) {
   const [showEveryone, setShowEveryone] = useState(initialShowEveryone)
   const [shareToEveryone, setShareToEveryoneState] = useState(initialShareToEveryone)
@@ -87,6 +91,15 @@ export default function SettingsCard({
                 Admin
               </Link>
             )}
+          </div>
+        )}
+
+        {isHandler({ role, badges }) && (
+          <div className={cn('pt-1 space-y-2', role !== 'mod' && role !== 'admin' && 'border-t border-white/5')}>
+            <Link href="/handlers" className="flex items-center gap-2 text-sm font-medium pt-1 hover:text-[color:var(--neon-violet)] transition-colors">
+              <Bot className="w-4 h-4" />
+              Handlers
+            </Link>
           </div>
         )}
 

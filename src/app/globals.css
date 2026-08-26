@@ -144,6 +144,15 @@
       0 0 32px 4px oklch(0.58 0.25 295 / 0.16);
   }
 
+  /* Stronger version of glow-violet for the one spot that needs to read as
+     the hero action from across the screen — the bottom nav's center Drop
+     button. */
+  .glow-violet-lg {
+    box-shadow:
+      0 0 20px 3px oklch(0.58 0.25 295 / 0.55),
+      0 0 44px 10px oklch(0.5 0.22 320 / 0.3);
+  }
+
   /* The exact 3-stop sweep from the reference avatar ring. */
   .gradient-hero {
     background-image: linear-gradient(

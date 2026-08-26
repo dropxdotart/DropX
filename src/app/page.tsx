@@ -72,6 +72,7 @@ export default async function Home() {
     return (
       <div className="flex flex-1 flex-col items-center justify-center px-4 py-12">
         <ResultCard
+          responseId={response.id}
           challenge={publicChallenge}
           answer={response.answer}
           isCorrect={response.is_correct}
@@ -79,6 +80,7 @@ export default async function Home() {
           explanation={challenge.explanation}
           currentStreak={profile?.current_streak}
           photoUrl={response.photo_url}
+          initiallyDeleted={!!response.deleted_at}
         />
       </div>
     )

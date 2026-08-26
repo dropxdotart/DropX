@@ -1,8 +1,8 @@
-import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
+import UserDetailDialog from './UserDetailDialog'
 
 export default async function AdminUsersPage({
   searchParams,
@@ -43,10 +43,7 @@ export default async function AdminUsersPage({
             {(users ?? []).map((u) => (
               <tr key={u.id} className="border-b border-white/5 last:border-0 hover:bg-white/5">
                 <td className="p-2.5">
-                  <Link href={`/admin/users/${u.id}`} className="hover:underline">
-                    <span className="font-medium text-white">{u.display_name ?? u.username ?? 'Someone'}</span>
-                    {u.username && <span className="text-muted-foreground ml-1.5">@{u.username}</span>}
-                  </Link>
+                  <UserDetailDialog userId={u.id} name={u.display_name ?? u.username ?? 'Someone'} username={u.username} />
                 </td>
                 <td className="p-2.5">
                   {u.role !== 'user' ? (

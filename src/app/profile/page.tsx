@@ -88,6 +88,7 @@ export default async function ProfilePage() {
           initialShowEveryone={profile?.show_everyone_tab ?? true}
           initialShareToEveryone={profile?.share_to_everyone ?? true}
           role={profile?.role ?? 'user'}
+          badges={profile?.badges ?? []}
         />
       </div>
     </div>

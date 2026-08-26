@@ -1,10 +1,17 @@
+'use client'
+
+import { useState } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { Flame, CheckCircle2, XCircle } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { Flame, CheckCircle2, XCircle, Trash2, Loader2 } from 'lucide-react'
+import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
+import { deleteMyResponse } from '@/app/actions'
 import type { Challenge } from '@/lib/types'
 
 export default function ResultCard({
+  responseId,
   challenge,
   answer,
   isCorrect,
@@ -12,7 +19,9 @@ export default function ResultCard({
   explanation,
   currentStreak,
   photoUrl,
+  initiallyDeleted,
 }: {
+  responseId: string
   challenge: Challenge
   answer: string
   isCorrect: boolean
@@ -20,8 +29,36 @@ export default function ResultCard({
   explanation: string | null
   currentStreak?: number
   photoUrl?: string | null
+  initiallyDeleted?: boolean
 }) {
+  const [deleted, setDeleted] = useState(initiallyDeleted ?? false)
+  const [deleting, setDeleting] = useState(false)
   const isPhoto = challenge.type === 'photo'
+
+  const handleDelete = async () => {
+    if (deleting) return
+    if (!confirm("Delete your answer? You won't be able to answer this challenge again.")) return
+    setDeleting(true)
+    try {
+      await deleteMyResponse(responseId)
+      setDeleted(true)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Something went wrong')
+    } finally {
+      setDeleting(false)
+    }
+  }
+
+  if (deleted) {
+    return (
+      <Card className="w-full max-w-sm border-white/10 bg-card/60 backdrop-blur-sm">
+        <CardContent className="py-8 text-center space-y-1.5">
+          <p className="font-medium">You deleted your answer</p>
+          <p className="text-sm text-muted-foreground">It won&apos;t reappear — check back for tomorrow&apos;s challenge.</p>
+        </CardContent>
+      </Card>
+    )
+  }
 
   return (
     <Card className="w-full max-w-sm border-white/10 bg-card/60 backdrop-blur-sm overflow-hidden">
@@ -62,6 +99,12 @@ export default function ResultCard({
             {currentStreak} day streak
           </Badge>
         )}
+        <div>
+          <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-destructive" disabled={deleting} onClick={handleDelete}>
+            {deleting ? <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5 mr-1.5" />}
+            Delete my answer
+          </Button>
+        </div>
       </CardContent>
     </Card>
   )

@@ -15,9 +15,14 @@ export default async function FeedPage() {
     .eq('id', user.id)
     .single()
 
+  // RLS still lets the owner see their own row after deletion (the home
+  // page needs that to show "you deleted this"), so the feed has to filter
+  // it out explicitly — otherwise a deleted answer would vanish for
+  // everyone except the one person who retracted it.
   const { data: responses } = await supabase
     .from('responses')
     .select('id, user_id, answer, is_correct, photo_url, answered_at, profiles(id, username, display_name, role, badges, share_to_everyone), challenges(prompt, type)')
+    .is('deleted_at', null)
     .order('answered_at', { ascending: false })
     .limit(50)
 

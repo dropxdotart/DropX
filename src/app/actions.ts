@@ -2,9 +2,11 @@
 
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { updateStreakForAnswer } from '@/lib/streak'
 
 type SubmitResult = {
+  id: string
   isCorrect: boolean
   correctAnswer: string
   explanation: string | null
@@ -26,30 +28,41 @@ export async function submitAnswer(challengeId: string, answer: string): Promise
 
   const isCorrect = answer.trim().toLowerCase() === challenge.correct_answer.trim().toLowerCase()
 
-  const { error: insertError } = await supabase
+  const { data: inserted, error: insertError } = await supabase
     .from('responses')
     .insert({ user_id: user.id, challenge_id: challengeId, answer, is_correct: isCorrect })
+    .select('id')
+    .single()
 
-  if (insertError && insertError.code !== '23505') {
-    throw new Error(insertError.message)
-  }
-
+  let responseId: string
   let currentStreak = 0
-  if (!insertError) {
-    ;({ currentStreak } = await updateStreakForAnswer(supabase, user.id, challenge.drop_at))
-  } else {
+
+  if (insertError) {
+    if (insertError.code !== '23505') throw new Error(insertError.message)
+    const { data: existing } = await supabase
+      .from('responses')
+      .select('id')
+      .eq('user_id', user.id)
+      .eq('challenge_id', challengeId)
+      .single()
+    if (!existing) throw new Error(insertError.message)
+    responseId = existing.id
     const { data: profile } = await supabase
       .from('profiles')
       .select('current_streak')
       .eq('id', user.id)
       .single()
     currentStreak = profile?.current_streak ?? 0
+  } else {
+    responseId = inserted.id
+    ;({ currentStreak } = await updateStreakForAnswer(supabase, user.id, challenge.drop_at))
   }
 
   revalidatePath('/')
   revalidatePath('/profile')
 
   return {
+    id: responseId,
     isCorrect,
     correctAnswer: challenge.correct_answer,
     explanation: challenge.explanation,
@@ -82,4 +95,36 @@ export async function submitPhotoAnswer(challengeId: string, photoUrl: string): 
   }
 
   revalidatePath('/')
+}
+
+// Retracts a user's own answer — the row stays (unique(user_id, challenge_id)
+// still blocks re-answering that same challenge), just hidden from everyone
+// but the owner, and logged for admins (src/app/admin/audit). There's no
+// RLS UPDATE policy letting a user touch their own response (deliberately —
+// answers are meant to be final), so this authorizes on the real session
+// and writes through the admin client, same pattern as every other
+// privileged mutation in this app.
+export async function deleteMyResponse(responseId: string): Promise<void> {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) throw new Error('Sign in required')
+
+  const admin = createAdminClient()
+  const { data: updated, error } = await admin
+    .from('responses')
+    .update({ deleted_at: new Date().toISOString() })
+    .eq('id', responseId)
+    .eq('user_id', user.id)
+    .is('deleted_at', null)
+    .select('id')
+    .maybeSingle()
+
+  if (error) throw new Error(error.message)
+  if (!updated) throw new Error('Nothing to delete')
+
+  await admin.from('response_deletions').insert({ response_id: responseId, user_id: user.id })
+
+  revalidatePath('/')
+  revalidatePath('/feed')
+  revalidatePath('/profile')
 }

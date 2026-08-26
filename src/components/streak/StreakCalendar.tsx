@@ -1,10 +1,9 @@
 'use client'
 
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
-import { Loader2, Check, X, RotateCcw } from 'lucide-react'
+import { Loader2, ChevronLeft, ChevronRight, RotateCcw } from 'lucide-react'
 import { toast } from 'sonner'
 import type { StreakDay } from '@/lib/streak'
 
@@ -17,6 +16,26 @@ type Props = {
   onResetDay?: (date: string) => Promise<void>
 }
 
+const WEEKDAY_LABELS = ['S', 'M', 'T', 'W', 'T', 'F', 'S']
+
+function monthLabel(monthKey: string): string {
+  const [y, m] = monthKey.split('-').map(Number)
+  return new Date(Date.UTC(y, m - 1, 1)).toLocaleDateString('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' })
+}
+
+function buildMonthCells(monthKey: string, byDate: Map<string, StreakDay>): (StreakDay | null)[] {
+  const [year, month] = monthKey.split('-').map(Number)
+  const firstWeekday = new Date(Date.UTC(year, month - 1, 1)).getUTCDay()
+  const daysInMonth = new Date(Date.UTC(year, month, 0)).getUTCDate()
+
+  const cells: (StreakDay | null)[] = Array(firstWeekday).fill(null)
+  for (let day = 1; day <= daysInMonth; day++) {
+    const date = `${monthKey}-${String(day).padStart(2, '0')}`
+    cells.push(byDate.get(date) ?? { date, counts: false, overridden: false, hasResponse: false })
+  }
+  return cells
+}
+
 export default function StreakCalendar({
   currentStreak,
   longestStreak,
@@ -27,6 +46,16 @@ export default function StreakCalendar({
 }: Props) {
   const [pendingKey, setPendingKey] = useState<string | null>(null)
   const editable = Boolean(onToggleDay)
+
+  const { byDate, monthKeys } = useMemo(() => {
+    const byDate = new Map(days.map((d) => [d.date, d]))
+    const monthKeys = Array.from(new Set(days.map((d) => d.date.slice(0, 7)))).sort()
+    return { byDate, monthKeys }
+  }, [days])
+
+  const [monthIndex, setMonthIndex] = useState(monthKeys.length - 1)
+  const monthKey = monthKeys[monthIndex] ?? days[0]?.date.slice(0, 7)
+  const cells = monthKey ? buildMonthCells(monthKey, byDate) : []
 
   const run = (key: string, fn: () => Promise<void>) => {
     setPendingKey(key)
@@ -59,65 +88,83 @@ export default function StreakCalendar({
         </Button>
       </div>
 
-      <div className="rounded-lg border border-white/10 bg-black/20 divide-y divide-white/5 max-h-72 overflow-y-auto">
-        {days.map((d) => (
-          <div key={d.date} className="flex items-center justify-between px-3 py-1.5 text-sm">
-            <span className="text-white/90 tabular-nums">{d.date}</span>
-            <div className="flex items-center gap-2">
-              {d.overridden && (
-                <Badge variant="secondary" className="text-[9px] px-1 py-0 text-muted-foreground">
-                  edited
-                </Badge>
-              )}
-              <Badge
-                variant="secondary"
-                className={cn('text-[10px] px-1.5 py-0', d.counts ? 'text-green-400' : 'text-muted-foreground')}
-              >
-                {d.counts ? 'Counted' : d.hasResponse ? 'Missed' : '—'}
-              </Badge>
-              {editable && (
-                <div className="flex items-center gap-1">
+      {monthKey && (
+        <div className="rounded-lg border border-white/10 bg-black/20 p-3">
+          <div className="flex items-center justify-between mb-2">
+            <button
+              type="button"
+              disabled={monthIndex === 0}
+              onClick={() => setMonthIndex((i) => Math.max(0, i - 1))}
+              className="p-1 rounded hover:bg-white/10 disabled:opacity-30 disabled:hover:bg-transparent"
+            >
+              <ChevronLeft className="w-4 h-4" />
+            </button>
+            <p className="text-sm font-medium">{monthLabel(monthKey)}</p>
+            <button
+              type="button"
+              disabled={monthIndex === monthKeys.length - 1}
+              onClick={() => setMonthIndex((i) => Math.min(monthKeys.length - 1, i + 1))}
+              className="p-1 rounded hover:bg-white/10 disabled:opacity-30 disabled:hover:bg-transparent"
+            >
+              <ChevronRight className="w-4 h-4" />
+            </button>
+          </div>
+
+          <div className="grid grid-cols-7 gap-1 text-center text-[10px] text-muted-foreground mb-1">
+            {WEEKDAY_LABELS.map((w, i) => <div key={i}>{w}</div>)}
+          </div>
+
+          <div className="grid grid-cols-7 gap-1">
+            {cells.map((cell, i) => {
+              if (!cell) return <div key={i} />
+              const dayNum = Number(cell.date.slice(8, 10))
+              const key = cell.date
+              const isPending = pendingKey === key
+              return (
+                <div key={key} className="relative">
                   <button
                     type="button"
-                    title="Mark as counted"
-                    disabled={pendingKey === d.date}
-                    onClick={() => run(d.date, () => onToggleDay!(d.date, true))}
+                    disabled={!editable || isPending}
+                    onClick={() => editable && onToggleDay && run(key, () => onToggleDay(key, !cell.counts))}
+                    title={cell.counts ? 'Counts toward the streak' : cell.hasResponse ? 'Missed' : 'No activity'}
                     className={cn(
-                      'p-1 rounded hover:bg-white/10 transition-colors',
-                      d.counts ? 'text-green-400' : 'text-muted-foreground'
+                      'w-full aspect-square rounded-md text-xs font-medium flex items-center justify-center transition-colors',
+                      cell.counts ? 'bg-green-500/25 text-green-300' : cell.hasResponse ? 'bg-destructive/20 text-destructive' : 'bg-white/5 text-muted-foreground',
+                      editable && !isPending && 'hover:ring-1 hover:ring-white/30 cursor-pointer',
+                      isPending && 'opacity-50'
                     )}
                   >
-                    <Check className="w-3.5 h-3.5" />
+                    {isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : dayNum}
                   </button>
-                  <button
-                    type="button"
-                    title="Mark as not counted"
-                    disabled={pendingKey === d.date}
-                    onClick={() => run(d.date, () => onToggleDay!(d.date, false))}
-                    className={cn(
-                      'p-1 rounded hover:bg-white/10 transition-colors',
-                      !d.counts ? 'text-destructive' : 'text-muted-foreground'
-                    )}
-                  >
-                    <X className="w-3.5 h-3.5" />
-                  </button>
-                  {d.overridden && onResetDay && (
+                  {cell.overridden && (
+                    <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-[color:var(--neon-violet)] ring-1 ring-background" />
+                  )}
+                  {cell.overridden && onResetDay && editable && (
                     <button
                       type="button"
                       title="Reset to actual answer"
-                      disabled={pendingKey === d.date}
-                      onClick={() => run(d.date, () => onResetDay(d.date))}
-                      className="p-1 rounded hover:bg-white/10 text-muted-foreground transition-colors"
+                      disabled={isPending}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        run(key, () => onResetDay(key))
+                      }}
+                      className="absolute inset-0 flex items-center justify-center opacity-0 hover:opacity-100 bg-black/70 rounded-md transition-opacity"
                     >
-                      <RotateCcw className="w-3.5 h-3.5" />
+                      <RotateCcw className="w-3 h-3 text-white" />
                     </button>
                   )}
                 </div>
-              )}
-            </div>
+              )
+            })}
           </div>
-        ))}
-      </div>
+
+          <div className="flex items-center gap-3 mt-3 text-[10px] text-muted-foreground">
+            <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-green-500/25" /> Counted</span>
+            <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-destructive/20" /> Missed</span>
+            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-[color:var(--neon-violet)]" /> Edited</span>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

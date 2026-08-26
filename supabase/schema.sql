@@ -58,7 +58,10 @@ create table profiles (
   show_everyone_tab boolean not null default true,
   share_to_everyone boolean not null default true,
   account_status account_status not null default 'active',
-  created_at timestamptz not null default now()
+  created_at timestamptz not null default now(),
+  -- Marks accounts created and piloted through the Handler tool
+  -- (src/app/handlers) — bookkeeping only, never shown in user-facing UI.
+  is_bot boolean not null default false
 );
 
 -- display_name can only change once every 48 hours — enforced here (not
