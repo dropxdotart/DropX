@@ -6,10 +6,10 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Badge } from '@/components/ui/badge'
-import { Loader2, Flame, Bot, Heart, MessageCircle } from 'lucide-react'
+import { Loader2, Flame, Bot, Heart } from 'lucide-react'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
-import { createBot, botSubmitAnswer, botComment, botLike } from './actions'
+import { createBot, botSubmitAnswer, botLike } from './actions'
 import type { ChallengeWithAnswer } from '@/lib/types'
 
 type BotProfile = {
@@ -45,7 +45,6 @@ export default function HandlerPanel({
   const [selectedBotId, setSelectedBotId] = useState<string | null>(bots[0]?.id ?? null)
   const [answer, setAnswer] = useState('')
   const [busy, setBusy] = useState<string | null>(null)
-  const [commentDrafts, setCommentDrafts] = useState<Record<string, string>>({})
   const [, startTransition] = useTransition()
 
   const selectedBot = bots.find((b) => b.id === selectedBotId) ?? null
@@ -90,23 +89,6 @@ export default function HandlerPanel({
     startTransition(async () => {
       try {
         await botLike(selectedBot.id, responseId)
-      } catch (err) {
-        toast.error(err instanceof Error ? err.message : 'Something went wrong')
-      } finally {
-        setBusy(null)
-      }
-    })
-  }
-
-  const handleComment = (responseId: string) => {
-    const body = commentDrafts[responseId]
-    if (!selectedBot || !body?.trim() || busy) return
-    setBusy(`comment-${responseId}`)
-    startTransition(async () => {
-      try {
-        await botComment(selectedBot.id, responseId, body)
-        setCommentDrafts((prev) => ({ ...prev, [responseId]: '' }))
-        toast.success('Posted')
       } catch (err) {
         toast.error(err instanceof Error ? err.message : 'Something went wrong')
       } finally {
@@ -230,32 +212,15 @@ export default function HandlerPanel({
                       {item.profiles?.display_name ?? item.profiles?.username ?? 'Someone'} · {item.challenges?.prompt}
                     </p>
                     <p className="truncate">{item.answer}</p>
-                    <div className="flex items-center gap-2">
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="h-7 px-2"
-                        disabled={busy === `like-${item.id}`}
-                        onClick={() => handleLike(item.id)}
-                      >
-                        <Heart className="w-3.5 h-3.5" />
-                      </Button>
-                      <Input
-                        placeholder="Comment as bot"
-                        value={commentDrafts[item.id] ?? ''}
-                        onChange={(e) => setCommentDrafts((prev) => ({ ...prev, [item.id]: e.target.value }))}
-                        className="h-7 text-xs"
-                      />
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="h-7 px-2"
-                        disabled={busy === `comment-${item.id}` || !commentDrafts[item.id]?.trim()}
-                        onClick={() => handleComment(item.id)}
-                      >
-                        <MessageCircle className="w-3.5 h-3.5" />
-                      </Button>
-                    </div>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-7 px-2"
+                      disabled={busy === `like-${item.id}`}
+                      onClick={() => handleLike(item.id)}
+                    >
+                      <Heart className="w-3.5 h-3.5" />
+                    </Button>
                   </div>
                 ))}
               </CardContent>

@@ -80,15 +80,6 @@ export type ModerationLogEntry = {
 
 export type PublicProfile = Pick<Profile, 'id' | 'username' | 'display_name' | 'role' | 'badges'>
 
-export type Comment = {
-  id: string
-  user_id: string
-  response_id: string
-  body: string
-  created_at: string
-  profiles: PublicProfile
-}
-
 export type ModQueueItem = {
   id: string
   photo_url: string
@@ -108,6 +99,5 @@ export type FeedItem = {
   challenges: Pick<Challenge, 'prompt' | 'type'>
   likeCount: number
   likedByMe: boolean
-  comments: Comment[]
   authorFollowedByMe: boolean
 }

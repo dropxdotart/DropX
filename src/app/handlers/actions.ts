@@ -106,20 +106,6 @@ export async function botSubmitAnswer(
   return { isCorrect }
 }
 
-export async function botComment(botId: string, responseId: string, body: string): Promise<void> {
-  await requireHandler()
-  const trimmed = body.trim()
-  if (!trimmed) throw new Error('Comment cannot be empty')
-  if (trimmed.length > 500) throw new Error('Comment is too long')
-
-  const admin = createAdminClient()
-  const { error } = await admin.from('comments').insert({ user_id: botId, response_id: responseId, body: trimmed })
-  if (error) throw new Error(error.message)
-
-  revalidatePath('/feed')
-  revalidatePath('/handlers')
-}
-
 export async function botLike(botId: string, responseId: string): Promise<{ liked: boolean }> {
   await requireHandler()
   const admin = createAdminClient()

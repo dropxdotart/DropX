@@ -5,12 +5,11 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Heart, MessageCircle, ShieldCheck, CheckCircle2, XCircle, UserPlus, UserCheck, Loader2, Clock } from 'lucide-react'
+import { Heart, ShieldCheck, CheckCircle2, XCircle, UserPlus, UserCheck, Clock } from 'lucide-react'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import { timeAgo } from '@/lib/time'
-import { toggleLike, addComment, toggleFollow } from '@/app/feed/actions'
+import { toggleLike, toggleFollow } from '@/app/feed/actions'
 import type { FeedItem } from '@/lib/types'
 
 function UserAvatar({ username, size = 8 }: { username: string | null; size?: number }) {
@@ -29,8 +28,6 @@ export default function FeedItemCard({ item, currentUserId }: { item: FeedItem; 
   const [liked, setLiked] = useState(item.likedByMe)
   const [likeCount, setLikeCount] = useState(item.likeCount)
   const [following, setFollowing] = useState(item.authorFollowedByMe)
-  const [comments, setComments] = useState(item.comments)
-  const [commentBody, setCommentBody] = useState('')
   const [isPending, startTransition] = useTransition()
 
   const isOwn = item.user_id === currentUserId
@@ -58,31 +55,6 @@ export default function FeedItemCard({ item, currentUserId }: { item: FeedItem; 
         await toggleFollow(item.user_id)
       } catch (err) {
         setFollowing(!next)
-        toast.error(err instanceof Error ? err.message : 'Something went wrong')
-      }
-    })
-  }
-
-  const handleComment = (e: React.FormEvent) => {
-    e.preventDefault()
-    const body = commentBody.trim()
-    if (!body) return
-    setCommentBody('')
-    startTransition(async () => {
-      try {
-        await addComment(item.id, body)
-        setComments((prev) => [
-          ...prev,
-          {
-            id: `optimistic-${Date.now()}`,
-            user_id: currentUserId,
-            response_id: item.id,
-            body,
-            created_at: new Date().toISOString(),
-            profiles: { id: currentUserId, username: 'You', display_name: null, role: 'user', badges: [] },
-          },
-        ])
-      } catch (err) {
         toast.error(err instanceof Error ? err.message : 'Something went wrong')
       }
     })
@@ -168,39 +140,7 @@ export default function FeedItemCard({ item, currentUserId }: { item: FeedItem; 
             <Heart className="w-4 h-4" fill={liked ? 'currentColor' : 'none'} />
             {likeCount > 0 && likeCount}
           </button>
-          <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
-            <MessageCircle className="w-4 h-4" />
-            {comments.length > 0 && comments.length}
-          </div>
         </div>
-
-        {comments.length > 0 && (
-          <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
-            {comments.map((c) => (
-              <div key={c.id} className="flex items-start gap-2">
-                <UserAvatar username={c.profiles?.display_name ?? c.profiles?.username ?? null} size={6} />
-                <div className="min-w-0 flex-1 rounded-lg bg-white/5 px-2.5 py-1.5">
-                  <p className="text-xs font-semibold">{c.profiles?.display_name ?? c.profiles?.username ?? 'Someone'}</p>
-                  <p className="text-sm break-words">{c.body}</p>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-
-        <form onSubmit={handleComment} className="flex gap-2">
-          <Input
-            placeholder="Add a comment..."
-            value={commentBody}
-            onChange={(e) => setCommentBody(e.target.value)}
-            disabled={isPending}
-            className="h-9 rounded-lg border-white/10 bg-white/5 text-sm"
-            maxLength={500}
-          />
-          <Button type="submit" size="sm" className="h-9 shrink-0" disabled={isPending || !commentBody.trim()}>
-            {isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Post'}
-          </Button>
-        </form>
       </CardContent>
     </Card>
   )

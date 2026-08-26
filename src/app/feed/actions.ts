@@ -27,23 +27,6 @@ export async function toggleLike(responseId: string): Promise<{ liked: boolean }
   return { liked: true }
 }
 
-export async function addComment(responseId: string, body: string) {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) throw new Error('Sign in to comment')
-
-  const trimmed = body.trim()
-  if (!trimmed) throw new Error('Comment cannot be empty')
-  if (trimmed.length > 500) throw new Error('Comment is too long')
-
-  const { error } = await supabase
-    .from('comments')
-    .insert({ user_id: user.id, response_id: responseId, body: trimmed })
-  if (error) throw new Error(error.message)
-
-  revalidatePath('/feed')
-}
-
 export async function toggleFollow(targetUserId: string): Promise<{ following: boolean }> {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()

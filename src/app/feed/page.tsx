@@ -40,13 +40,8 @@ export default async function FeedPage() {
   const responseIds = responses.map((r) => r.id)
   const authorIds = [...new Set(responses.map((r) => r.user_id))]
 
-  const [{ data: likes }, { data: comments }, { data: myFollows }] = await Promise.all([
+  const [{ data: likes }, { data: myFollows }] = await Promise.all([
     supabase.from('likes').select('user_id, response_id').in('response_id', responseIds),
-    supabase
-      .from('comments')
-      .select('id, user_id, response_id, body, created_at, profiles(id, username, display_name, role, badges)')
-      .in('response_id', responseIds)
-      .order('created_at', { ascending: true }),
     supabase.from('follows').select('followed_id').eq('follower_id', user.id).in('followed_id', authorIds),
   ])
 
@@ -54,7 +49,6 @@ export default async function FeedPage() {
 
   const items: FeedItem[] = responses.map((r) => {
     const responseLikes = (likes ?? []).filter((l) => l.response_id === r.id)
-    const responseComments = (comments ?? []).filter((c) => c.response_id === r.id)
     return {
       id: r.id,
       user_id: r.user_id,
@@ -66,7 +60,6 @@ export default async function FeedPage() {
       challenges: r.challenges as unknown as FeedItem['challenges'],
       likeCount: responseLikes.length,
       likedByMe: responseLikes.some((l) => l.user_id === user.id),
-      comments: responseComments as unknown as FeedItem['comments'],
       authorFollowedByMe: followedSet.has(r.user_id),
     }
   })
