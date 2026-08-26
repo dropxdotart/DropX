@@ -65,7 +65,7 @@ export default function SettingsForm({ initial }: { initial: AppConfig }) {
               onChange={(e) => setConfig({ ...config, photo_grace_minutes: Number(e.target.value) })}
             />
           </div>
-          <Button type="submit" disabled={submitting} className="glow-violet">
+          <Button type="submit" variant="secondary" disabled={submitting}>
             {submitting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
             Save settings
           </Button>

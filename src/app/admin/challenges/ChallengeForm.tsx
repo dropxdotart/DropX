@@ -120,7 +120,7 @@ export default function ChallengeForm({ existing }: { existing?: ChallengeAdmin 
             </div>
           </div>
 
-          <Button type="submit" disabled={submitting} className="glow-violet">
+          <Button type="submit" variant="secondary" disabled={submitting}>
             {submitting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
             {existing ? 'Save changes' : 'Add to pool'}
           </Button>

@@ -15,7 +15,7 @@ export default async function AdminUsersPage({
 
   let query = supabase
     .from('profiles')
-    .select('id, username, display_name, role, badges, current_streak, longest_streak, strike_count, account_status, created_at')
+    .select('id, username, display_name, role, badges, account_status, created_at')
     .order('created_at', { ascending: false })
     .limit(100)
 
@@ -39,9 +39,6 @@ export default async function AdminUsersPage({
               <th className="p-2.5 font-medium">Name</th>
               <th className="p-2.5 font-medium">Role</th>
               <th className="p-2.5 font-medium">Badges</th>
-              <th className="p-2.5 font-medium">Streak</th>
-              <th className="p-2.5 font-medium">Longest</th>
-              <th className="p-2.5 font-medium">Strikes</th>
               <th className="p-2.5 font-medium">Status</th>
               <th className="p-2.5 font-medium">Joined</th>
             </tr>
@@ -67,21 +64,18 @@ export default async function AdminUsersPage({
                 </td>
                 <td className="p-2.5">
                   {u.badges && u.badges.length > 0 ? (
-                    <div className="flex flex-wrap gap-1 max-w-[160px]">
-                      {u.badges.slice(0, 2).map((b: string) => (
+                    <div className="flex flex-wrap gap-1 max-w-[220px]">
+                      {u.badges.slice(0, 3).map((b: string) => (
                         <Badge key={b} variant="secondary" className="text-[10px] px-1.5 py-0 text-muted-foreground">{b}</Badge>
                       ))}
-                      {u.badges.length > 2 && (
-                        <span className="text-[10px] text-muted-foreground self-center">+{u.badges.length - 2}</span>
+                      {u.badges.length > 3 && (
+                        <span className="text-[10px] text-muted-foreground self-center">+{u.badges.length - 3}</span>
                       )}
                     </div>
                   ) : (
                     <span className="text-muted-foreground">—</span>
                   )}
                 </td>
-                <td className="p-2.5 text-muted-foreground tabular-nums">{u.current_streak}</td>
-                <td className="p-2.5 text-muted-foreground tabular-nums">{u.longest_streak}</td>
-                <td className="p-2.5 text-muted-foreground tabular-nums">{u.strike_count}</td>
                 <td className="p-2.5">
                   <Badge
                     variant="outline"

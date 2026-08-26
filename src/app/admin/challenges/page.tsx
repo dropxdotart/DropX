@@ -36,7 +36,7 @@ export default async function AdminChallengesPage() {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <p className="text-sm text-muted-foreground">{items.length} challenge{items.length === 1 ? '' : 's'}</p>
-        <Link href="/admin/challenges/new" className={cn(buttonVariants({ size: 'sm' }), 'glow-violet')}>
+        <Link href="/admin/challenges/new" className={cn(buttonVariants({ size: 'sm', variant: 'secondary' }))}>
           <Plus className="w-4 h-4 mr-1" />
           New challenge
         </Link>

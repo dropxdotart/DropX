@@ -109,7 +109,7 @@ export default function HandlerPanel({
               onChange={(e) => setNewBotName(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && handleCreateBot()}
             />
-            <Button size="sm" className="w-full" disabled={creating || !newBotName.trim()} onClick={handleCreateBot}>
+            <Button size="sm" variant="secondary" className="w-full" disabled={creating || !newBotName.trim()} onClick={handleCreateBot}>
               {creating && <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />}
               Create
             </Button>
@@ -192,7 +192,7 @@ export default function HandlerPanel({
                         }}
                       >
                         <Input value={answer} onChange={(e) => setAnswer(e.target.value)} placeholder="Answer" />
-                        <Button type="submit" size="sm" disabled={busy === 'answer'}>
+                        <Button type="submit" size="sm" variant="secondary" disabled={busy === 'answer'}>
                           {busy === 'answer' && <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />}
                           Submit
                         </Button>
