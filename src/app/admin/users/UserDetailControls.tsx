@@ -34,7 +34,19 @@ function SectionCard({ title, children }: { title: string; children: React.React
   )
 }
 
-export default function UserDetailControls({ profile, streakDays }: { profile: Profile; streakDays: StreakDay[] }) {
+export default function UserDetailControls({
+  profile,
+  streakDays,
+  onMutated,
+}: {
+  profile: Profile
+  streakDays: StreakDay[]
+  // Only set inside the modal (UserDetailDialog) — that view holds its own
+  // fetched copy of the data, so a mutation needs to explicitly trigger a
+  // re-fetch to show up. The standalone page re-renders on its own (Server
+  // Actions + revalidatePath), so it doesn't pass this.
+  onMutated?: () => Promise<void>
+}) {
   const [role, setRole] = useState<UserRole>(profile.role)
   const [status, setStatus] = useState<AccountStatus>(profile.account_status)
   const [badges, setBadges] = useState<string[]>(profile.badges)
@@ -49,6 +61,7 @@ export default function UserDetailControls({ profile, streakDays }: { profile: P
     startTransition(async () => {
       try {
         await fn()
+        await onMutated?.()
         toast.success(successMsg)
       } catch (err) {
         toast.error(err instanceof Error ? err.message : 'Something went wrong')
@@ -200,9 +213,18 @@ export default function UserDetailControls({ profile, streakDays }: { profile: P
             currentStreak={profile.current_streak}
             longestStreak={profile.longest_streak}
             days={streakDays}
-            onExtendToToday={() => extendStreakToToday(profile.id)}
-            onToggleDay={(date, counts) => toggleStreakDay(profile.id, date, counts)}
-            onResetDay={(date) => resetStreakDay(profile.id, date)}
+            onExtendToToday={async () => {
+              await extendStreakToToday(profile.id)
+              await onMutated?.()
+            }}
+            onToggleDay={async (date, counts) => {
+              await toggleStreakDay(profile.id, date, counts)
+              await onMutated?.()
+            }}
+            onResetDay={async (date) => {
+              await resetStreakDay(profile.id, date)
+              await onMutated?.()
+            }}
           />
         </CardContent>
       </Card>

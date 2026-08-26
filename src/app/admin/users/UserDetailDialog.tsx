@@ -30,6 +30,8 @@ export default function UserDetailDialog({
   const [data, setData] = useState<Data | null>(null)
   const [loading, setLoading] = useState(false)
 
+  const refetch = () => getUserDetailData(userId).then((d) => setData(d as unknown as Data))
+
   const handleOpenChange = (next: boolean) => {
     setOpen(next)
     if (!next) {
@@ -41,8 +43,7 @@ export default function UserDetailDialog({
     }
     if (next && !data) {
       setLoading(true)
-      getUserDetailData(userId)
-        .then((d) => setData(d as unknown as Data))
+      refetch()
         .catch((err) => {
           toast.error(err instanceof Error ? err.message : 'Failed to load')
           setOpen(false)
@@ -80,7 +81,7 @@ export default function UserDetailDialog({
             </div>
           ) : (
             <div className="space-y-4">
-              <UserDetailControls profile={data.profile} streakDays={data.streakDays} />
+              <UserDetailControls profile={data.profile} streakDays={data.streakDays} onMutated={refetch} />
               <StrikeHistory strikes={data.strikes} />
             </div>
           )}
