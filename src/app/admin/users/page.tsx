@@ -1,7 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
-import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
-import { cn } from '@/lib/utils'
 import UserDetailDialog from './UserDetailDialog'
 import CreateUserDialog from './CreateUserDialog'
 
@@ -45,52 +43,16 @@ export default async function AdminUsersPage({
           </thead>
           <tbody>
             {(users ?? []).map((u) => (
-              <tr key={u.id} className="border-b border-white/5 last:border-0 hover:bg-white/5">
-                <td className="p-2.5">
-                  <UserDetailDialog userId={u.id} name={u.display_name ?? u.username ?? 'Someone'} username={u.username} />
-                </td>
-                <td className="p-2.5">
-                  <Badge
-                    variant="outline"
-                    className={cn(
-                      'capitalize text-[10px] px-1.5 py-0',
-                      u.role === 'admin' && 'border-[color:var(--neon-violet)]/40 text-[color:var(--neon-violet)]',
-                      u.role === 'mod' && 'border-[color:var(--neon-cyan)]/40 text-[color:var(--neon-cyan)]',
-                      u.role === 'user' && 'border-white/15 text-muted-foreground'
-                    )}
-                  >
-                    {u.role}
-                  </Badge>
-                </td>
-                <td className="p-2.5">
-                  {u.badges && u.badges.length > 0 ? (
-                    <div className="flex flex-wrap gap-1 max-w-[220px]">
-                      {u.badges.slice(0, 3).map((b: string) => (
-                        <Badge key={b} variant="secondary" className="text-[10px] px-1.5 py-0 text-muted-foreground">{b}</Badge>
-                      ))}
-                      {u.badges.length > 3 && (
-                        <span className="text-[10px] text-muted-foreground self-center">+{u.badges.length - 3}</span>
-                      )}
-                    </div>
-                  ) : (
-                    <span className="text-muted-foreground">—</span>
-                  )}
-                </td>
-                <td className="p-2.5">
-                  <Badge
-                    variant="outline"
-                    className={cn(
-                      'capitalize text-[10px] px-1.5 py-0',
-                      u.account_status !== 'active' ? 'border-destructive/40 text-destructive' : 'border-white/15 text-muted-foreground'
-                    )}
-                  >
-                    {u.account_status}
-                  </Badge>
-                </td>
-                <td className="p-2.5 text-muted-foreground whitespace-nowrap">
-                  {new Date(u.created_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
-                </td>
-              </tr>
+              <UserDetailDialog
+                key={u.id}
+                userId={u.id}
+                name={u.display_name ?? u.username ?? 'Someone'}
+                username={u.username}
+                role={u.role}
+                badges={u.badges ?? []}
+                accountStatus={u.account_status}
+                joined={new Date(u.created_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
+              />
             ))}
           </tbody>
         </table>
