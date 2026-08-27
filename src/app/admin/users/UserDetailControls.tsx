@@ -1,12 +1,13 @@
 'use client'
 
-import { useState, useTransition } from 'react'
+import { useRef, useState, useTransition } from 'react'
 import { Card, CardContent, CardHeader, CardTitle, CardAction } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Select } from '@/components/ui/select'
 import { Badge } from '@/components/ui/badge'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Loader2, Undo2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
@@ -23,8 +24,10 @@ import {
   resetStreakDay,
   extendStreakToToday,
   overrideIdentity,
+  adminSetAvatarUrl,
+  adminUploadAvatar,
 } from './actions'
-import type { Profile, Strike, AdminAction, UserRole, AccountStatus } from '@/lib/types'
+import type { Profile, Strike, AdminAction, AvatarPreset, UserRole, AccountStatus } from '@/lib/types'
 import type { StreakDay } from '@/lib/streak'
 
 type StrikeWithIssuer = Strike & {
@@ -54,12 +57,14 @@ export default function UserDetailControls({
   streakDays,
   strikes,
   actions,
+  presets,
   onMutated,
 }: {
   profile: Profile
   streakDays: StreakDay[]
   strikes: StrikeWithIssuer[]
   actions: ActionWithActor[]
+  presets: AvatarPreset[]
   // Only set inside the modal (UserDetailDialog) — that view holds its own
   // fetched copy of the data, so a mutation needs to explicitly trigger a
   // re-fetch to show up. The standalone page re-renders on its own (Server
@@ -72,8 +77,10 @@ export default function UserDetailControls({
   const [strikeReason, setStrikeReason] = useState('')
   const [newUsername, setNewUsername] = useState(profile.username ?? '')
   const [newDisplayName, setNewDisplayName] = useState(profile.display_name ?? '')
+  const [galleryOpen, setGalleryOpen] = useState(false)
   const [busy, setBusy] = useState<string | null>(null)
   const [, startTransition] = useTransition()
+  const avatarFileRef = useRef<HTMLInputElement>(null)
 
   const run = (key: string, fn: () => Promise<void>, successMsg: string) => {
     setBusy(key)
@@ -98,6 +105,24 @@ export default function UserDetailControls({
 
   const toggleBadge = (badge: string) => {
     setBadges((prev) => (prev.includes(badge) ? prev.filter((b) => b !== badge) : [...prev, badge]))
+  }
+
+  const handleAvatarFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    const formData = new FormData()
+    formData.set('file', file)
+    run('avatar', () => adminUploadAvatar(profile.id, formData), 'Photo updated')
+    e.target.value = ''
+  }
+
+  const handleChoosePreset = (url: string) => {
+    run('avatar', () => adminSetAvatarUrl(profile.id, url), 'Photo updated')
+    setGalleryOpen(false)
+  }
+
+  const handleRemoveAvatar = () => {
+    run('avatar', () => adminSetAvatarUrl(profile.id, null), 'Photo removed')
   }
 
   const activeStrikeCount = strikes.filter((s) => !s.revoked_at).length
@@ -169,6 +194,43 @@ export default function UserDetailControls({
         </SectionCard>
 
         <div className="space-y-4">
+          <SectionCard title="Avatar">
+            <div className="flex items-center gap-3">
+              <div className="w-14 h-14 rounded-full overflow-hidden border border-white/10 bg-white/5 shrink-0 flex items-center justify-center text-lg font-bold text-muted-foreground">
+                {profile.avatar_url ? (
+                  // eslint-disable-next-line @next/next/no-img-element -- external Storage URL
+                  <img src={profile.avatar_url} alt="" className="w-full h-full object-cover" />
+                ) : (
+                  (profile.display_name ?? profile.username)?.[0]?.toUpperCase() ?? '?'
+                )}
+              </div>
+              <div className="flex-1 space-y-1.5">
+                <div className="flex flex-wrap gap-2">
+                  <Button size="sm" variant="secondary" disabled={busy !== null} onClick={() => avatarFileRef.current?.click()}>
+                    {busy === 'avatar' && <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />}
+                    Upload
+                  </Button>
+                  {presets.length > 0 && (
+                    <Button size="sm" variant="secondary" disabled={busy !== null} onClick={() => setGalleryOpen(true)}>
+                      Gallery
+                    </Button>
+                  )}
+                </div>
+                {profile.avatar_url && (
+                  <button
+                    type="button"
+                    disabled={busy !== null}
+                    onClick={handleRemoveAvatar}
+                    className="text-[11px] text-muted-foreground hover:text-destructive transition-colors"
+                  >
+                    Remove photo
+                  </button>
+                )}
+              </div>
+            </div>
+            <input ref={avatarFileRef} type="file" accept="image/*" className="hidden" onChange={handleAvatarFile} disabled={busy !== null} />
+          </SectionCard>
+
           <SectionCard title="Badges">
             <div className="flex flex-wrap gap-1.5">
               {/* Any value already on the profile that isn't in the fixed list (set
@@ -321,6 +383,27 @@ export default function UserDetailControls({
           )}
         </CardContent>
       </Card>
+
+      <Dialog open={galleryOpen} onOpenChange={setGalleryOpen}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader><DialogTitle>Choose an avatar</DialogTitle></DialogHeader>
+          <div className="grid grid-cols-4 gap-3">
+            {presets.map((p) => (
+              <button
+                key={p.id}
+                type="button"
+                title={p.label ?? undefined}
+                disabled={busy !== null}
+                onClick={() => handleChoosePreset(p.image_url)}
+                className="aspect-square rounded-full overflow-hidden border-2 border-transparent hover:border-[color:var(--neon-violet)] focus-visible:border-[color:var(--neon-violet)] outline-none transition-colors disabled:opacity-50"
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element -- external Storage URL */}
+                <img src={p.image_url} alt={p.label ?? ''} className="w-full h-full object-cover" />
+              </button>
+            ))}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

@@ -3,7 +3,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { getStreakCalendar } from '@/lib/streak'
 import UserDetailControls from '../UserDetailControls'
 import { RoleBadge, StatusBadge, UserAvatar } from '../UserBadges'
-import type { Profile, Strike, AdminAction } from '@/lib/types'
+import type { Profile, Strike, AdminAction, AvatarPreset } from '@/lib/types'
 
 type StrikeWithIssuer = Strike & {
   issuer: { username: string | null; display_name: string | null } | null
@@ -37,6 +37,12 @@ export default async function AdminUserDetailPage({ params }: { params: Promise<
     .order('created_at', { ascending: false })
     .limit(50)
 
+  const { data: presets } = await supabase
+    .from('avatar_presets')
+    .select('*')
+    .eq('active', true)
+    .order('created_at', { ascending: false })
+
   const streakDays = await getStreakCalendar(supabase, id, 120)
   const name = profile.display_name ?? profile.username ?? 'Someone'
 
@@ -59,6 +65,7 @@ export default async function AdminUserDetailPage({ params }: { params: Promise<
         streakDays={streakDays}
         strikes={(strikes ?? []) as unknown as StrikeWithIssuer[]}
         actions={(actions ?? []) as unknown as ActionWithActor[]}
+        presets={(presets ?? []) as AvatarPreset[]}
       />
     </div>
   )

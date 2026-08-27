@@ -5,11 +5,13 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Heart, ShieldCheck, CheckCircle2, XCircle, UserPlus, UserCheck, Clock } from 'lucide-react'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Textarea } from '@/components/ui/textarea'
+import { Heart, ShieldCheck, CheckCircle2, XCircle, UserPlus, UserCheck, Clock, Flag, Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import { timeAgo } from '@/lib/time'
-import { toggleLike, toggleFollow } from '@/app/feed/actions'
+import { toggleLike, toggleFollow, reportAvatar } from '@/app/feed/actions'
 import type { FeedItem } from '@/lib/types'
 
 function UserAvatar({ username, avatarUrl }: { username: string | null; avatarUrl: string | null }) {
@@ -30,8 +32,28 @@ export default function FeedItemCard({ item, currentUserId }: { item: FeedItem; 
   const [likeCount, setLikeCount] = useState(item.likeCount)
   const [following, setFollowing] = useState(item.authorFollowedByMe)
   const [isPending, startTransition] = useTransition()
+  const [reportOpen, setReportOpen] = useState(false)
+  const [reportReason, setReportReason] = useState('')
+  const [reporting, setReporting] = useState(false)
 
   const isOwn = item.user_id === currentUserId
+
+  const handleReport = () => {
+    if (reporting) return
+    setReporting(true)
+    startTransition(async () => {
+      try {
+        await reportAvatar(item.user_id, item.profiles.avatar_url, reportReason)
+        toast.success('Reported — a mod will take a look')
+        setReportOpen(false)
+        setReportReason('')
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : 'Something went wrong')
+      } finally {
+        setReporting(false)
+      }
+    })
+  }
 
   const handleLike = () => {
     const next = !liked
@@ -86,6 +108,16 @@ export default function FeedItemCard({ item, currentUserId }: { item: FeedItem; 
             </div>
             <p className="text-xs text-muted-foreground">{timeAgo(item.answered_at)}</p>
           </div>
+          {!isOwn && (
+            <button
+              type="button"
+              title="Report profile picture"
+              onClick={() => setReportOpen(true)}
+              className="shrink-0 p-1 -m-1 text-muted-foreground hover:text-destructive transition-colors"
+            >
+              <Flag className="w-3.5 h-3.5" />
+            </button>
+          )}
           {!isOwn && (
             <Button
               size="sm"
@@ -143,6 +175,25 @@ export default function FeedItemCard({ item, currentUserId }: { item: FeedItem; 
           </button>
         </div>
       </CardContent>
+
+      <Dialog open={reportOpen} onOpenChange={setReportOpen}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader><DialogTitle>Report profile picture</DialogTitle></DialogHeader>
+          <div className="space-y-3">
+            <Textarea
+              value={reportReason}
+              onChange={(e) => setReportReason(e.target.value)}
+              placeholder="Why are you reporting this? (optional)"
+              rows={2}
+              disabled={reporting}
+            />
+            <Button variant="destructive" className="w-full" disabled={reporting} onClick={handleReport}>
+              {reporting && <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />}
+              Submit report
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </Card>
   )
 }

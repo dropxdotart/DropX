@@ -131,3 +131,18 @@ export type AvatarPreset = {
   active: boolean
   created_at: string
 }
+
+export type ReportStatus = 'pending' | 'resolved' | 'dismissed'
+
+export type Report = {
+  id: string
+  reporter_id: string
+  target_user_id: string
+  target_type: string
+  target_ref: string | null
+  reason: string | null
+  status: ReportStatus
+  resolved_by: string | null
+  resolved_at: string | null
+  created_at: string
+}

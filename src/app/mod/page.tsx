@@ -8,8 +8,18 @@ import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import ModQueue from '@/components/mod/ModQueue'
+import ReportsQueue from './ReportsQueue'
 import SupportPanel from './SupportPanel'
 import type { ModQueueItem } from '@/lib/types'
+
+type ReportItem = {
+  id: string
+  target_ref: string | null
+  reason: string | null
+  created_at: string
+  reporter: { username: string | null; display_name: string | null } | null
+  target: { username: string | null; display_name: string | null } | null
+}
 
 export default async function ModPage({
   searchParams,
@@ -17,7 +27,7 @@ export default async function ModPage({
   searchParams: Promise<{ tab?: string; q?: string }>
 }) {
   const { tab: tabParam, q } = await searchParams
-  const tab = tabParam === 'support' ? 'support' : 'queue'
+  const tab = tabParam === 'support' ? 'support' : tabParam === 'reports' ? 'reports' : 'queue'
 
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -44,6 +54,7 @@ export default async function ModPage({
   const admin = createAdminClient()
   let supportUser: { id: string; username: string | null; display_name: string | null; current_streak: number; longest_streak: number; account_status: string } | null = null
   let streakDays: Awaited<ReturnType<typeof getStreakCalendar>> = []
+  let reports: ReportItem[] = []
 
   if (tab === 'support' && q) {
     const { data: found } = await admin
@@ -55,6 +66,17 @@ export default async function ModPage({
       supportUser = found
       streakDays = await getStreakCalendar(admin, found.id, 120)
     }
+  }
+
+  if (tab === 'reports') {
+    const { data } = await admin
+      .from('reports')
+      .select(
+        'id, target_ref, reason, created_at, reporter:profiles!reporter_id(username, display_name), target:profiles!target_user_id(username, display_name)'
+      )
+      .eq('status', 'pending')
+      .order('created_at', { ascending: true })
+    reports = (data ?? []) as unknown as ReportItem[]
   }
 
   return (
@@ -73,6 +95,15 @@ export default async function ModPage({
               Photo queue
             </Link>
             <Link
+              href="/mod?tab=reports"
+              className={cn(
+                'px-3 py-2 text-sm border-b-2 transition-colors',
+                tab === 'reports' ? 'text-foreground border-primary' : 'text-muted-foreground border-transparent hover:text-foreground hover:border-white/20'
+              )}
+            >
+              Reports
+            </Link>
+            <Link
               href="/mod?tab=support"
               className={cn(
                 'px-3 py-2 text-sm border-b-2 transition-colors',
@@ -84,12 +115,21 @@ export default async function ModPage({
           </nav>
         </div>
 
-        {tab === 'queue' ? (
+        {tab === 'queue' && (
           <>
             <p className="text-sm text-muted-foreground">Oldest first — these auto-hide if nobody reviews them in time.</p>
             <ModQueue initialItems={(items ?? []) as unknown as ModQueueItem[]} graceMinutes={config.photo_grace_minutes} />
           </>
-        ) : (
+        )}
+
+        {tab === 'reports' && (
+          <>
+            <p className="text-sm text-muted-foreground">Profile pictures other users have flagged.</p>
+            <ReportsQueue initialReports={reports} />
+          </>
+        )}
+
+        {tab === 'support' && (
           <>
             <p className="text-sm text-muted-foreground">Look up an account to see their history and fix a streak issue.</p>
             <form className="flex gap-2 max-w-sm" action="/mod">

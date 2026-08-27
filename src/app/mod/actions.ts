@@ -8,6 +8,15 @@ import { logAdminAction } from '@/lib/audit'
 
 type ModerationResult = { alreadyHandled: boolean }
 
+async function requireMod() {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) throw new Error('Sign in required')
+  const { data: profile } = await supabase.from('profiles').select('role').eq('id', user.id).single()
+  if (profile?.role !== 'mod' && profile?.role !== 'admin') throw new Error('Not authorized')
+  return user.id
+}
+
 // Authorization happens on the user-scoped client (real session, real RLS —
 // this is the actual security boundary: only a mod/admin's own responses
 // row-visibility policy lets this query find the pending item at all). Once
@@ -85,15 +94,82 @@ export async function rejectPhoto(responseId: string): Promise<ModerationResult>
 // per-day rewriting. Full day-by-day correction stays admin-only, in
 // /admin/users — see toggleStreakDay there.
 export async function extendStreakToTodayAsMod(targetId: string): Promise<void> {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) throw new Error('Sign in required')
-  const { data: profile } = await supabase.from('profiles').select('role').eq('id', user.id).single()
-  if (profile?.role !== 'mod' && profile?.role !== 'admin') throw new Error('Not authorized')
-
+  const modId = await requireMod()
   const admin = createAdminClient()
-  await setStreakDayOverride(admin, targetId, todayDateString(), true, user.id)
+  await setStreakDayOverride(admin, targetId, todayDateString(), true, modId)
   await recomputeStreakForUser(admin, targetId)
-  await logAdminAction(admin, { actorId: user.id, targetUserId: targetId, action: 'streak_extended', detail: 'Streak extended to include today (mod support)' })
+  await logAdminAction(admin, { actorId: modId, targetUserId: targetId, action: 'streak_extended', detail: 'Streak extended to include today (mod support)' })
+  revalidatePath('/mod')
+}
+
+export async function dismissReport(reportId: string): Promise<void> {
+  const modId = await requireMod()
+  const admin = createAdminClient()
+  const { error } = await admin
+    .from('reports')
+    .update({ status: 'dismissed', resolved_by: modId, resolved_at: new Date().toISOString() })
+    .eq('id', reportId)
+  if (error) throw new Error(error.message)
+  revalidatePath('/mod')
+}
+
+// Only clears the avatar if it still matches what was actually reported
+// (target_ref) — the user may have already changed their photo since the
+// report was filed, and clearing an unrelated newer one would be wrong.
+export async function removeReportedAvatar(reportId: string): Promise<void> {
+  const modId = await requireMod()
+  const admin = createAdminClient()
+
+  const { data: report } = await admin.from('reports').select('target_user_id, target_ref').eq('id', reportId).single()
+  if (!report) throw new Error('Report not found')
+
+  const { data: profile } = await admin.from('profiles').select('avatar_url').eq('id', report.target_user_id).single()
+  if (profile?.avatar_url && profile.avatar_url === report.target_ref) {
+    await admin.from('profiles').update({ avatar_url: null }).eq('id', report.target_user_id)
+    await logAdminAction(admin, {
+      actorId: modId,
+      targetUserId: report.target_user_id,
+      action: 'avatar_changed',
+      detail: 'Profile picture removed (reported)',
+    })
+  }
+
+  const { error } = await admin
+    .from('reports')
+    .update({ status: 'resolved', resolved_by: modId, resolved_at: new Date().toISOString() })
+    .eq('id', reportId)
+  if (error) throw new Error(error.message)
+  revalidatePath('/mod')
+  revalidatePath('/feed')
+}
+
+// A mod's strike power is scoped to acting on a report they're handling —
+// not a general "strike anyone" tool. General strike issuance from a plain
+// username lookup stays admin-only, in /admin/users.
+export async function issueStrikeForReport(reportId: string, reason: string): Promise<void> {
+  const modId = await requireMod()
+  const admin = createAdminClient()
+
+  const { data: report } = await admin.from('reports').select('target_user_id').eq('id', reportId).single()
+  if (!report) throw new Error('Report not found')
+
+  const trimmedReason = reason.trim() || null
+  const { error: strikeError } = await admin
+    .from('strikes')
+    .insert({ user_id: report.target_user_id, issued_by: modId, reason: trimmedReason })
+  if (strikeError) throw new Error(strikeError.message)
+
+  await logAdminAction(admin, {
+    actorId: modId,
+    targetUserId: report.target_user_id,
+    action: 'strike_issued',
+    detail: trimmedReason ? `Strike issued: "${trimmedReason}" (reported profile picture)` : 'Strike issued (reported profile picture)',
+  })
+
+  const { error } = await admin
+    .from('reports')
+    .update({ status: 'resolved', resolved_by: modId, resolved_at: new Date().toISOString() })
+    .eq('id', reportId)
+  if (error) throw new Error(error.message)
   revalidatePath('/mod')
 }

@@ -204,9 +204,59 @@ export async function getUserDetailData(targetId: string) {
     .order('created_at', { ascending: false })
     .limit(50)
 
+  const { data: presets } = await admin
+    .from('avatar_presets')
+    .select('*')
+    .eq('active', true)
+    .order('created_at', { ascending: false })
+
   const streakDays = await getStreakCalendar(admin, targetId, 120)
 
-  return { profile: profile as Profile, strikes: strikes ?? [], streakDays, actions: actions ?? [] }
+  return { profile: profile as Profile, strikes: strikes ?? [], streakDays, actions: actions ?? [], presets: presets ?? [] }
+}
+
+// Sets or clears a user's avatar directly to a known URL — used for both
+// "choose from the preset gallery" and "remove" (url = null). A real file
+// upload goes through adminUploadAvatar instead, since that needs the
+// admin (service-role) storage client to write into a folder the acting
+// admin doesn't own.
+export async function adminSetAvatarUrl(targetId: string, avatarUrl: string | null): Promise<void> {
+  const adminId = await requireAdmin()
+  const admin = createAdminClient()
+  const { error } = await admin.from('profiles').update({ avatar_url: avatarUrl }).eq('id', targetId)
+  if (error) throw new Error(error.message)
+  await logAdminAction(admin, {
+    actorId: adminId,
+    targetUserId: targetId,
+    action: 'avatar_changed',
+    detail: avatarUrl ? 'Profile picture set by admin' : 'Profile picture removed by admin',
+  })
+  revalidatePath(`/admin/users/${targetId}`)
+  revalidatePath('/admin/users')
+  revalidatePath('/feed')
+}
+
+export async function adminUploadAvatar(targetId: string, formData: FormData): Promise<void> {
+  const adminId = await requireAdmin()
+  const file = formData.get('file')
+  if (!(file instanceof File) || file.size === 0) throw new Error('No image provided')
+
+  const admin = createAdminClient()
+  const ext = file.name.split('.').pop() || 'jpg'
+  const path = `${targetId}/avatar.${ext}`
+  const { error: uploadError } = await admin.storage.from('avatars').upload(path, file, { upsert: true, contentType: file.type })
+  if (uploadError) throw new Error(uploadError.message)
+
+  const { data: { publicUrl } } = admin.storage.from('avatars').getPublicUrl(path)
+  const freshUrl = `${publicUrl}?t=${Date.now()}`
+
+  const { error } = await admin.from('profiles').update({ avatar_url: freshUrl }).eq('id', targetId)
+  if (error) throw new Error(error.message)
+
+  await logAdminAction(admin, { actorId: adminId, targetUserId: targetId, action: 'avatar_changed', detail: 'Profile picture uploaded by admin' })
+  revalidatePath(`/admin/users/${targetId}`)
+  revalidatePath('/admin/users')
+  revalidatePath('/feed')
 }
 
 export async function overrideIdentity(
