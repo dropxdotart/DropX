@@ -106,7 +106,7 @@ export default function UserDetailDialog({
           </Link>
 
           <DialogHeader className="flex-row items-start gap-3">
-            <UserAvatar name={name} role={role} />
+            <UserAvatar name={name} role={role} avatarUrl={data?.profile.avatar_url} />
             <div className="min-w-0 flex-1 space-y-0.5 pr-16">
               <div className="flex flex-wrap items-center gap-1.5">
                 <DialogTitle className="text-lg">{name}</DialogTitle>

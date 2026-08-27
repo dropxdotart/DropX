@@ -43,7 +43,7 @@ export default async function AdminUserDetailPage({ params }: { params: Promise<
   return (
     <div className="space-y-4">
       <div className="flex items-start gap-3">
-        <UserAvatar name={name} role={profile.role} />
+        <UserAvatar name={name} role={profile.role} avatarUrl={profile.avatar_url} />
         <div className="space-y-0.5">
           <div className="flex flex-wrap items-center gap-1.5">
             <h2 className="text-lg font-semibold">{name}</h2>

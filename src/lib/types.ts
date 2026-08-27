@@ -49,6 +49,7 @@ export type Profile = {
   username: string | null
   display_name: string | null
   display_name_changed_at: string | null
+  avatar_url: string | null
   current_streak: number
   longest_streak: number
   last_answered_date: string | null
@@ -99,7 +100,7 @@ export type ModerationLogEntry = {
   }
 }
 
-export type PublicProfile = Pick<Profile, 'id' | 'username' | 'display_name' | 'role' | 'badges'>
+export type PublicProfile = Pick<Profile, 'id' | 'username' | 'display_name' | 'avatar_url' | 'role' | 'badges'>
 
 export type ModQueueItem = {
   id: string

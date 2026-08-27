@@ -49,6 +49,7 @@ create table profiles (
   username text unique check (username = lower(username)),
   display_name text,
   display_name_changed_at timestamptz,
+  avatar_url text,
   current_streak int not null default 0,
   longest_streak int not null default 0,
   last_answered_date date,

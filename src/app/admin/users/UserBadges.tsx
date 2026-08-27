@@ -37,16 +37,31 @@ export function StatusBadge({ status, className }: { status: AccountStatus; clas
   )
 }
 
-export function UserAvatar({ name, role, className }: { name: string; role: UserRole; className?: string }) {
+export function UserAvatar({
+  name,
+  role,
+  avatarUrl,
+  className,
+}: {
+  name: string
+  role: UserRole
+  avatarUrl?: string | null
+  className?: string
+}) {
   return (
     <div
       className={cn(
-        'w-12 h-12 rounded-full border flex items-center justify-center text-lg font-bold shrink-0',
+        'w-12 h-12 rounded-full border flex items-center justify-center text-lg font-bold shrink-0 overflow-hidden',
         ROLE_AVATAR_TINT[role],
         className
       )}
     >
-      {name.trim().charAt(0).toUpperCase() || '?'}
+      {avatarUrl ? (
+        // eslint-disable-next-line @next/next/no-img-element -- external Storage URL
+        <img src={avatarUrl} alt="" className="w-full h-full object-cover" />
+      ) : (
+        name.trim().charAt(0).toUpperCase() || '?'
+      )}
     </div>
   )
 }

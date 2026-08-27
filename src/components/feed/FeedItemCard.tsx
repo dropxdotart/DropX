@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from 'react'
 import { Card, CardContent } from '@/components/ui/card'
-import { Avatar, AvatarFallback } from '@/components/ui/avatar'
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Heart, ShieldCheck, CheckCircle2, XCircle, UserPlus, UserCheck, Clock } from 'lucide-react'
@@ -12,10 +12,11 @@ import { timeAgo } from '@/lib/time'
 import { toggleLike, toggleFollow } from '@/app/feed/actions'
 import type { FeedItem } from '@/lib/types'
 
-function UserAvatar({ username }: { username: string | null }) {
+function UserAvatar({ username, avatarUrl }: { username: string | null; avatarUrl: string | null }) {
   return (
     <div className="gradient-ring rounded-full p-[2px] shrink-0">
       <Avatar className="w-8 h-8 ring-1 ring-background">
+        {avatarUrl && <AvatarImage src={avatarUrl} alt="" />}
         <AvatarFallback className="bg-secondary text-xs">
           {username?.[0]?.toUpperCase() ?? 'U'}
         </AvatarFallback>
@@ -64,7 +65,7 @@ export default function FeedItemCard({ item, currentUserId }: { item: FeedItem; 
     <Card className="border-white/10 bg-card/60 backdrop-blur-sm">
       <CardContent className="space-y-3">
         <div className="flex items-center gap-2.5">
-          <UserAvatar username={item.profiles.display_name ?? item.profiles.username} />
+          <UserAvatar username={item.profiles.display_name ?? item.profiles.username} avatarUrl={item.profiles.avatar_url} />
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-1.5 flex-wrap">
               <span className="text-sm font-semibold truncate">{item.profiles.display_name ?? item.profiles.username ?? 'Someone'}</span>

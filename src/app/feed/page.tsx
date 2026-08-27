@@ -21,7 +21,7 @@ export default async function FeedPage() {
   // everyone except the one person who retracted it.
   const { data: responses } = await supabase
     .from('responses')
-    .select('id, user_id, answer, is_correct, photo_url, answered_at, profiles(id, username, display_name, role, badges, share_to_everyone), challenges(prompt, type)')
+    .select('id, user_id, answer, is_correct, photo_url, answered_at, profiles(id, username, display_name, avatar_url, role, badges, share_to_everyone), challenges(prompt, type)')
     .is('deleted_at', null)
     .order('answered_at', { ascending: false })
     .limit(50)

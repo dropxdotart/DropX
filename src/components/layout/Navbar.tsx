@@ -6,7 +6,7 @@ import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { buttonVariants } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
-import { Avatar, AvatarFallback } from '@/components/ui/avatar'
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Flame } from 'lucide-react'
 import type { User as SupabaseUser } from '@supabase/supabase-js'
 import type { Profile } from '@/lib/types'
@@ -60,6 +60,7 @@ export default function Navbar() {
               <Link href="/profile" className="rounded-full focus:outline-none focus:ring-2 focus:ring-primary">
                 <div className="gradient-ring rounded-full p-[2px] cursor-pointer">
                   <Avatar className="w-8 h-8 ring-1 ring-background">
+                    {profile?.avatar_url && <AvatarImage src={profile.avatar_url} alt="" />}
                     <AvatarFallback className="bg-secondary">
                       {(profile?.display_name ?? profile?.username)?.[0]?.toUpperCase() ?? 'U'}
                     </AvatarFallback>

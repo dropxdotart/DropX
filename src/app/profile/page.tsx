@@ -1,12 +1,12 @@
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { Card, CardContent } from '@/components/ui/card'
-import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
 import SettingsCard from '@/components/profile/SettingsCard'
 import SuggestChallengeCard from '@/components/profile/SuggestChallengeCard'
 import DisplayNameEditor from '@/components/profile/DisplayNameEditor'
-import { Flame, Trophy, Sparkles, ShieldCheck } from 'lucide-react'
+import AvatarUploader from '@/components/profile/AvatarUploader'
+import { Flame, Trophy, ShieldCheck } from 'lucide-react'
 
 export default async function ProfilePage() {
   const supabase = await createClient()
@@ -24,19 +24,11 @@ export default async function ProfilePage() {
       <div className="w-full max-w-sm space-y-4">
         <Card className="border-white/10 bg-card/60 backdrop-blur-sm overflow-visible">
           <CardContent className="flex items-center gap-5">
-            <div className="relative glow-violet rounded-full shrink-0">
-              <Sparkles className="absolute -top-2.5 -left-3 w-4 h-4 text-[color:var(--neon-pink)]" fill="currentColor" />
-              <Sparkles className="absolute top-1 -right-3 w-2.5 h-2.5 text-[color:var(--neon-orange)]" fill="currentColor" />
-              <Sparkles className="absolute -bottom-2 -right-2 w-3.5 h-3.5 text-[color:var(--neon-cyan)]" fill="currentColor" />
-              <Sparkles className="absolute -bottom-1 left-0 w-2 h-2 text-[color:var(--neon-violet)]" fill="currentColor" />
-              <div className="gradient-ring rounded-full p-1">
-                <Avatar className="w-24 h-24 ring-2 ring-background">
-                  <AvatarFallback className="text-3xl bg-secondary">
-                    {(profile?.display_name ?? profile?.username)?.[0]?.toUpperCase() ?? 'U'}
-                  </AvatarFallback>
-                </Avatar>
-              </div>
-            </div>
+            <AvatarUploader
+              userId={user.id}
+              initialAvatarUrl={profile?.avatar_url ?? null}
+              fallbackLetter={(profile?.display_name ?? profile?.username)?.[0]?.toUpperCase() ?? 'U'}
+            />
             <div className="min-w-0 space-y-1.5">
               <div className="flex items-center gap-2 flex-wrap">
                 <DisplayNameEditor

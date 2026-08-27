@@ -71,3 +71,41 @@ export async function setDisplayName(displayName: string): Promise<void> {
   revalidatePath('/feed')
   revalidatePath('/profile')
 }
+
+export async function updateAvatarUrl(avatarUrl: string): Promise<void> {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) throw new Error('Sign in required')
+
+  const { error } = await supabase.from('profiles').update({ avatar_url: avatarUrl }).eq('id', user.id)
+  if (error) throw new Error(error.message)
+
+  await logAdminAction(createAdminClient(), {
+    actorId: user.id,
+    targetUserId: user.id,
+    action: 'avatar_changed',
+    detail: 'Profile picture updated',
+  })
+
+  revalidatePath('/feed')
+  revalidatePath('/profile')
+}
+
+export async function removeAvatar(): Promise<void> {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) throw new Error('Sign in required')
+
+  const { error } = await supabase.from('profiles').update({ avatar_url: null }).eq('id', user.id)
+  if (error) throw new Error(error.message)
+
+  await logAdminAction(createAdminClient(), {
+    actorId: user.id,
+    targetUserId: user.id,
+    action: 'avatar_changed',
+    detail: 'Profile picture removed',
+  })
+
+  revalidatePath('/feed')
+  revalidatePath('/profile')
+}
