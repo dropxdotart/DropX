@@ -7,23 +7,22 @@ import { toast } from 'sonner'
 import { approvePhoto, rejectPhoto } from '@/app/mod/actions'
 import type { ModQueueItem } from '@/lib/types'
 
-const GRACE_MS = 10 * 60 * 1000
-
-function useCountdown(answeredAt: string) {
-  const [remaining, setRemaining] = useState(() => Math.max(0, new Date(answeredAt).getTime() + GRACE_MS - Date.now()))
+function useCountdown(answeredAt: string, graceMinutes: number) {
+  const graceMs = graceMinutes * 60 * 1000
+  const [remaining, setRemaining] = useState(() => Math.max(0, new Date(answeredAt).getTime() + graceMs - Date.now()))
   useEffect(() => {
     const id = setInterval(() => {
-      setRemaining(Math.max(0, new Date(answeredAt).getTime() + GRACE_MS - Date.now()))
+      setRemaining(Math.max(0, new Date(answeredAt).getTime() + graceMs - Date.now()))
     }, 1000)
     return () => clearInterval(id)
-  }, [answeredAt])
+  }, [answeredAt, graceMs])
   const totalSec = Math.floor(remaining / 1000)
   return `${Math.floor(totalSec / 60)}:${String(totalSec % 60).padStart(2, '0')}`
 }
 
-function QueueCard({ item, onHandled }: { item: ModQueueItem; onHandled: (id: string) => void }) {
+function QueueCard({ item, graceMinutes, onHandled }: { item: ModQueueItem; graceMinutes: number; onHandled: (id: string) => void }) {
   const [busy, setBusy] = useState<'approve' | 'reject' | null>(null)
-  const countdown = useCountdown(item.answered_at)
+  const countdown = useCountdown(item.answered_at, graceMinutes)
 
   const handle = async (approve: boolean) => {
     if (busy) return
@@ -75,7 +74,7 @@ function QueueCard({ item, onHandled }: { item: ModQueueItem; onHandled: (id: st
   )
 }
 
-export default function ModQueue({ initialItems }: { initialItems: ModQueueItem[] }) {
+export default function ModQueue({ initialItems, graceMinutes }: { initialItems: ModQueueItem[]; graceMinutes: number }) {
   const [items, setItems] = useState(initialItems)
 
   const handleHandled = (id: string) => setItems((prev) => prev.filter((i) => i.id !== id))
@@ -92,7 +91,7 @@ export default function ModQueue({ initialItems }: { initialItems: ModQueueItem[
   return (
     <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
       {items.map((item) => (
-        <QueueCard key={item.id} item={item} onHandled={handleHandled} />
+        <QueueCard key={item.id} item={item} graceMinutes={graceMinutes} onHandled={handleHandled} />
       ))}
     </div>
   )

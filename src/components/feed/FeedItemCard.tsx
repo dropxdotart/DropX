@@ -12,10 +12,10 @@ import { timeAgo } from '@/lib/time'
 import { toggleLike, toggleFollow } from '@/app/feed/actions'
 import type { FeedItem } from '@/lib/types'
 
-function UserAvatar({ username, size = 8 }: { username: string | null; size?: number }) {
+function UserAvatar({ username }: { username: string | null }) {
   return (
     <div className="gradient-ring rounded-full p-[2px] shrink-0">
-      <Avatar className={`w-${size} h-${size} ring-1 ring-background`}>
+      <Avatar className="w-8 h-8 ring-1 ring-background">
         <AvatarFallback className="bg-secondary text-xs">
           {username?.[0]?.toUpperCase() ?? 'U'}
         </AvatarFallback>

@@ -3,6 +3,7 @@ import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getStreakCalendar } from '@/lib/streak'
+import { getAppConfig } from '@/lib/config'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
@@ -38,6 +39,8 @@ export default async function ModPage({
     .eq('moderation_status', 'pending')
     .order('answered_at', { ascending: true })
 
+  const config = await getAppConfig(supabase)
+
   const admin = createAdminClient()
   let supportUser: { id: string; username: string | null; display_name: string | null; current_streak: number; longest_streak: number; account_status: string } | null = null
   let streakDays: Awaited<ReturnType<typeof getStreakCalendar>> = []
@@ -46,7 +49,7 @@ export default async function ModPage({
     const { data: found } = await admin
       .from('profiles')
       .select('id, username, display_name, current_streak, longest_streak, account_status')
-      .ilike('username', q)
+      .ilike('username', q.replace(/^@/, ''))
       .maybeSingle()
     if (found) {
       supportUser = found
@@ -84,7 +87,7 @@ export default async function ModPage({
         {tab === 'queue' ? (
           <>
             <p className="text-sm text-muted-foreground">Oldest first — these auto-hide if nobody reviews them in time.</p>
-            <ModQueue initialItems={(items ?? []) as unknown as ModQueueItem[]} />
+            <ModQueue initialItems={(items ?? []) as unknown as ModQueueItem[]} graceMinutes={config.photo_grace_minutes} />
           </>
         ) : (
           <>

@@ -100,7 +100,21 @@ export default function ChallengeForm({ existing }: { existing?: ChallengeAdmin 
             <>
               <div className="space-y-1.5">
                 <label className="text-xs font-medium text-muted-foreground">Correct answer</label>
-                <Input value={correctAnswer} onChange={(e) => setCorrectAnswer(e.target.value)} required />
+                {type === 'multiple_choice' ? (
+                  // A dropdown of the actual choices, not free text — typing the
+                  // answer separately from the choices risks a typo that makes
+                  // the challenge ungradeable (grading is exact-string against
+                  // this field). The current value stays selectable even if it
+                  // no longer matches a choice, so editing never silently drops it.
+                  <Select value={correctAnswer} onChange={(e) => setCorrectAnswer(e.target.value)} required>
+                    <option value="">Select the correct choice…</option>
+                    {[...new Set([correctAnswer, ...choices])].filter((c) => c.trim()).map((c) => (
+                      <option key={c} value={c}>{c}</option>
+                    ))}
+                  </Select>
+                ) : (
+                  <Input value={correctAnswer} onChange={(e) => setCorrectAnswer(e.target.value)} required />
+                )}
               </div>
               <div className="space-y-1.5">
                 <label className="text-xs font-medium text-muted-foreground">Explanation (optional)</label>
