@@ -134,6 +134,19 @@ create table challenge_ideas (
   created_at timestamptz not null default now()
 );
 
+-- ─── AVATAR PRESETS ──────────────────────────────────────────────────────────
+-- Admin-curated avatar options a user can pick instead of uploading their own
+-- photo. Images live in the avatars storage bucket under presets/ — uploads
+-- there go through the admin (service-role) client, exempt from the
+-- per-user-folder storage RLS that scopes normal avatar uploads.
+create table avatar_presets (
+  id uuid primary key default uuid_generate_v4(),
+  image_url text not null,
+  label text,
+  active boolean not null default true,
+  created_at timestamptz not null default now()
+);
+
 -- ─── RESPONSES ───────────────────────────────────────────────────────────────
 -- One row per (user, challenge) answer. Unique constraint enforces one attempt.
 -- `is_correct` is null for a photo response until a mod approves/rejects it
@@ -279,6 +292,7 @@ alter table strikes enable row level security;
 alter table moderation_log enable row level security;
 alter table admin_actions enable row level security;
 alter table challenge_ideas enable row level security;
+alter table avatar_presets enable row level security;
 
 create policy "Authenticated users can view app config" on app_config
   for select to authenticated using (true);
@@ -313,6 +327,14 @@ create policy "Users can view their own challenge ideas" on challenge_ideas
   for select to authenticated using (submitted_by = auth.uid());
 
 create policy "Admins can view all challenge ideas" on challenge_ideas
+  for select to authenticated using (
+    exists (select 1 from profiles where id = auth.uid() and role = 'admin')
+  );
+
+create policy "Users can view active avatar presets" on avatar_presets
+  for select to authenticated using (active);
+
+create policy "Admins can view all avatar presets" on avatar_presets
   for select to authenticated using (
     exists (select 1 from profiles where id = auth.uid() and role = 'admin')
   );

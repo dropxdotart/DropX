@@ -2,22 +2,27 @@
 
 import { useRef, useState } from 'react'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Camera, Loader2, Sparkles } from 'lucide-react'
 import { toast } from 'sonner'
 import { createClient } from '@/lib/supabase/client'
 import { updateAvatarUrl, removeAvatar } from '@/app/profile/actions'
+import type { AvatarPreset } from '@/lib/types'
 
 export default function AvatarUploader({
   userId,
   initialAvatarUrl,
   fallbackLetter,
+  presets,
 }: {
   userId: string
   initialAvatarUrl: string | null
   fallbackLetter: string
+  presets: AvatarPreset[]
 }) {
   const [avatarUrl, setAvatarUrl] = useState(initialAvatarUrl)
   const [busy, setBusy] = useState(false)
+  const [galleryOpen, setGalleryOpen] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
 
   const handleSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -42,6 +47,20 @@ export default function AvatarUploader({
     } finally {
       setBusy(false)
       if (inputRef.current) inputRef.current.value = ''
+    }
+  }
+
+  const handleChoosePreset = async (url: string) => {
+    if (busy) return
+    setBusy(true)
+    try {
+      await updateAvatarUrl(url)
+      setAvatarUrl(url)
+      setGalleryOpen(false)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Something went wrong')
+    } finally {
+      setBusy(false)
     }
   }
 
@@ -83,16 +102,53 @@ export default function AvatarUploader({
         </div>
       </div>
       <input ref={inputRef} type="file" accept="image/*" className="hidden" onChange={handleSelect} disabled={busy} />
-      {avatarUrl && (
-        <button
-          type="button"
-          onClick={handleRemove}
-          disabled={busy}
-          className="block mx-auto text-[11px] text-muted-foreground hover:text-destructive transition-colors"
-        >
-          Remove photo
-        </button>
+
+      {(presets.length > 0 || avatarUrl) && (
+        <div className="flex items-center justify-center gap-2 text-[11px]">
+          {presets.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setGalleryOpen(true)}
+              disabled={busy}
+              className="text-muted-foreground hover:text-foreground transition-colors"
+            >
+              Choose from gallery
+            </button>
+          )}
+          {avatarUrl && presets.length > 0 && <span className="text-muted-foreground/40">·</span>}
+          {avatarUrl && (
+            <button
+              type="button"
+              onClick={handleRemove}
+              disabled={busy}
+              className="text-muted-foreground hover:text-destructive transition-colors"
+            >
+              Remove photo
+            </button>
+          )}
+        </div>
       )}
+
+      <Dialog open={galleryOpen} onOpenChange={setGalleryOpen}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader><DialogTitle>Choose an avatar</DialogTitle></DialogHeader>
+          <div className="grid grid-cols-4 gap-3">
+            {presets.map((p) => (
+              <button
+                key={p.id}
+                type="button"
+                title={p.label ?? undefined}
+                disabled={busy}
+                onClick={() => handleChoosePreset(p.image_url)}
+                className="aspect-square rounded-full overflow-hidden border-2 border-transparent hover:border-[color:var(--neon-violet)] focus-visible:border-[color:var(--neon-violet)] outline-none transition-colors disabled:opacity-50"
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element -- external Storage URL */}
+                <img src={p.image_url} alt={p.label ?? ''} className="w-full h-full object-cover" />
+              </button>
+            ))}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

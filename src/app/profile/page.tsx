@@ -7,6 +7,7 @@ import SuggestChallengeCard from '@/components/profile/SuggestChallengeCard'
 import DisplayNameEditor from '@/components/profile/DisplayNameEditor'
 import AvatarUploader from '@/components/profile/AvatarUploader'
 import { Flame, Trophy, ShieldCheck } from 'lucide-react'
+import type { AvatarPreset } from '@/lib/types'
 
 export default async function ProfilePage() {
   const supabase = await createClient()
@@ -19,6 +20,12 @@ export default async function ProfilePage() {
     .eq('id', user.id)
     .single()
 
+  const { data: presets } = await supabase
+    .from('avatar_presets')
+    .select('*')
+    .eq('active', true)
+    .order('created_at', { ascending: false })
+
   return (
     <div className="flex flex-1 flex-col items-center px-4 py-10">
       <div className="w-full max-w-sm space-y-4">
@@ -28,6 +35,7 @@ export default async function ProfilePage() {
               userId={user.id}
               initialAvatarUrl={profile?.avatar_url ?? null}
               fallbackLetter={(profile?.display_name ?? profile?.username)?.[0]?.toUpperCase() ?? 'U'}
+              presets={(presets ?? []) as AvatarPreset[]}
             />
             <div className="min-w-0 space-y-1.5">
               <div className="flex items-center gap-2 flex-wrap">

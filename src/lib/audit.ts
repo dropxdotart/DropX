@@ -45,4 +45,6 @@ export const ADMIN_ACTION_LABELS: Record<string, string> = {
   challenge_deleted: 'Challenge deleted',
   settings_updated: 'Settings updated',
   bot_created: 'Bot created',
+  avatar_preset_added: 'Avatar preset added',
+  avatar_preset_removed: 'Avatar preset removed',
 }

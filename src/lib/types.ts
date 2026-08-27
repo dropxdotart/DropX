@@ -123,3 +123,11 @@ export type FeedItem = {
   likedByMe: boolean
   authorFollowedByMe: boolean
 }
+
+export type AvatarPreset = {
+  id: string
+  image_url: string
+  label: string | null
+  active: boolean
+  created_at: string
+}
