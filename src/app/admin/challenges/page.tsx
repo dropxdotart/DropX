@@ -2,12 +2,14 @@ import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
 import { buttonVariants } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { Plus } from 'lucide-react'
+import { Plus, Lightbulb } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { etDateToday } from '@/lib/time'
-import ChallengeRowActions from './ChallengeRowActions'
+import ChallengeRow from './ChallengeRow'
 import ChallengeCalendar from './ChallengeCalendar'
-import type { ChallengeAdmin } from '@/lib/types'
+import type { ChallengeAdmin, ChallengeIdea } from '@/lib/types'
+
+type IdeaWithSubmitter = ChallengeIdea & { submitter: { username: string | null; display_name: string | null } | null }
 
 export default async function AdminChallengesPage() {
   const supabase = await createClient()
@@ -32,6 +34,13 @@ export default async function AdminChallengesPage() {
     statsByChallenge.set(r.challenge_id, s)
   }
 
+  const { data: ideas } = await supabase
+    .from('challenge_ideas')
+    .select('id, submitted_by, type, idea, created_at, submitter:profiles!submitted_by(username, display_name)')
+    .order('created_at', { ascending: false })
+    .limit(50)
+  const ideaItems = (ideas ?? []) as unknown as IdeaWithSubmitter[]
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
@@ -40,6 +49,33 @@ export default async function AdminChallengesPage() {
           <Plus className="w-4 h-4 mr-1" />
           New challenge
         </Link>
+      </div>
+
+      <div className="rounded-xl border border-white/10 bg-card p-4 space-y-3">
+        <div className="flex items-center justify-between">
+          <h2 className="text-sm font-medium flex items-center gap-1.5">
+            <Lightbulb className="w-4 h-4 text-[color:var(--neon-orange)]" />
+            Coming soon — user ideas
+          </h2>
+          <span className="text-xs text-muted-foreground">{ideaItems.length}</span>
+        </div>
+        {ideaItems.length === 0 ? (
+          <p className="text-xs text-muted-foreground">No submitted ideas yet.</p>
+        ) : (
+          <div className="divide-y divide-white/5 max-h-56 overflow-y-auto">
+            {ideaItems.map((idea) => (
+              <div key={idea.id} className="py-2 first:pt-0 last:pb-0 flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-sm text-white">{idea.idea}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {idea.submitter?.display_name ?? idea.submitter?.username ?? 'Someone'} · {new Date(idea.created_at).toLocaleDateString()}
+                  </p>
+                </div>
+                <Badge variant="outline" className="capitalize text-[10px] px-1.5 py-0 shrink-0">{idea.type.replace('_', ' ')}</Badge>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       <ChallengeCalendar items={items} todayDate={etDateToday()} />
@@ -57,41 +93,9 @@ export default async function AdminChallengesPage() {
             </tr>
           </thead>
           <tbody>
-            {items.map((c) => {
-              const stats = statsByChallenge.get(c.id)
-              return (
-                <tr key={c.id} className="border-b border-white/5 last:border-0 hover:bg-white/5">
-                  <td className="p-2.5 max-w-xs truncate text-white">{c.prompt}</td>
-                  <td className="p-2.5 capitalize text-muted-foreground">{c.type.replace('_', ' ')}</td>
-                  <td className="p-2.5">
-                    <div className="flex gap-1 flex-wrap">
-                      {c.tags.map((t) => <Badge key={t} variant="secondary" className="text-[10px] px-1.5 py-0">{t}</Badge>)}
-                    </div>
-                  </td>
-                  <td className="p-2.5">
-                    {c.drop_at ? (
-                      <span className="text-xs text-muted-foreground">Used {new Date(c.drop_at).toLocaleDateString()}</span>
-                    ) : c.scheduled_date ? (
-                      <Badge variant="outline" className="gap-1 border-[color:var(--neon-violet)]/40 text-[color:var(--neon-violet)] text-[10px] px-1.5 py-0">
-                        Scheduled {c.scheduled_date}
-                      </Badge>
-                    ) : (
-                      <span className="text-xs text-muted-foreground">Pool</span>
-                    )}
-                  </td>
-                  <td className="p-2.5 text-xs text-muted-foreground tabular-nums">
-                    {stats ? `${stats.count} responses, ${Math.round((stats.correct / stats.count) * 100)}% correct` : '—'}
-                  </td>
-                  <td className="p-2.5">
-                    {c.drop_at ? (
-                      <span className="text-xs text-muted-foreground">Locked</span>
-                    ) : (
-                      <ChallengeRowActions id={c.id} />
-                    )}
-                  </td>
-                </tr>
-              )
-            })}
+            {items.map((c) => (
+              <ChallengeRow key={c.id} challenge={c} stats={statsByChallenge.get(c.id)} />
+            ))}
           </tbody>
         </table>
       </div>

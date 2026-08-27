@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { updateStreakForAnswer } from '@/lib/streak'
 import { logAdminAction } from '@/lib/audit'
+import type { ChallengeType } from '@/lib/types'
 
 type SubmitResult = {
   id: string
@@ -129,4 +130,24 @@ export async function deleteMyResponse(responseId: string): Promise<void> {
   revalidatePath('/')
   revalidatePath('/feed')
   revalidatePath('/profile')
+}
+
+// Free-text idea + a rough type — no correct answer/choices from the
+// submitter, so there's nothing here for a user to fake or grief with.
+// Admins see these as a read-only "Coming soon" list on /admin/challenges;
+// turning one into a real challenge is a manual step via the New Challenge
+// form, not automated.
+export async function submitChallengeIdea(type: ChallengeType, idea: string): Promise<void> {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) throw new Error('Sign in required')
+
+  const trimmed = idea.trim()
+  if (!trimmed) throw new Error('Idea cannot be empty')
+  if (trimmed.length > 300) throw new Error('Keep it under 300 characters')
+
+  const { error } = await supabase.from('challenge_ideas').insert({ submitted_by: user.id, type, idea: trimmed })
+  if (error) throw new Error(error.message)
+
+  revalidatePath('/admin/challenges')
 }

@@ -20,6 +20,14 @@ export type ChallengeAdmin = ChallengeWithAnswer & {
   tags: string[]
 }
 
+export type ChallengeIdea = {
+  id: string
+  submitted_by: string
+  type: ChallengeType
+  idea: string
+  created_at: string
+}
+
 export type ModerationStatus = 'pending' | 'approved' | 'rejected'
 
 export type Response = {

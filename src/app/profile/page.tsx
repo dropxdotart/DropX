@@ -4,6 +4,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
 import SettingsCard from '@/components/profile/SettingsCard'
+import SuggestChallengeCard from '@/components/profile/SuggestChallengeCard'
 import DisplayNameEditor from '@/components/profile/DisplayNameEditor'
 import { Flame, Trophy, Sparkles, ShieldCheck } from 'lucide-react'
 
@@ -83,6 +84,8 @@ export default async function ProfilePage() {
             </CardContent>
           </Card>
         </div>
+
+        <SuggestChallengeCard />
 
         <SettingsCard
           initialShowEveryone={profile?.show_everyone_tab ?? true}
