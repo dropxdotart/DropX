@@ -122,6 +122,7 @@ export default function UserDetailControls({
   }
 
   const handleRemoveAvatar = () => {
+    if (!confirm(`Remove ${profile.username ?? 'this user'}'s profile picture?`)) return
     run('avatar', () => adminSetAvatarUrl(profile.id, null), 'Photo removed')
   }
 
@@ -221,7 +222,7 @@ export default function UserDetailControls({
                     type="button"
                     disabled={busy !== null}
                     onClick={handleRemoveAvatar}
-                    className="text-[11px] text-muted-foreground hover:text-destructive transition-colors"
+                    className="p-1.5 -m-1.5 text-[11px] text-muted-foreground hover:text-destructive transition-colors"
                   >
                     Remove photo
                   </button>
@@ -315,7 +316,7 @@ export default function UserDetailControls({
                             title="Revoke this strike"
                             disabled={busy !== null}
                             onClick={() => run(`revoke-${s.id}`, () => revokeStrike(s.id), 'Strike revoked')}
-                            className="shrink-0 flex items-center gap-1 text-muted-foreground hover:text-foreground disabled:opacity-50"
+                            className="shrink-0 flex items-center gap-1 p-1.5 -m-1.5 text-muted-foreground hover:text-foreground disabled:opacity-50"
                           >
                             {revoking ? <Loader2 className="w-3 h-3 animate-spin" /> : <Undo2 className="w-3 h-3" />}
                             Revoke

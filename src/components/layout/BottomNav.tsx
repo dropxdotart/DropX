@@ -15,13 +15,14 @@ const SIDE_TABS = [
   { href: '/profile', label: 'Profile', icon: CircleUserRound },
 ] as const
 
-export default function BottomNav() {
+export default function BottomNav({ initialSignedIn }: { initialSignedIn: boolean }) {
   const pathname = usePathname()
-  const [signedIn, setSignedIn] = useState(false)
+  const [signedIn, setSignedIn] = useState(initialSignedIn)
   const supabase = createClient()
 
+  // Seeded from the server via props — see Navbar for why. The listener
+  // stays as a safety net for auth changes without a full navigation.
   useEffect(() => {
-    supabase.auth.getUser().then(({ data: { user } }) => setSignedIn(!!user))
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setSignedIn(!!session?.user)
     })

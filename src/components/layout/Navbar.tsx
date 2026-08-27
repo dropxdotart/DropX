@@ -11,24 +11,23 @@ import { Flame } from 'lucide-react'
 import type { User as SupabaseUser } from '@supabase/supabase-js'
 import type { Profile } from '@/lib/types'
 
-export default function Navbar() {
-  const [user, setUser] = useState<SupabaseUser | null>(null)
-  const [profile, setProfile] = useState<Profile | null>(null)
+export default function Navbar({
+  initialUser,
+  initialProfile,
+}: {
+  initialUser: SupabaseUser | null
+  initialProfile: Profile | null
+}) {
+  const [user, setUser] = useState<SupabaseUser | null>(initialUser)
+  const [profile, setProfile] = useState<Profile | null>(initialProfile)
   const supabase = createClient()
 
+  // No initial fetch here — the server already knew the answer when it
+  // rendered this page, and the layout passes it straight in as props.
+  // This listener just keeps things in sync if auth state changes without
+  // a full navigation (sign-in/out here both force a real page load, so
+  // in practice this is a safety net, not the primary sync path).
   useEffect(() => {
-    supabase.auth.getUser().then(({ data: { user } }) => {
-      setUser(user)
-      if (user) {
-        supabase
-          .from('profiles')
-          .select('*')
-          .eq('id', user.id)
-          .single()
-          .then(({ data }) => setProfile(data))
-      }
-    })
-
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setUser(session?.user ?? null)
       if (!session?.user) setProfile(null)

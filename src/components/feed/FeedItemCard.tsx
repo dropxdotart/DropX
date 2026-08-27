@@ -113,7 +113,7 @@ export default function FeedItemCard({ item, currentUserId }: { item: FeedItem; 
               type="button"
               title="Report profile picture"
               onClick={() => setReportOpen(true)}
-              className="shrink-0 p-1 -m-1 text-muted-foreground hover:text-destructive transition-colors"
+              className="shrink-0 p-2 -m-2 text-muted-foreground hover:text-destructive transition-colors"
             >
               <Flag className="w-3.5 h-3.5" />
             </button>
@@ -166,7 +166,7 @@ export default function FeedItemCard({ item, currentUserId }: { item: FeedItem; 
             onClick={handleLike}
             disabled={isPending}
             className={cn(
-              'flex items-center gap-1.5 text-sm transition-colors',
+              'flex items-center gap-1.5 text-sm transition-colors p-2 -m-2',
               liked ? 'text-[color:var(--neon-pink)]' : 'text-muted-foreground hover:text-foreground'
             )}
           >

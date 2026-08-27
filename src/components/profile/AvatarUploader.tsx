@@ -66,6 +66,7 @@ export default function AvatarUploader({
 
   const handleRemove = async () => {
     if (busy) return
+    if (!confirm('Remove your profile picture?')) return
     setBusy(true)
     try {
       await removeAvatar()
@@ -110,7 +111,7 @@ export default function AvatarUploader({
               type="button"
               onClick={() => setGalleryOpen(true)}
               disabled={busy}
-              className="text-muted-foreground hover:text-foreground transition-colors"
+              className="p-1 -m-1 text-muted-foreground hover:text-foreground transition-colors"
             >
               Choose from gallery
             </button>
@@ -121,7 +122,7 @@ export default function AvatarUploader({
               type="button"
               onClick={handleRemove}
               disabled={busy}
-              className="text-muted-foreground hover:text-destructive transition-colors"
+              className="p-1 -m-1 text-muted-foreground hover:text-destructive transition-colors"
             >
               Remove photo
             </button>

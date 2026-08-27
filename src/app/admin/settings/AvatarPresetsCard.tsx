@@ -95,7 +95,7 @@ export default function AvatarPresetsCard({ initial }: { initial: AvatarPreset[]
                   title="Remove"
                   disabled={busyId === p.id}
                   onClick={() => handleDelete(p.id)}
-                  className="absolute -top-1.5 -right-1.5 size-5 rounded-full bg-destructive/90 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity disabled:opacity-100"
+                  className="absolute -top-2 -right-2 size-7 rounded-full bg-destructive/90 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity disabled:opacity-100"
                 >
                   {busyId === p.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Trash2 className="w-3 h-3" />}
                 </button>
