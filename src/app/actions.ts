@@ -9,7 +9,10 @@ import type { ChallengeType } from '@/lib/types'
 
 type SubmitResult = {
   id: string
-  isCorrect: boolean
+  // null = not graded yet — a non-exact text answer went to the Text
+  // review queue instead of failing outright (see mod/actions.ts's
+  // reviewTextAnswer). Streak already credited either way; see below.
+  isCorrect: boolean | null
   correctAnswer: string
   explanation: string | null
   currentStreak: number
@@ -28,11 +31,24 @@ export async function submitAnswer(challengeId: string, answer: string): Promise
     .single()
   if (challengeError || !challenge) throw new Error('Challenge not found')
 
-  const isCorrect = answer.trim().toLowerCase() === challenge.correct_answer.trim().toLowerCase()
+  const isExactMatch = answer.trim().toLowerCase() === challenge.correct_answer.trim().toLowerCase()
+  // Multiple-choice is graded against a fixed, admin-authored set of
+  // choices — no typo risk, always instant. Free text can near-miss on a
+  // typo or phrasing, so a non-exact answer goes to a mod instead of
+  // failing outright (moderation_status mirrors the photo-review pattern;
+  // is_correct stays null until a mod swipes it in the Text review queue).
+  const needsReview = challenge.type === 'text' && !isExactMatch
+  const isCorrect: boolean | null = needsReview ? null : isExactMatch
 
   const { data: inserted, error: insertError } = await supabase
     .from('responses')
-    .insert({ user_id: user.id, challenge_id: challengeId, answer, is_correct: isCorrect })
+    .insert({
+      user_id: user.id,
+      challenge_id: challengeId,
+      answer,
+      is_correct: isCorrect,
+      moderation_status: needsReview ? 'pending' : 'approved',
+    })
     .select('id')
     .single()
 
@@ -88,6 +104,35 @@ export async function submitPhotoAnswer(challengeId: string, photoUrl: string): 
     challenge_id: challengeId,
     answer: photoUrl,
     photo_url: photoUrl,
+    is_correct: null,
+    moderation_status: 'pending',
+  })
+
+  if (insertError && insertError.code !== '23505') {
+    throw new Error(insertError.message)
+  }
+
+  revalidatePath('/')
+}
+
+// Ungraded (graded=false) text challenges — captions, "no correct answer"
+// prompts. There's no right/wrong to check, so every response goes
+// straight to the Caption review queue where a mod either rates it 1-10
+// (see rateCaption) or removes it (see removeCaption) — unlike a
+// wrong-but-gradable text answer, streak crediting waits for that
+// decision, since "remove" is meant to genuinely exclude spam/abuse from
+// counting, not just correct a right/wrong call.
+export async function submitCaptionAnswer(challengeId: string, answer: string): Promise<void> {
+  const supabase = await createClient()
+
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) throw new Error('Sign in to answer')
+  if (!answer.trim()) throw new Error('Answer cannot be empty')
+
+  const { error: insertError } = await supabase.from('responses').insert({
+    user_id: user.id,
+    challenge_id: challengeId,
+    answer: answer.trim(),
     is_correct: null,
     moderation_status: 'pending',
   })

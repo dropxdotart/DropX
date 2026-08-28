@@ -90,6 +90,116 @@ export async function rejectPhoto(responseId: string): Promise<ModerationResult>
   return moderatePhoto(responseId, false)
 }
 
+// Text review: a non-exact answer already credited the submitter's streak
+// at submission time (see submitAnswer) — right/wrong only settles the
+// historical record and whether it stays visible past the grace window,
+// it doesn't gate the streak the way photo/caption approval does.
+export async function reviewTextAnswer(responseId: string, correct: boolean): Promise<ModerationResult> {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) throw new Error('Sign in required')
+  const { data: profile } = await supabase.from('profiles').select('role').eq('id', user.id).single()
+  if (profile?.role !== 'mod' && profile?.role !== 'admin') throw new Error('Not authorized')
+
+  const admin = createAdminClient()
+  const { data: updated, error } = await admin
+    .from('responses')
+    .update({ moderation_status: 'approved', is_correct: correct })
+    .eq('id', responseId)
+    .eq('moderation_status', 'pending')
+    .select('id, user_id, challenges(prompt)')
+    .maybeSingle()
+
+  if (error) throw new Error(error.message)
+  revalidatePath('/mod')
+  if (!updated) return { alreadyHandled: true }
+
+  await admin.from('moderation_log').insert({ response_id: updated.id, moderator_id: user.id, decision: 'approved' })
+  const challenge = updated.challenges as unknown as { prompt: string } | null
+  await logAdminAction(admin, {
+    actorId: user.id,
+    targetUserId: updated.user_id,
+    action: correct ? 'text_marked_correct' : 'text_marked_incorrect',
+    detail: challenge?.prompt ? `Reviewed text answer to "${challenge.prompt}"` : null,
+  })
+
+  revalidatePath('/feed')
+  return { alreadyHandled: false }
+}
+
+// Caption review: unlike text, the mod's call here (rate vs remove) is
+// what decides whether the response counts at all — "remove" is meant to
+// exclude spam/abuse, not just record a low score — so streak crediting
+// happens here instead of at submission (mirrors photo approval).
+export async function rateCaption(responseId: string, rating: number): Promise<ModerationResult> {
+  if (!Number.isInteger(rating) || rating < 1 || rating > 10) throw new Error('Rating must be 1–10')
+
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) throw new Error('Sign in required')
+  const { data: profile } = await supabase.from('profiles').select('role').eq('id', user.id).single()
+  if (profile?.role !== 'mod' && profile?.role !== 'admin') throw new Error('Not authorized')
+
+  const admin = createAdminClient()
+  const { data: updated, error } = await admin
+    .from('responses')
+    .update({ moderation_status: 'approved', rating })
+    .eq('id', responseId)
+    .eq('moderation_status', 'pending')
+    .select('id, user_id, challenges(drop_at, prompt)')
+    .maybeSingle()
+
+  if (error) throw new Error(error.message)
+  revalidatePath('/mod')
+  if (!updated) return { alreadyHandled: true }
+
+  await admin.from('moderation_log').insert({ response_id: updated.id, moderator_id: user.id, decision: 'approved' })
+  const challenge = updated.challenges as unknown as { drop_at: string | null; prompt: string } | null
+  await logAdminAction(admin, {
+    actorId: user.id,
+    targetUserId: updated.user_id,
+    action: 'caption_rated',
+    detail: challenge?.prompt ? `Rated ${rating}/10: "${challenge.prompt}"` : `Rated ${rating}/10`,
+  })
+
+  if (challenge?.drop_at) await updateStreakForAnswer(admin, updated.user_id, challenge.drop_at)
+
+  revalidatePath('/feed')
+  return { alreadyHandled: false }
+}
+
+export async function removeCaption(responseId: string): Promise<ModerationResult> {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) throw new Error('Sign in required')
+  const { data: profile } = await supabase.from('profiles').select('role').eq('id', user.id).single()
+  if (profile?.role !== 'mod' && profile?.role !== 'admin') throw new Error('Not authorized')
+
+  const admin = createAdminClient()
+  const { data: updated, error } = await admin
+    .from('responses')
+    .update({ moderation_status: 'rejected' })
+    .eq('id', responseId)
+    .eq('moderation_status', 'pending')
+    .select('id, user_id, challenges(prompt)')
+    .maybeSingle()
+
+  if (error) throw new Error(error.message)
+  revalidatePath('/mod')
+  if (!updated) return { alreadyHandled: true }
+
+  await admin.from('moderation_log').insert({ response_id: updated.id, moderator_id: user.id, decision: 'rejected' })
+  const challenge = updated.challenges as unknown as { prompt: string } | null
+  await logAdminAction(admin, {
+    actorId: user.id,
+    targetUserId: updated.user_id,
+    action: 'caption_removed',
+    detail: challenge?.prompt ? `Removed caption on "${challenge.prompt}"` : 'Removed caption',
+  })
+
+  return { alreadyHandled: false }
+}
+
 // The narrow support-tool power: nudge a streak to include today, no
 // per-day rewriting. Full day-by-day correction stays admin-only, in
 // /admin/users — see toggleStreakDay there.

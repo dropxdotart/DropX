@@ -8,6 +8,9 @@ export type Challenge = {
   prompt_image_url: string | null
   choices: string[] | null
   choices_are_images: boolean
+  // Not sensitive (unlike correct_answer) — the client needs it to decide
+  // how to submit and what to show after (see AnswerForm).
+  graded: boolean
   text_scale: number
   image_scale: number
   created_at: string
@@ -16,7 +19,6 @@ export type Challenge = {
 export type ChallengeWithAnswer = Challenge & {
   correct_answer: string
   explanation: string | null
-  graded: boolean
 }
 
 export type ChallengeStatus = 'draft' | 'confirmed'
@@ -117,6 +119,22 @@ export type ModQueueItem = {
   answered_at: string
   profiles: Pick<PublicProfile, 'username' | 'display_name'>
   challenges: Pick<Challenge, 'prompt'>
+}
+
+export type TextReviewItem = {
+  id: string
+  answer: string
+  answered_at: string
+  profiles: Pick<PublicProfile, 'username' | 'display_name'>
+  challenges: Pick<Challenge, 'prompt'>
+}
+
+export type CaptionReviewItem = {
+  id: string
+  answer: string
+  answered_at: string
+  profiles: Pick<PublicProfile, 'username' | 'display_name'>
+  challenges: Pick<Challenge, 'prompt' | 'prompt_image_url'>
 }
 
 export type FeedItem = {

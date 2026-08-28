@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Camera, Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
-import { submitAnswer, submitPhotoAnswer } from '@/app/actions'
+import { submitAnswer, submitPhotoAnswer, submitCaptionAnswer } from '@/app/actions'
 import { createClient } from '@/lib/supabase/client'
 import { cn } from '@/lib/utils'
 import type { Challenge } from '@/lib/types'
@@ -24,6 +24,7 @@ export default function AnswerForm({ challenge, preview = false }: { challenge: 
   const [photoFile, setPhotoFile] = useState<File | null>(null)
   const [photoPreview, setPhotoPreview] = useState<string | null>(null)
   const [submittedPhotoUrl, setSubmittedPhotoUrl] = useState<string | null>(null)
+  const [captionSubmitted, setCaptionSubmitted] = useState(false)
 
   const handleSubmit = async (answer: string) => {
     if (preview || !answer.trim() || submitting) return
@@ -32,6 +33,21 @@ export default function AnswerForm({ challenge, preview = false }: { challenge: 
       const res = await submitAnswer(challenge.id, answer)
       setGivenAnswer(answer)
       setResult(res)
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : 'Something went wrong')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  // Ungraded (caption) text — no right/wrong, every response goes to mod
+  // review, so there's nothing to reveal here beyond "it's in the queue".
+  const handleCaptionSubmit = async (answer: string) => {
+    if (preview || !answer.trim() || submitting) return
+    setSubmitting(true)
+    try {
+      await submitCaptionAnswer(challenge.id, answer)
+      setCaptionSubmitted(true)
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : 'Something went wrong')
     } finally {
@@ -72,6 +88,12 @@ export default function AnswerForm({ challenge, preview = false }: { challenge: 
   }
 
   if (result) {
+    // isCorrect is null when a non-exact text answer went to the Text
+    // review queue instead of grading instantly — nothing wrong/right to
+    // show yet, so this shows the same pending state as a photo/caption.
+    if (result.isCorrect === null) {
+      return <PendingReviewCard title="Submitted — under review" message="A mod will check your answer shortly. Your streak is already counted." />
+    }
     return (
       <ResultCard
         responseId={result.id}
@@ -87,6 +109,10 @@ export default function AnswerForm({ challenge, preview = false }: { challenge: 
 
   if (submittedPhotoUrl) {
     return <PendingReviewCard photoUrl={submittedPhotoUrl} />
+  }
+
+  if (captionSubmitted) {
+    return <PendingReviewCard title="Caption submitted" message="Mods will rate it soon — it'll count toward your streak once they do." />
   }
 
   return (
@@ -190,7 +216,8 @@ export default function AnswerForm({ challenge, preview = false }: { challenge: 
           className="flex gap-2"
           onSubmit={(e) => {
             e.preventDefault()
-            handleSubmit(selected)
+            if (challenge.graded) handleSubmit(selected)
+            else handleCaptionSubmit(selected)
           }}
         >
           <Input

@@ -154,11 +154,12 @@ export default function ChallengeComposer({ existing }: { existing?: Existing })
       prompt_image_url: promptImageUrl,
       choices: choiceValues,
       choices_are_images: choicesAreImages,
+      graded: type === 'text' ? graded : true,
       text_scale: textScale,
       image_scale: imageScale,
       created_at: new Date().toISOString(),
     }
-  }, [type, prompt, promptImageUrl, choicesAreImages, choices, textScale, imageScale])
+  }, [type, prompt, promptImageUrl, choicesAreImages, choices, graded, textScale, imageScale])
 
   const save = async (status: 'draft' | 'confirmed') => {
     if (saving) return

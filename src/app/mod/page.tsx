@@ -8,9 +8,11 @@ import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import ModQueue from '@/components/mod/ModQueue'
+import TextReviewQueue from '@/components/mod/TextReviewQueue'
+import CaptionReviewQueue from '@/components/mod/CaptionReviewQueue'
 import ReportsQueue from './ReportsQueue'
 import SupportPanel from './SupportPanel'
-import type { ModQueueItem } from '@/lib/types'
+import type { ModQueueItem, TextReviewItem, CaptionReviewItem } from '@/lib/types'
 
 type ReportItem = {
   id: string
@@ -27,7 +29,12 @@ export default async function ModPage({
   searchParams: Promise<{ tab?: string; q?: string }>
 }) {
   const { tab: tabParam, q } = await searchParams
-  const tab = tabParam === 'support' ? 'support' : tabParam === 'reports' ? 'reports' : 'queue'
+  const tab =
+    tabParam === 'support' ? 'support' :
+    tabParam === 'reports' ? 'reports' :
+    tabParam === 'text' ? 'text' :
+    tabParam === 'captions' ? 'captions' :
+    'queue'
 
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -45,8 +52,29 @@ export default async function ModPage({
 
   const { data: items } = await supabase
     .from('responses')
-    .select('id, photo_url, answered_at, profiles(username, display_name), challenges(prompt)')
+    .select('id, photo_url, answered_at, profiles(username, display_name), challenges!inner(prompt, type)')
     .eq('moderation_status', 'pending')
+    .eq('challenges.type', 'photo')
+    .order('answered_at', { ascending: true })
+
+  // Non-exact text answers (graded, needing a right/wrong call) and
+  // captions (ungraded, needing a 1-10 rating) both land in
+  // moderation_status='pending' too — challenges.graded is what tells
+  // these two queues apart, see submitAnswer/submitCaptionAnswer.
+  const { data: textItems } = await supabase
+    .from('responses')
+    .select('id, answer, answered_at, profiles(username, display_name), challenges!inner(prompt, type, graded)')
+    .eq('moderation_status', 'pending')
+    .eq('challenges.type', 'text')
+    .eq('challenges.graded', true)
+    .order('answered_at', { ascending: true })
+
+  const { data: captionItems } = await supabase
+    .from('responses')
+    .select('id, answer, answered_at, profiles(username, display_name), challenges!inner(prompt, prompt_image_url, type, graded)')
+    .eq('moderation_status', 'pending')
+    .eq('challenges.type', 'text')
+    .eq('challenges.graded', false)
     .order('answered_at', { ascending: true })
 
   const config = await getAppConfig(supabase)
@@ -95,6 +123,24 @@ export default async function ModPage({
               Photo queue
             </Link>
             <Link
+              href="/mod?tab=text"
+              className={cn(
+                'px-3 py-2 text-sm border-b-2 transition-colors',
+                tab === 'text' ? 'text-foreground border-primary' : 'text-muted-foreground border-transparent hover:text-foreground hover:border-white/20'
+              )}
+            >
+              Text review
+            </Link>
+            <Link
+              href="/mod?tab=captions"
+              className={cn(
+                'px-3 py-2 text-sm border-b-2 transition-colors',
+                tab === 'captions' ? 'text-foreground border-primary' : 'text-muted-foreground border-transparent hover:text-foreground hover:border-white/20'
+              )}
+            >
+              Captions
+            </Link>
+            <Link
               href="/mod?tab=reports"
               className={cn(
                 'px-3 py-2 text-sm border-b-2 transition-colors',
@@ -119,6 +165,20 @@ export default async function ModPage({
           <>
             <p className="text-sm text-muted-foreground">Oldest first — these auto-hide if nobody reviews them in time.</p>
             <ModQueue initialItems={(items ?? []) as unknown as ModQueueItem[]} graceMinutes={config.photo_grace_minutes} />
+          </>
+        )}
+
+        {tab === 'text' && (
+          <>
+            <p className="text-sm text-muted-foreground">Answers that didn&apos;t match exactly — swipe right if it&apos;s close enough, left if it&apos;s not.</p>
+            <TextReviewQueue initialItems={(textItems ?? []) as unknown as TextReviewItem[]} />
+          </>
+        )}
+
+        {tab === 'captions' && (
+          <>
+            <p className="text-sm text-muted-foreground">Rate each caption 1–10, or remove anything that shouldn&apos;t count.</p>
+            <CaptionReviewQueue initialItems={(captionItems ?? []) as unknown as CaptionReviewItem[]} />
           </>
         )}
 
