@@ -5,19 +5,25 @@ export type Challenge = {
   drop_at: string
   type: ChallengeType
   prompt: string
+  prompt_image_url: string | null
   choices: string[] | null
+  choices_are_images: boolean
   created_at: string
 }
 
 export type ChallengeWithAnswer = Challenge & {
   correct_answer: string
   explanation: string | null
+  graded: boolean
 }
+
+export type ChallengeStatus = 'draft' | 'confirmed'
 
 export type ChallengeAdmin = ChallengeWithAnswer & {
   drop_at: string | null
   scheduled_date: string | null
   tags: string[]
+  status: ChallengeStatus
 }
 
 export type ChallengeIdea = {
@@ -38,6 +44,7 @@ export type Response = {
   is_correct: boolean | null
   photo_url: string | null
   moderation_status: ModerationStatus
+  rating: number | null
   answered_at: string
 }
 

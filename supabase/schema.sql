@@ -32,9 +32,23 @@ create table challenges (
   drop_at timestamptz unique,
   scheduled_date date unique,
   type challenge_type not null default 'multiple_choice',
+  -- Draft until explicitly confirmed; only confirmed challenges are
+  -- schedulable/pushable (enforced in application code).
+  status text not null default 'draft' check (status in ('draft', 'confirmed')),
   prompt text not null,
+  -- Set on challenges whose *prompt* is itself an image (e.g. "caption this
+  -- photo") — distinct from responses.photo_url, the answer to a photo
+  -- challenge, not the prompt.
+  prompt_image_url text,
   choices jsonb,
+  -- True when `choices` holds image URLs instead of text — same storage and
+  -- grading as a normal multiple_choice, only the rendering differs.
+  choices_are_images boolean not null default false,
   correct_answer text not null,
+  -- False for challenges with no single right answer (captions) — mods
+  -- judge each response on a 1-10 scale (responses.rating) instead of
+  -- checking it against correct_answer, which stays an unused placeholder.
+  graded boolean not null default true,
   explanation text,
   tags text[] not null default '{}',
   created_at timestamptz not null default now()
@@ -183,6 +197,9 @@ create table responses (
   is_correct boolean,
   photo_url text,
   moderation_status moderation_status not null default 'approved',
+  -- Mods' 1-10 quality/funniness rating on ungraded (caption) responses,
+  -- given via the swipe-review card — set once the response is approved.
+  rating int check (rating between 1 and 10),
   answered_at timestamptz not null default now(),
   unique (user_id, challenge_id)
 );

@@ -42,7 +42,9 @@ export default async function Home() {
     drop_at: challenge.drop_at,
     type: challenge.type,
     prompt: challenge.prompt,
+    prompt_image_url: challenge.prompt_image_url,
     choices: challenge.choices,
+    choices_are_images: challenge.choices_are_images,
     created_at: challenge.created_at,
   }
 
