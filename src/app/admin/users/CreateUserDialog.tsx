@@ -65,10 +65,10 @@ export default function CreateUserDialog() {
           {created ? (
             <div className="space-y-3">
               <p className="text-sm text-muted-foreground">Share these with them — this is the only time the password is shown.</p>
-              <div className="rounded-lg border border-white/10 bg-black/30 p-3 space-y-1 text-sm">
-                <p>Username: <span className="font-medium text-white">@{created.username}</span></p>
-                <p>Email: <span className="font-medium text-white">{created.email}</span></p>
-                <p>Password: <span className="font-medium text-white">{created.password}</span></p>
+              <div className="rounded-lg border border-border bg-muted p-3 space-y-1 text-sm">
+                <p>Username: <span className="font-medium text-foreground">@{created.username}</span></p>
+                <p>Email: <span className="font-medium text-foreground">{created.email}</span></p>
+                <p>Password: <span className="font-medium text-foreground">{created.password}</span></p>
               </div>
               <Button size="sm" variant="secondary" onClick={() => setOpen(false)}>Done</Button>
             </div>

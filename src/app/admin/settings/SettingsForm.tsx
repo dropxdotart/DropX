@@ -30,7 +30,7 @@ export default function SettingsForm({ initial }: { initial: AppConfig }) {
   }
 
   return (
-    <Card className="border-white/10 bg-card max-w-md">
+    <Card className="border-border bg-card max-w-md">
       <CardHeader><CardTitle className="text-base">Daily drop</CardTitle></CardHeader>
       <CardContent>
         <form onSubmit={handleSubmit} className="space-y-4">

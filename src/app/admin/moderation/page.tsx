@@ -19,7 +19,7 @@ export default async function AdminModerationPage() {
   return (
     <div className="space-y-4">
       <p className="text-sm text-muted-foreground">{entries.length} decision{entries.length === 1 ? '' : 's'}</p>
-      <div className="rounded-xl border border-white/10 bg-card divide-y divide-white/5">
+      <div className="rounded-xl border border-border bg-card divide-y divide-border">
         {entries.map((entry) => (
           <div key={entry.id} className="flex items-center gap-3 p-2.5">
             {entry.response.photo_url && (

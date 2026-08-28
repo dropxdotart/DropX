@@ -67,10 +67,10 @@ export default function UserDetailDialog({
     <>
       <tr
         onClick={() => handleOpenChange(true)}
-        className="border-b border-white/5 last:border-0 hover:bg-white/5 cursor-pointer"
+        className="border-b border-border last:border-0 hover:bg-muted cursor-pointer"
       >
         <td className="p-2.5">
-          <span className="font-medium text-white">{name}</span>
+          <span className="font-medium text-foreground">{name}</span>
           {username && <span className="text-muted-foreground ml-1.5">@{username}</span>}
         </td>
         <td className="p-2.5">

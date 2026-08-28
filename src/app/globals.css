@@ -4,13 +4,56 @@
 
 @custom-variant dark (&:is(.dark *));
 
-/* Admin is a dense data tool, not a brand moment — Orbitron (the sci-fi
-   display font used for the app's headings) reads as a game HUD when it's
-   sitting on every card title ("Role", "Streak", "Badges"...). Swap it for
-   the same geometric sans already used for body text, scoped to /admin only
-   so the consumer app's headings (logo, "Welcome back", challenge prompts)
-   keep the brand font. */
+/* Admin is a back office, not the app — deliberately not themed like the
+   neon consumer product. It's a full light-mode palette scoped to
+   /admin, reusing the *same variable names* everything else already reads
+   (bg-card, border-border, text-muted-foreground, var(--neon-violet) for
+   role/status tinting...) so every shared component and every existing
+   admin class just resolves differently here — no per-component overrides
+   needed. Orbitron (the sci-fi display font) also gets swapped for the
+   plain geometric sans, since a card titled "Role" or "Streak" in a
+   game-HUD font reads as a brand moment, not a data tool. */
 .admin-scope {
+  --font-heading: var(--font-space-grotesk);
+
+  --background: oklch(0.975 0.004 260);
+  --foreground: oklch(0.22 0.015 260);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.22 0.015 260);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.22 0.015 260);
+  --primary: oklch(0.5 0.16 258);
+  --primary-foreground: oklch(0.99 0 0);
+  --secondary: oklch(0.955 0.006 260);
+  --secondary-foreground: oklch(0.28 0.02 260);
+  --muted: oklch(0.955 0.006 260);
+  --muted-foreground: oklch(0.5 0.015 260);
+  --accent: oklch(0.93 0.012 260);
+  --accent-foreground: oklch(0.28 0.02 260);
+  --destructive: oklch(0.55 0.22 25);
+  --border: oklch(0.89 0.008 260);
+  --input: oklch(0.89 0.008 260);
+  --ring: oklch(0.5 0.16 258 / 45%);
+
+  /* Role/status/streak tinting throughout admin reads these by name
+     (var(--neon-violet) etc.) — remapping them here is what turns badges,
+     the streak calendar, and the challenge calendar's "today" ring from
+     the app's neon palette into plain, professional accents without
+     touching those components at all. */
+  --neon-violet: oklch(0.5 0.16 258);
+  --neon-cyan: oklch(0.52 0.1 210);
+  --neon-pink: oklch(0.55 0.2 20);
+  --neon-orange: oklch(0.62 0.15 55);
+
+  --positive: oklch(0.45 0.14 145);
+}
+
+/* Handlers isn't part of the admin redesign (it's a mod-adjacent bot tool,
+   staying on the dark theme for now) but still wants the same "not a brand
+   moment" font swap admin uses — this carries only that, deliberately not
+   the color tokens above, so it doesn't inherit a light theme its own
+   markup was never updated for. */
+.font-scope {
   --font-heading: var(--font-space-grotesk);
 }
 
@@ -99,6 +142,10 @@
   --neon-cyan: oklch(0.84 0.17 195);
   --neon-pink: oklch(0.62 0.22 355);
   --neon-orange: oklch(0.75 0.16 45);
+
+  /* Streak calendar's "counted" green — pale enough to read on this dark
+     background; --admin-scope redefines it deeper for its light one. */
+  --positive: oklch(0.75 0.16 145);
 }
 
 @layer base {

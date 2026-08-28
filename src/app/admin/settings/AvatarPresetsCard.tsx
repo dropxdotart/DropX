@@ -75,7 +75,7 @@ export default function AvatarPresetsCard({ initial }: { initial: AvatarPreset[]
   }
 
   return (
-    <Card className="border-white/10 bg-card max-w-md">
+    <Card className="border-border bg-card max-w-md">
       <CardHeader><CardTitle className="text-base">Avatar presets</CardTitle></CardHeader>
       <CardContent className="space-y-4">
         {presets.length === 0 ? (
@@ -88,7 +88,7 @@ export default function AvatarPresetsCard({ initial }: { initial: AvatarPreset[]
                 <img
                   src={p.image_url}
                   alt={p.label ?? ''}
-                  className={cn('w-full aspect-square rounded-lg object-cover border', p.active ? 'border-white/10' : 'border-white/10 opacity-40')}
+                  className={cn('w-full aspect-square rounded-lg object-cover border', p.active ? 'border-border' : 'border-border opacity-40')}
                 />
                 <button
                   type="button"
@@ -112,7 +112,7 @@ export default function AvatarPresetsCard({ initial }: { initial: AvatarPreset[]
           </div>
         )}
 
-        <div className="border-t border-white/10 pt-3 space-y-2">
+        <div className="border-t border-border pt-3 space-y-2">
           <input
             ref={fileRef}
             type="file"

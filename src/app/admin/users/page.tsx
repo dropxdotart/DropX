@@ -30,10 +30,10 @@ export default async function AdminUsersPage({
         <CreateUserDialog />
       </div>
 
-      <div className="rounded-xl border border-white/10 bg-card overflow-x-auto">
+      <div className="rounded-xl border border-border bg-card overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
-            <tr className="border-b border-white/10 text-left text-xs text-muted-foreground">
+            <tr className="border-b border-border text-left text-xs text-muted-foreground">
               <th className="p-2.5 font-medium">Name</th>
               <th className="p-2.5 font-medium">Role</th>
               <th className="p-2.5 font-medium">Badges</th>

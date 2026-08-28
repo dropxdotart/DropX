@@ -1,6 +1,7 @@
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
-import AdminNav from './AdminNav'
+import AdminSidebar from './AdminSidebar'
+import AdminHeader from './AdminHeader'
 import AdminFontScope from './AdminFontScope'
 
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
@@ -17,14 +18,12 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   if (profile?.role !== 'admin') redirect('/')
 
   return (
-    <div className="admin-scope flex-1 px-4 py-6">
+    <div className="admin-scope flex flex-1 bg-background text-foreground">
       <AdminFontScope />
-      <div className="max-w-5xl mx-auto space-y-6">
-        <div>
-          <h1 className="font-heading text-lg font-bold tracking-wide">Admin</h1>
-          <AdminNav />
-        </div>
-        {children}
+      <AdminSidebar />
+      <div className="flex-1 min-w-0">
+        <AdminHeader />
+        <div className="max-w-5xl mx-auto px-4 sm:px-6 py-6">{children}</div>
       </div>
     </div>
   )

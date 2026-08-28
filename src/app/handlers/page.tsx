@@ -51,8 +51,8 @@ export default async function HandlersPage() {
     .limit(15)
 
   return (
-    <div className="admin-scope flex-1 px-4 py-8">
-      <AdminFontScope />
+    <div className="font-scope flex-1 px-4 py-8">
+      <AdminFontScope className="font-scope" />
       <div className="max-w-4xl mx-auto space-y-6">
         <div>
           <h1 className="font-heading text-xl font-bold tracking-wide">Handlers</h1>

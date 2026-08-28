@@ -2,6 +2,7 @@
 
 import Link from 'next/link'
 import Image from 'next/image'
+import { usePathname } from 'next/navigation'
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { buttonVariants } from '@/components/ui/button'
@@ -18,6 +19,7 @@ export default function Navbar({
   initialUser: SupabaseUser | null
   initialProfile: Profile | null
 }) {
+  const pathname = usePathname()
   const [user, setUser] = useState<SupabaseUser | null>(initialUser)
   const [profile, setProfile] = useState<Profile | null>(initialProfile)
   const supabase = createClient()
@@ -35,6 +37,10 @@ export default function Navbar({
 
     return () => subscription.unsubscribe()
   }, [])
+
+  // Admin is a separate back-office surface with its own shell (sidebar +
+  // header, see AdminSidebar) — the consumer navbar doesn't belong there.
+  if (pathname?.startsWith('/admin')) return null
 
   return (
     <nav className="border-b border-white/10 bg-background/70 backdrop-blur-md sticky top-0 z-50">

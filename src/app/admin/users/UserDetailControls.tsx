@@ -38,7 +38,7 @@ type ActionWithActor = AdminAction & { actor: { username: string | null; display
 
 function SectionCard({ title, action, children }: { title: string; action?: React.ReactNode; children: React.ReactNode }) {
   return (
-    <Card className="border-white/10 bg-card">
+    <Card className="border-border bg-card">
       <CardHeader>
         <CardTitle className="text-sm">{title}</CardTitle>
         {action && <CardAction>{action}</CardAction>}
@@ -167,7 +167,7 @@ export default function UserDetailControls({
             </div>
           </div>
 
-          <div className="border-t border-white/10 pt-3">
+          <div className="border-t border-border pt-3">
             <FieldLabel>Identity override</FieldLabel>
             <div className="grid grid-cols-2 gap-2 mb-2">
               <Input value={newUsername} onChange={(e) => setNewUsername(e.target.value.toLowerCase())} placeholder="@username" />
@@ -197,7 +197,7 @@ export default function UserDetailControls({
         <div className="space-y-4">
           <SectionCard title="Avatar">
             <div className="flex items-center gap-3">
-              <div className="w-14 h-14 rounded-full overflow-hidden border border-white/10 bg-white/5 shrink-0 flex items-center justify-center text-lg font-bold text-muted-foreground">
+              <div className="w-14 h-14 rounded-full overflow-hidden border border-border bg-muted shrink-0 flex items-center justify-center text-lg font-bold text-muted-foreground">
                 {profile.avatar_url ? (
                   // eslint-disable-next-line @next/next/no-img-element -- external Storage URL
                   <img src={profile.avatar_url} alt="" className="w-full h-full object-cover" />
@@ -246,8 +246,8 @@ export default function UserDetailControls({
                       className={cn(
                         'cursor-pointer select-none border transition-colors',
                         active
-                          ? 'border-[color:var(--neon-violet)]/50 bg-[color:var(--neon-violet)]/15 text-white'
-                          : 'border-white/15 text-muted-foreground hover:text-foreground'
+                          ? 'border-[color:var(--neon-violet)]/50 bg-[color:var(--neon-violet)]/15 text-foreground'
+                          : 'border-border text-muted-foreground hover:text-foreground'
                       )}
                     >
                       {b}
@@ -300,11 +300,11 @@ export default function UserDetailControls({
             {strikes.length === 0 ? (
               <p className="text-xs text-muted-foreground">No strikes.</p>
             ) : (
-              <div className="max-h-40 space-y-2 overflow-y-auto border-t border-white/10 pt-2">
+              <div className="max-h-40 space-y-2 overflow-y-auto border-t border-border pt-2">
                 {strikes.map((s) => {
                   const revoking = busy === `revoke-${s.id}`
                   return (
-                    <div key={s.id} className="text-xs border-b border-white/5 pb-2 last:border-0 last:pb-0">
+                    <div key={s.id} className="text-xs border-b border-border pb-2 last:border-0 last:pb-0">
                       <div className="flex items-start justify-between gap-2">
                         <p className={cn('text-muted-foreground', s.revoked_at && 'line-through opacity-60')}>
                           {new Date(s.created_at).toLocaleString()} — by{' '}
@@ -339,7 +339,7 @@ export default function UserDetailControls({
         </div>
       </div>
 
-      <Card className="border-white/10 bg-card">
+      <Card className="border-border bg-card">
         <CardHeader><CardTitle className="text-sm">Streak</CardTitle></CardHeader>
         <CardContent>
           <StreakCalendar
@@ -362,7 +362,7 @@ export default function UserDetailControls({
         </CardContent>
       </Card>
 
-      <Card className="border-white/10 bg-card">
+      <Card className="border-border bg-card">
         <CardHeader><CardTitle className="text-sm">Activity</CardTitle></CardHeader>
         <CardContent>
           {actions.length === 0 ? (
@@ -370,9 +370,9 @@ export default function UserDetailControls({
           ) : (
             <div className="max-h-56 space-y-2 overflow-y-auto">
               {actions.map((a) => (
-                <div key={a.id} className="text-xs border-b border-white/5 pb-2 last:border-0 last:pb-0">
+                <div key={a.id} className="text-xs border-b border-border pb-2 last:border-0 last:pb-0">
                   <p>
-                    <span className="font-medium text-white">{ADMIN_ACTION_LABELS[a.action] ?? a.action}</span>{' '}
+                    <span className="font-medium text-foreground">{ADMIN_ACTION_LABELS[a.action] ?? a.action}</span>{' '}
                     <span className="text-muted-foreground">
                       by {a.actor?.display_name ?? a.actor?.username ?? 'Someone'} · {new Date(a.created_at).toLocaleString()}
                     </span>

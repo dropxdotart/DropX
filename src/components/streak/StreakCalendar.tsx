@@ -70,11 +70,11 @@ export default function StreakCalendar({
         <div className="flex gap-6">
           <div>
             <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Current streak</p>
-            <p className="text-2xl font-bold text-white">{currentStreak}</p>
+            <p className="text-2xl font-bold text-foreground">{currentStreak}</p>
           </div>
           <div>
             <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Longest</p>
-            <p className="text-2xl font-bold text-white">{longestStreak}</p>
+            <p className="text-2xl font-bold text-foreground">{longestStreak}</p>
           </div>
         </div>
         <Button
@@ -89,13 +89,13 @@ export default function StreakCalendar({
       </div>
 
       {monthKey && (
-        <div className="rounded-lg border border-white/10 bg-black/20 p-3">
+        <div className="rounded-lg border border-border bg-muted p-3">
           <div className="flex items-center justify-between mb-2">
             <button
               type="button"
               disabled={monthIndex === 0}
               onClick={() => setMonthIndex((i) => Math.max(0, i - 1))}
-              className="p-1 rounded hover:bg-white/10 disabled:opacity-30 disabled:hover:bg-transparent"
+              className="p-1 rounded hover:bg-foreground/10 disabled:opacity-30 disabled:hover:bg-transparent"
             >
               <ChevronLeft className="w-4 h-4" />
             </button>
@@ -104,7 +104,7 @@ export default function StreakCalendar({
               type="button"
               disabled={monthIndex === monthKeys.length - 1}
               onClick={() => setMonthIndex((i) => Math.min(monthKeys.length - 1, i + 1))}
-              className="p-1 rounded hover:bg-white/10 disabled:opacity-30 disabled:hover:bg-transparent"
+              className="p-1 rounded hover:bg-foreground/10 disabled:opacity-30 disabled:hover:bg-transparent"
             >
               <ChevronRight className="w-4 h-4" />
             </button>
@@ -135,8 +135,12 @@ export default function StreakCalendar({
                     title={cell.counts ? 'Counts toward the streak — click to remove' : cell.hasResponse ? 'Missed — click to count it' : 'No activity — click to count it'}
                     className={cn(
                       'w-full aspect-square rounded-md text-xs font-medium flex items-center justify-center transition-colors',
-                      cell.counts ? 'bg-green-500/25 text-green-300' : cell.hasResponse ? 'bg-destructive/20 text-destructive' : 'bg-white/5 text-muted-foreground',
-                      editable && !isPending && 'hover:ring-1 hover:ring-white/30 cursor-pointer',
+                      cell.counts
+                        ? 'bg-[color:var(--positive)]/20 text-[color:var(--positive)]'
+                        : cell.hasResponse
+                          ? 'bg-destructive/20 text-destructive'
+                          : 'bg-foreground/5 text-muted-foreground',
+                      editable && !isPending && 'hover:ring-1 hover:ring-foreground/20 cursor-pointer',
                       isPending && 'opacity-50'
                     )}
                   >
@@ -166,7 +170,7 @@ export default function StreakCalendar({
           </div>
 
           <div className="flex items-center gap-3 mt-3 text-[10px] text-muted-foreground">
-            <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-green-500/25" /> Counted</span>
+            <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-[color:var(--positive)]/25" /> Counted</span>
             <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-destructive/20" /> Missed</span>
             <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-[color:var(--neon-violet)]" /> Edited</span>
           </div>

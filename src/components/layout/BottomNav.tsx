@@ -29,7 +29,9 @@ export default function BottomNav({ initialSignedIn }: { initialSignedIn: boolea
     return () => subscription.unsubscribe()
   }, [])
 
-  if (!signedIn) return null
+  // Admin has its own shell (sidebar nav) — the consumer bottom bar
+  // doesn't belong there.
+  if (!signedIn || pathname?.startsWith('/admin')) return null
 
   const dropActive = pathname === '/'
   const leftTabs = SIDE_TABS.slice(0, 2)

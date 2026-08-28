@@ -60,7 +60,7 @@ export default async function AdminAuditPage() {
   return (
     <div className="space-y-4">
       <p className="text-sm text-muted-foreground">{entries.length} event{entries.length === 1 ? '' : 's'}</p>
-      <div className="rounded-xl border border-white/10 bg-card divide-y divide-white/5">
+      <div className="rounded-xl border border-border bg-card divide-y divide-border">
         {entries.length === 0 && <p className="p-4 text-sm text-muted-foreground">No activity yet.</p>}
         {entries.map((entry) =>
           entry.kind === 'deletion' ? (
