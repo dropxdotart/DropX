@@ -45,6 +45,8 @@ export default async function Home() {
     prompt_image_url: challenge.prompt_image_url,
     choices: challenge.choices,
     choices_are_images: challenge.choices_are_images,
+    text_scale: challenge.text_scale,
+    image_scale: challenge.image_scale,
     created_at: challenge.created_at,
   }
 

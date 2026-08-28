@@ -1,10 +1,9 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Button } from '@/components/ui/button'
-import { Check, X, ShieldCheck } from 'lucide-react'
-import { toast } from 'sonner'
+import { Check, X } from 'lucide-react'
 import { approvePhoto, rejectPhoto } from '@/app/mod/actions'
+import SwipeStack, { type SwipeDecision } from './SwipeStack'
 import type { ModQueueItem } from '@/lib/types'
 
 function useCountdown(answeredAt: string, graceMinutes: number) {
@@ -20,79 +19,40 @@ function useCountdown(answeredAt: string, graceMinutes: number) {
   return `${Math.floor(totalSec / 60)}:${String(totalSec % 60).padStart(2, '0')}`
 }
 
-function QueueCard({ item, graceMinutes, onHandled }: { item: ModQueueItem; graceMinutes: number; onHandled: (id: string) => void }) {
-  const [busy, setBusy] = useState<'approve' | 'reject' | null>(null)
+function PhotoCard({ item, graceMinutes }: { item: ModQueueItem; graceMinutes: number }) {
   const countdown = useCountdown(item.answered_at, graceMinutes)
-
-  const handle = async (approve: boolean) => {
-    if (busy) return
-    setBusy(approve ? 'approve' : 'reject')
-    try {
-      const result = approve ? await approvePhoto(item.id) : await rejectPhoto(item.id)
-      if (result.alreadyHandled) toast('Someone already reviewed this one')
-      onHandled(item.id)
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Something went wrong')
-      setBusy(null)
-    }
-  }
-
   return (
-    <div className="rounded-2xl border border-white/10 bg-card/60 backdrop-blur-sm overflow-hidden">
-      <div className="relative">
+    <div className="flex flex-col h-full">
+      <div className="relative flex-1 min-h-0">
         {/* eslint-disable-next-line @next/next/no-img-element -- external Storage URL, no known dimensions */}
-        <img src={item.photo_url} alt="Submission" className="w-full aspect-square object-cover" />
+        <img src={item.photo_url} alt="Submission" className="w-full h-full object-cover" draggable={false} />
         <span className="absolute top-2 right-2 text-[11px] font-semibold bg-black/60 backdrop-blur-sm text-[color:var(--neon-orange)] px-2 py-1 rounded-full tabular-nums">
           {countdown}
         </span>
       </div>
-      <div className="p-3 space-y-3">
-        <div>
-          <p className="text-sm font-semibold">{item.profiles?.display_name ?? item.profiles?.username ?? 'Someone'}</p>
-          <p className="text-xs text-muted-foreground truncate">{item.challenges.prompt}</p>
-        </div>
-        <div className="grid grid-cols-2 gap-2.5">
-          <Button
-            className="h-12 rounded-xl text-lg font-bold bg-destructive/15 text-destructive hover:bg-destructive/25 border-0 glow-pink"
-            disabled={busy !== null}
-            onClick={() => handle(false)}
-          >
-            <X className="w-5 h-5" />
-            N
-          </Button>
-          <Button
-            className="h-12 rounded-xl text-lg font-bold bg-green-500/15 text-green-400 hover:bg-green-500/25 border-0 glow-green"
-            disabled={busy !== null}
-            onClick={() => handle(true)}
-          >
-            <Check className="w-5 h-5" />
-            Y
-          </Button>
-        </div>
+      <div className="p-3 shrink-0">
+        <p className="text-sm font-semibold">{item.profiles?.display_name ?? item.profiles?.username ?? 'Someone'}</p>
+        <p className="text-xs text-muted-foreground truncate">{item.challenges.prompt}</p>
       </div>
     </div>
   )
 }
 
 export default function ModQueue({ initialItems, graceMinutes }: { initialItems: ModQueueItem[]; graceMinutes: number }) {
-  const [items, setItems] = useState(initialItems)
-
-  const handleHandled = (id: string) => setItems((prev) => prev.filter((i) => i.id !== id))
-
-  if (items.length === 0) {
-    return (
-      <div className="flex flex-1 flex-col items-center justify-center px-4 py-16 gap-3 text-center">
-        <ShieldCheck className="w-8 h-8 text-muted-foreground" />
-        <p className="text-muted-foreground">Nothing pending — you&apos;re caught up.</p>
-      </div>
-    )
+  const handleDecision = async (item: ModQueueItem, decision: SwipeDecision) => {
+    const result = decision === 'right' ? await approvePhoto(item.id) : await rejectPhoto(item.id)
+    return result
   }
 
   return (
-    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-      {items.map((item) => (
-        <QueueCard key={item.id} item={item} graceMinutes={graceMinutes} onHandled={handleHandled} />
-      ))}
-    </div>
+    <SwipeStack
+      items={initialItems}
+      onDecision={handleDecision}
+      renderCard={(item) => <PhotoCard item={item} graceMinutes={graceMinutes} />}
+      leftLabel="Reject"
+      rightLabel="Approve"
+      leftIcon={<X className="w-4 h-4" />}
+      rightIcon={<Check className="w-4 h-4" />}
+    />
   )
 }

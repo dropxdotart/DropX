@@ -21,35 +21,57 @@ async function requireAdmin() {
 export type ChallengeInput = {
   type: ChallengeType
   prompt: string
+  prompt_image_url: string | null
   choices: string[] | null
+  choices_are_images: boolean
   correct_answer: string
+  graded: boolean
   explanation: string | null
   tags: string[]
   scheduled_date: string | null
+  text_scale: number
+  image_scale: number
 }
 
-export async function createChallenge(input: ChallengeInput): Promise<void> {
-  const { supabase, userId } = await requireAdmin()
-
+function validateInput(input: ChallengeInput) {
   if (!input.prompt.trim()) throw new Error('Prompt is required')
-  if (input.type !== 'photo' && !input.correct_answer.trim()) {
+  if (input.type !== 'photo' && input.graded && !input.correct_answer.trim()) {
     throw new Error('Correct answer is required for this challenge type')
   }
-  if (input.type === 'multiple_choice' && (!input.choices || input.choices.filter((c) => c.trim()).length < 2)) {
-    throw new Error('Multiple choice needs at least 2 non-empty choices')
+  if (input.type === 'multiple_choice') {
+    const filled = input.choices?.filter((c) => c.trim()) ?? []
+    if (filled.length < 2) throw new Error('Multiple choice needs at least 2 non-empty choices')
+    if (input.graded && !filled.includes(input.correct_answer.trim())) {
+      throw new Error('Pick which choice is correct')
+    }
   }
+}
+
+function toRow(input: ChallengeInput, status: 'draft' | 'confirmed') {
+  return {
+    type: input.type,
+    prompt: input.prompt.trim(),
+    prompt_image_url: input.prompt_image_url,
+    choices: input.type === 'multiple_choice' ? input.choices?.filter((c) => c.trim()) : null,
+    choices_are_images: input.type === 'multiple_choice' ? input.choices_are_images : false,
+    correct_answer: input.type === 'photo' || !input.graded ? 'n/a' : input.correct_answer.trim(),
+    graded: input.type === 'photo' ? true : input.graded,
+    explanation: input.explanation?.trim() || null,
+    tags: input.tags,
+    scheduled_date: input.scheduled_date,
+    text_scale: input.text_scale,
+    image_scale: input.image_scale,
+    status,
+  }
+}
+
+export async function createChallenge(input: ChallengeInput, status: 'draft' | 'confirmed' = 'draft'): Promise<{ id: string }> {
+  const { supabase, userId } = await requireAdmin()
+  validateInput(input)
 
   const { data: created, error } = await supabase
     .from('challenges')
-    .insert({
-      type: input.type,
-      prompt: input.prompt.trim(),
-      choices: input.type === 'multiple_choice' ? input.choices?.filter((c) => c.trim()) : null,
-      correct_answer: input.type === 'photo' ? 'n/a' : input.correct_answer.trim(),
-      explanation: input.explanation?.trim() || null,
-      tags: input.tags,
-      scheduled_date: input.scheduled_date,
-    })
+    .insert(toRow(input, status))
     .select('id')
     .single()
 
@@ -57,35 +79,45 @@ export async function createChallenge(input: ChallengeInput): Promise<void> {
   await logAdminAction(createAdminClient(), {
     actorId: userId,
     action: 'challenge_created',
-    detail: `Challenge created: "${input.prompt.trim()}"${created ? ` (${created.id})` : ''}`,
+    detail: `Challenge created (${status}): "${input.prompt.trim()}"${created ? ` (${created.id})` : ''}`,
   })
   revalidatePath('/admin/challenges')
+  return { id: created.id }
 }
 
-export async function updateChallenge(id: string, input: ChallengeInput): Promise<void> {
+export async function updateChallenge(id: string, input: ChallengeInput, status: 'draft' | 'confirmed'): Promise<void> {
   const { supabase, userId } = await requireAdmin()
+  validateInput(input)
 
   // Used challenges (real drop_at) are locked — real responses reference
   // their content, so editing them after the fact would corrupt history.
   const { data: existing } = await supabase.from('challenges').select('drop_at').eq('id', id).single()
   if (existing?.drop_at) throw new Error('This challenge has already been used and can no longer be edited')
 
-  const { error } = await supabase
-    .from('challenges')
-    .update({
-      type: input.type,
-      prompt: input.prompt.trim(),
-      choices: input.type === 'multiple_choice' ? input.choices?.filter((c) => c.trim()) : null,
-      correct_answer: input.type === 'photo' ? 'n/a' : input.correct_answer.trim(),
-      explanation: input.explanation?.trim() || null,
-      tags: input.tags,
-      scheduled_date: input.scheduled_date,
-    })
-    .eq('id', id)
+  const { error } = await supabase.from('challenges').update(toRow(input, status)).eq('id', id)
 
   if (error) throw new Error(error.message)
-  await logAdminAction(createAdminClient(), { actorId: userId, action: 'challenge_updated', detail: `Challenge updated: "${input.prompt.trim()}"` })
+  await logAdminAction(createAdminClient(), { actorId: userId, action: 'challenge_updated', detail: `Challenge updated (${status}): "${input.prompt.trim()}"` })
   revalidatePath('/admin/challenges')
+}
+
+// Admin-authored images (a caption's prompt photo, image-choice tiles) live
+// in the same challenge-photos bucket users' photo *answers* go to, under
+// admin/ instead of {user_id}/ — the admin client bypasses that per-user
+// storage RLS, same pattern as avatar presets living under avatars/presets/.
+export async function uploadChallengeImage(formData: FormData): Promise<{ url: string }> {
+  await requireAdmin()
+  const file = formData.get('file')
+  if (!(file instanceof File) || file.size === 0) throw new Error('No image provided')
+
+  const admin = createAdminClient()
+  const ext = file.name.split('.').pop() || 'jpg'
+  const path = `admin/${crypto.randomUUID()}.${ext}`
+  const { error: uploadError } = await admin.storage.from('challenge-photos').upload(path, file, { contentType: file.type })
+  if (uploadError) throw new Error(uploadError.message)
+
+  const { data: { publicUrl } } = admin.storage.from('challenge-photos').getPublicUrl(path)
+  return { url: publicUrl }
 }
 
 // Assigns (or clears, if date is null) a pool challenge's scheduled_date —

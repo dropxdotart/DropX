@@ -4,6 +4,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
 import AddIdeaForm from './AddIdeaForm'
+import ChallengeComposer from './ChallengeComposer'
 import type { ChallengeType } from '@/lib/types'
 
 const TYPE_LABEL: Record<ChallengeType, string> = {
@@ -103,7 +104,7 @@ export default async function AdminChallengesPage({
         </div>
       )}
 
-      {tab === 'new' && <Placeholder label="The challenge composer" />}
+      {tab === 'new' && <ChallengeComposer />}
       {tab === 'schedule' && <Placeholder label="Scheduling & push" />}
     </div>
   )

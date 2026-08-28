@@ -49,6 +49,10 @@ create table challenges (
   -- judge each response on a 1-10 scale (responses.rating) instead of
   -- checking it against correct_answer, which stays an unused placeholder.
   graded boolean not null default true,
+  -- Basic per-drop display tuning shown live in the admin composer's phone
+  -- preview — not a layout escape hatch, hence the narrow ranges.
+  text_scale numeric not null default 1.0 check (text_scale between 0.75 and 1.5),
+  image_scale numeric not null default 1.0 check (image_scale between 0.6 and 1.4),
   explanation text,
   tags text[] not null default '{}',
   created_at timestamptz not null default now()

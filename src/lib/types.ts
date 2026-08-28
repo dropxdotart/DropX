@@ -8,6 +8,8 @@ export type Challenge = {
   prompt_image_url: string | null
   choices: string[] | null
   choices_are_images: boolean
+  text_scale: number
+  image_scale: number
   created_at: string
 }
 

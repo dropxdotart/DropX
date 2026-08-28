@@ -12,7 +12,11 @@ import type { Challenge } from '@/lib/types'
 import ResultCard from './ResultCard'
 import PendingReviewCard from './PendingReviewCard'
 
-export default function AnswerForm({ challenge }: { challenge: Challenge }) {
+// preview: renders exactly what a real drop would look like, but every
+// control is inert — used by the admin composer's phone-frame preview,
+// where challenge.id isn't real yet (nothing to submit against) and
+// clicking through shouldn't act like a live answer.
+export default function AnswerForm({ challenge, preview = false }: { challenge: Challenge; preview?: boolean }) {
   const [selected, setSelected] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [result, setResult] = useState<Awaited<ReturnType<typeof submitAnswer>> | null>(null)
@@ -22,7 +26,7 @@ export default function AnswerForm({ challenge }: { challenge: Challenge }) {
   const [submittedPhotoUrl, setSubmittedPhotoUrl] = useState<string | null>(null)
 
   const handleSubmit = async (answer: string) => {
-    if (!answer.trim() || submitting) return
+    if (preview || !answer.trim() || submitting) return
     setSubmitting(true)
     try {
       const res = await submitAnswer(challenge.id, answer)
@@ -43,7 +47,7 @@ export default function AnswerForm({ challenge }: { challenge: Challenge }) {
   }
 
   const handlePhotoSubmit = async () => {
-    if (!photoFile || submitting) return
+    if (preview || !photoFile || submitting) return
     setSubmitting(true)
     try {
       const supabase = createClient()
@@ -87,7 +91,18 @@ export default function AnswerForm({ challenge }: { challenge: Challenge }) {
 
   return (
     <div className="w-full max-w-sm space-y-5">
-      <p className="text-xl font-semibold text-center leading-snug">{challenge.prompt}</p>
+      {challenge.prompt_image_url && (
+        <div className="mx-auto overflow-hidden rounded-xl" style={{ width: `${challenge.image_scale * 100}%` }}>
+          {/* eslint-disable-next-line @next/next/no-img-element -- external Storage URL */}
+          <img src={challenge.prompt_image_url} alt="" className="w-full aspect-square object-cover" draggable={false} />
+        </div>
+      )}
+      <p
+        className="font-semibold text-center leading-snug"
+        style={{ fontSize: `${challenge.text_scale * 1.25}rem` }}
+      >
+        {challenge.prompt}
+      </p>
 
       {challenge.type === 'photo' ? (
         <div className="space-y-3">
@@ -122,6 +137,32 @@ export default function AnswerForm({ challenge }: { challenge: Challenge }) {
             {submitting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
             Submit photo
           </Button>
+        </div>
+      ) : challenge.type === 'multiple_choice' && challenge.choices && challenge.choices_are_images ? (
+        <div className="grid grid-cols-2 gap-2.5">
+          {challenge.choices.map((url) => (
+            <button
+              key={url}
+              type="button"
+              disabled={submitting}
+              onClick={() => {
+                setSelected(url)
+                handleSubmit(url)
+              }}
+              className={cn(
+                'relative aspect-square rounded-xl overflow-hidden border border-white/10 transition-all hover:border-[color:var(--neon-violet)]/60 hover:glow-violet disabled:opacity-60',
+                selected === url && submitting && 'border-[color:var(--neon-violet)]/70 glow-violet'
+              )}
+            >
+              {/* eslint-disable-next-line @next/next/no-img-element -- external Storage URL */}
+              <img src={url} alt="Choice" className="w-full h-full object-cover" draggable={false} />
+              {submitting && selected === url && (
+                <span className="absolute inset-0 flex items-center justify-center bg-black/40">
+                  <Loader2 className="w-5 h-5 animate-spin text-white" />
+                </span>
+              )}
+            </button>
+          ))}
         </div>
       ) : challenge.type === 'multiple_choice' && challenge.choices ? (
         <div className="grid gap-2.5">
