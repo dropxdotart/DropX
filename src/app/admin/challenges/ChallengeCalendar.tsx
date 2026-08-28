@@ -46,7 +46,10 @@ export default function ChallengeCalendar({ items, todayDate }: { items: Challen
     return map
   }, [items])
 
-  const availableChallenges = useMemo(() => items.filter((c) => !c.drop_at && !c.scheduled_date), [items])
+  // Only confirmed challenges are assignable — matches the drop job's own
+  // fallback pick (see findTodaysDrop), so what's offered here never
+  // diverges from what could actually go live.
+  const availableChallenges = useMemo(() => items.filter((c) => !c.drop_at && !c.scheduled_date && c.status === 'confirmed'), [items])
 
   const [monthKey, setMonthKey] = useState(todayDate.slice(0, 7))
   const cells = buildMonthCells(monthKey)
@@ -109,13 +112,13 @@ export default function ChallengeCalendar({ items, todayDate }: { items: Challen
   }
 
   return (
-    <div className="rounded-lg border border-white/10 bg-black/20 p-3 space-y-3">
+    <div className="rounded-lg border border-border bg-card p-3 space-y-3">
       <div className="flex items-center justify-between">
-        <button type="button" onClick={() => setMonthKey((k) => shiftMonth(k, -1))} className="p-1 rounded hover:bg-white/10">
+        <button type="button" onClick={() => setMonthKey((k) => shiftMonth(k, -1))} className="p-1 rounded hover:bg-muted">
           <ChevronLeft className="w-4 h-4" />
         </button>
         <p className="text-sm font-medium">{monthLabel(monthKey)}</p>
-        <button type="button" onClick={() => setMonthKey((k) => shiftMonth(k, 1))} className="p-1 rounded hover:bg-white/10">
+        <button type="button" onClick={() => setMonthKey((k) => shiftMonth(k, 1))} className="p-1 rounded hover:bg-muted">
           <ChevronRight className="w-4 h-4" />
         </button>
       </div>
@@ -139,10 +142,10 @@ export default function ChallengeCalendar({ items, todayDate }: { items: Challen
                 'aspect-square rounded-md p-1 flex flex-col items-start justify-start overflow-hidden text-left transition-colors',
                 isToday && 'ring-1 ring-[color:var(--neon-violet)]',
                 isUsed
-                  ? 'bg-white/5 text-muted-foreground'
+                  ? 'bg-muted text-muted-foreground'
                   : challenge
-                    ? 'bg-[color:var(--neon-violet)]/15 text-white hover:bg-[color:var(--neon-violet)]/25'
-                    : 'bg-white/5 text-muted-foreground hover:bg-white/10'
+                    ? 'bg-[color:var(--neon-violet)]/15 text-[color:var(--neon-violet)] hover:bg-[color:var(--neon-violet)]/25'
+                    : 'bg-muted text-muted-foreground hover:bg-accent'
               )}
             >
               <span className="text-xs font-semibold tabular-nums">{Number(date.slice(8, 10))}</span>

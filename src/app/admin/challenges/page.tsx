@@ -1,11 +1,13 @@
 import Link from 'next/link'
-import { Hammer, Lightbulb } from 'lucide-react'
+import { Lightbulb } from 'lucide-react'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
+import { etDateToday } from '@/lib/time'
 import AddIdeaForm from './AddIdeaForm'
 import ChallengeComposer from './ChallengeComposer'
-import type { ChallengeType } from '@/lib/types'
+import ChallengeCalendar from './ChallengeCalendar'
+import type { ChallengeType, ChallengeAdmin } from '@/lib/types'
 
 const TYPE_LABEL: Record<ChallengeType, string> = {
   multiple_choice: 'Multiple choice',
@@ -21,26 +23,6 @@ type IdeaRow = {
   profiles: { username: string | null; display_name: string | null } | null
 }
 
-function Placeholder({ label }: { label: string }) {
-  return (
-    <div className="flex flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-border bg-card py-20 text-center">
-      <div className="rounded-full bg-muted p-3">
-        <Hammer className="w-5 h-5 text-muted-foreground" />
-      </div>
-      <div>
-        <p className="text-sm font-medium text-foreground">Work happening</p>
-        <p className="text-sm text-muted-foreground max-w-xs mt-1">
-          {label} is next up in the challenge system rebuild — not live yet.
-        </p>
-      </div>
-    </div>
-  )
-}
-
-// The rest of the challenge system (composer, scheduling) is still being
-// rebuilt — see the two Placeholder tabs below. Ideas is the first piece to
-// land: a read-only backlog of everyone's suggestions, on purpose with no
-// link into the (not yet built) composer — see AddIdeaForm's note.
 export default async function AdminChallengesPage({
   searchParams,
 }: {
@@ -56,6 +38,19 @@ export default async function AdminChallengesPage({
     .select('id, type, idea, created_at, profiles(username, display_name)')
     .order('created_at', { ascending: false })
     .limit(200)
+
+  let calendarItems: ChallengeAdmin[] = []
+  if (tab === 'schedule') {
+    // Only what the calendar actually needs to place/offer challenges —
+    // anything already dropped, currently scheduled, or sitting confirmed
+    // in the pool. Pure drafts never show up here (see ChallengeCalendar's
+    // own confirmed-only filter for assignable ones).
+    const { data } = await admin
+      .from('challenges')
+      .select('id, type, prompt, drop_at, scheduled_date, status, tags, correct_answer, explanation, graded, prompt_image_url, choices, choices_are_images, text_scale, image_scale, created_at')
+      .or('drop_at.not.is.null,scheduled_date.not.is.null,status.eq.confirmed')
+    calendarItems = (data ?? []) as unknown as ChallengeAdmin[]
+  }
 
   const tabClass = (active: boolean) =>
     cn(
@@ -105,7 +100,12 @@ export default async function AdminChallengesPage({
       )}
 
       {tab === 'new' && <ChallengeComposer />}
-      {tab === 'schedule' && <Placeholder label="Scheduling & push" />}
+
+      {tab === 'schedule' && (
+        <div className="max-w-md">
+          <ChallengeCalendar items={calendarItems} todayDate={etDateToday()} />
+        </div>
+      )}
     </div>
   )
 }

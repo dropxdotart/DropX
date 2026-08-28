@@ -126,8 +126,11 @@ export async function uploadChallengeImage(formData: FormData): Promise<{ url: s
 export async function setScheduledDate(challengeId: string, date: string | null): Promise<void> {
   const { supabase, userId } = await requireAdmin()
 
-  const { data: existing } = await supabase.from('challenges').select('drop_at, prompt').eq('id', challengeId).single()
+  const { data: existing } = await supabase.from('challenges').select('drop_at, status, prompt').eq('id', challengeId).single()
   if (existing?.drop_at) throw new Error('This challenge has already been used and can no longer be scheduled')
+  // Unscheduling (date: null) is always fine, even on a challenge that
+  // somehow isn't confirmed — only *assigning* a date requires it.
+  if (date && existing?.status !== 'confirmed') throw new Error('Only confirmed challenges can be scheduled — confirm it first')
 
   const { error } = await supabase.from('challenges').update({ scheduled_date: date }).eq('id', challengeId)
   if (error) {

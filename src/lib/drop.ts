@@ -19,10 +19,16 @@ export async function findTodaysDrop(supabase: SupabaseClient, start: Date, end:
 
   if (alreadyDropped) return { status: 'already_dropped' }
 
+  // A challenge can only be scheduled or fall into the random pool pick
+  // once it's confirmed (see the composer's draft/confirmed lifecycle) —
+  // enforced here too, not just by the scheduling UI only offering
+  // confirmed challenges, since this fallback query is the one place that
+  // could otherwise drop a draft without anyone choosing to.
   const { data: scheduled } = await supabase
     .from('challenges')
     .select('id')
     .eq('scheduled_date', etDateToday())
+    .eq('status', 'confirmed')
     .is('drop_at', null)
     .maybeSingle()
 
@@ -33,6 +39,7 @@ export async function findTodaysDrop(supabase: SupabaseClient, start: Date, end:
         .select('id')
         .is('drop_at', null)
         .is('scheduled_date', null)
+        .eq('status', 'confirmed')
         .order('created_at', { ascending: true })
         .limit(1)
         .maybeSingle()
