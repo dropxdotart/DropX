@@ -1,8 +1,8 @@
 'use client'
 
 import { useState, useTransition } from 'react'
+import Link from 'next/link'
 import { Card, CardContent } from '@/components/ui/card'
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -12,20 +12,8 @@ import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import { timeAgo } from '@/lib/time'
 import { toggleLike, toggleFollow, reportAvatar } from '@/app/feed/actions'
+import UserAvatar from '@/components/shared/UserAvatar'
 import type { FeedItem } from '@/lib/types'
-
-function UserAvatar({ username, avatarUrl }: { username: string | null; avatarUrl: string | null }) {
-  return (
-    <div className="gradient-ring rounded-full p-[2px] shrink-0">
-      <Avatar className="w-8 h-8 ring-1 ring-background">
-        {avatarUrl && <AvatarImage src={avatarUrl} alt="" />}
-        <AvatarFallback className="bg-secondary text-xs">
-          {username?.[0]?.toUpperCase() ?? 'U'}
-        </AvatarFallback>
-      </Avatar>
-    </div>
-  )
-}
 
 export default function FeedItemCard({ item, currentUserId }: { item: FeedItem; currentUserId: string }) {
   const [liked, setLiked] = useState(item.likedByMe)
@@ -87,10 +75,22 @@ export default function FeedItemCard({ item, currentUserId }: { item: FeedItem; 
     <Card className="border-white/10 bg-card/60 backdrop-blur-sm">
       <CardContent className="space-y-3">
         <div className="flex items-center gap-2.5">
-          <UserAvatar username={item.profiles.display_name ?? item.profiles.username} avatarUrl={item.profiles.avatar_url} />
+          {item.profiles.username ? (
+            <Link href={`/u/${item.profiles.username}`} className="shrink-0">
+              <UserAvatar username={item.profiles.display_name ?? item.profiles.username} avatarUrl={item.profiles.avatar_url} />
+            </Link>
+          ) : (
+            <UserAvatar username={item.profiles.display_name ?? item.profiles.username} avatarUrl={item.profiles.avatar_url} />
+          )}
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-1.5 flex-wrap">
-              <span className="text-sm font-semibold truncate">{item.profiles.display_name ?? item.profiles.username ?? 'Someone'}</span>
+              {item.profiles.username ? (
+                <Link href={`/u/${item.profiles.username}`} className="text-sm font-semibold truncate hover:underline">
+                  {item.profiles.display_name ?? item.profiles.username}
+                </Link>
+              ) : (
+                <span className="text-sm font-semibold truncate">{item.profiles.display_name ?? 'Someone'}</span>
+              )}
               {item.profiles.username && (
                 <span className="text-xs text-muted-foreground truncate">@{item.profiles.username}</span>
               )}

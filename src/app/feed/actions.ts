@@ -52,6 +52,36 @@ export async function toggleFollow(targetUserId: string): Promise<{ following: b
   return { following: true }
 }
 
+export type FollowListEntry = {
+  id: string
+  username: string | null
+  display_name: string | null
+  avatar_url: string | null
+}
+
+// Both directions read through the same broad "authenticated users can view
+// follows" policy (see supabase/schema.sql) — there's no private/mutual
+// gate here, matching the one-way follow model everywhere else.
+export async function getFollowers(userId: string): Promise<FollowListEntry[]> {
+  const supabase = await createClient()
+  const { data } = await supabase
+    .from('follows')
+    .select('follower:profiles!follower_id(id, username, display_name, avatar_url)')
+    .eq('followed_id', userId)
+    .order('created_at', { ascending: false })
+  return ((data ?? []) as unknown as { follower: FollowListEntry }[]).map((r) => r.follower)
+}
+
+export async function getFollowing(userId: string): Promise<FollowListEntry[]> {
+  const supabase = await createClient()
+  const { data } = await supabase
+    .from('follows')
+    .select('followed:profiles!followed_id(id, username, display_name, avatar_url)')
+    .eq('follower_id', userId)
+    .order('created_at', { ascending: false })
+  return ((data ?? []) as unknown as { followed: FollowListEntry }[]).map((r) => r.followed)
+}
+
 // target_ref snapshots the reported avatar_url — by the time a mod reviews
 // this, the user may have already changed their photo, and the mod queue
 // needs to know what was actually reported, not whatever's live now.
