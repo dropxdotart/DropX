@@ -7,7 +7,7 @@ import { Undo2, Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { reverseModeration } from './actions'
 
-export default function ReverseButton({ responseId }: { responseId: string }) {
+export default function ReverseButton({ targetType, targetId }: { targetType: 'caption_response' | 'dare_submission'; targetId: string }) {
   const [isPending, startTransition] = useTransition()
   const router = useRouter()
 
@@ -15,7 +15,7 @@ export default function ReverseButton({ responseId }: { responseId: string }) {
     if (!confirm('Reverse this decision? This does not adjust the affected streak automatically.')) return
     startTransition(async () => {
       try {
-        await reverseModeration(responseId)
+        await reverseModeration(targetType, targetId)
         toast.success('Decision reversed')
         router.refresh()
       } catch (err) {

@@ -27,8 +27,8 @@ export async function updateAppConfig(input: AppConfig): Promise<void> {
   if (input.drop_window_end_hour <= input.drop_window_start_hour) {
     throw new Error('End hour must be after start hour')
   }
-  if (input.photo_grace_minutes < 1) {
-    throw new Error('Photo grace period must be at least 1 minute')
+  if (input.moderation_grace_minutes < 1) {
+    throw new Error('Moderation grace period must be at least 1 minute')
   }
 
   const admin = createAdminClient()
@@ -41,7 +41,7 @@ export async function updateAppConfig(input: AppConfig): Promise<void> {
   await logAdminAction(admin, {
     actorId: adminId,
     action: 'settings_updated',
-    detail: `Drop window ${input.drop_window_start_hour}:00–${input.drop_window_end_hour}:00, photo grace ${input.photo_grace_minutes}m`,
+    detail: `Drop window ${input.drop_window_start_hour}:00–${input.drop_window_end_hour}:00, moderation grace ${input.moderation_grace_minutes}m`,
   })
   revalidatePath('/admin/settings')
 }

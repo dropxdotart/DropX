@@ -4,14 +4,14 @@ import { etDateToday } from './time'
 export type DropCheckResult =
   | { status: 'already_dropped' }
   | { status: 'pool_empty' }
-  | { status: 'ready'; challengeId: string; scheduled: boolean }
+  | { status: 'ready'; dropId: string; scheduled: boolean }
 
 // Shared by the cron route (random time within the window) and the admin
 // "push now" action (immediately) — both need the exact same "what would
 // drop today" answer, so there's one place that can diverge from the other.
 export async function findTodaysDrop(supabase: SupabaseClient, start: Date, end: Date): Promise<DropCheckResult> {
   const { data: alreadyDropped } = await supabase
-    .from('challenges')
+    .from('drops')
     .select('id')
     .gte('drop_at', start.toISOString())
     .lte('drop_at', end.toISOString())
@@ -19,13 +19,13 @@ export async function findTodaysDrop(supabase: SupabaseClient, start: Date, end:
 
   if (alreadyDropped) return { status: 'already_dropped' }
 
-  // A challenge can only be scheduled or fall into the random pool pick
-  // once it's confirmed (see the composer's draft/confirmed lifecycle) —
+  // A drop can only be scheduled or fall into the random pool pick once
+  // it's confirmed (see the composer's draft/confirmed lifecycle) —
   // enforced here too, not just by the scheduling UI only offering
-  // confirmed challenges, since this fallback query is the one place that
-  // could otherwise drop a draft without anyone choosing to.
+  // confirmed drops, since this fallback query is the one place that could
+  // otherwise drop a draft without anyone choosing to.
   const { data: scheduled } = await supabase
-    .from('challenges')
+    .from('drops')
     .select('id')
     .eq('scheduled_date', etDateToday())
     .eq('status', 'confirmed')
@@ -35,7 +35,7 @@ export async function findTodaysDrop(supabase: SupabaseClient, start: Date, end:
   const { data: next } = scheduled
     ? { data: scheduled }
     : await supabase
-        .from('challenges')
+        .from('drops')
         .select('id')
         .is('drop_at', null)
         .is('scheduled_date', null)
@@ -46,5 +46,5 @@ export async function findTodaysDrop(supabase: SupabaseClient, start: Date, end:
 
   if (!next) return { status: 'pool_empty' }
 
-  return { status: 'ready', challengeId: next.id, scheduled: !!scheduled }
+  return { status: 'ready', dropId: next.id, scheduled: !!scheduled }
 }

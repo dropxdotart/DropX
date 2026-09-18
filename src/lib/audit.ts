@@ -41,6 +41,8 @@ export const ADMIN_ACTION_LABELS: Record<string, string> = {
   text_marked_incorrect: 'Text answer marked incorrect',
   caption_rated: 'Caption rated',
   caption_removed: 'Caption removed',
+  dare_approved: 'Dare approved',
+  dare_rejected: 'Dare rejected',
   moderation_reversed: 'Moderation reversed',
   challenge_created: 'Challenge created',
   challenge_updated: 'Challenge updated',

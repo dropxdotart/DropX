@@ -3,7 +3,7 @@
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 
-export async function toggleLike(responseId: string): Promise<{ liked: boolean }> {
+export async function toggleLike(targetType: 'caption_response' | 'dare_submission', targetId: string): Promise<{ liked: boolean }> {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) throw new Error('Sign in to like')
@@ -12,7 +12,8 @@ export async function toggleLike(responseId: string): Promise<{ liked: boolean }
     .from('likes')
     .select('id')
     .eq('user_id', user.id)
-    .eq('response_id', responseId)
+    .eq('target_type', targetType)
+    .eq('target_id', targetId)
     .maybeSingle()
 
   if (existing) {
@@ -21,7 +22,7 @@ export async function toggleLike(responseId: string): Promise<{ liked: boolean }
     return { liked: false }
   }
 
-  const { error } = await supabase.from('likes').insert({ user_id: user.id, response_id: responseId })
+  const { error } = await supabase.from('likes').insert({ user_id: user.id, target_type: targetType, target_id: targetId })
   if (error) throw new Error(error.message)
   revalidatePath('/feed')
   return { liked: true }

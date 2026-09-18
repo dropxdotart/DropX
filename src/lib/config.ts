@@ -3,13 +3,13 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 export type AppConfig = {
   drop_window_start_hour: number
   drop_window_end_hour: number
-  photo_grace_minutes: number
+  moderation_grace_minutes: number
 }
 
 const DEFAULTS: AppConfig = {
   drop_window_start_hour: 12,
   drop_window_end_hour: 19,
-  photo_grace_minutes: 10,
+  moderation_grace_minutes: 10,
 }
 
 // Takes whichever client the caller already has (user-scoped in page.tsx,
@@ -20,7 +20,7 @@ const DEFAULTS: AppConfig = {
 export async function getAppConfig(supabase: SupabaseClient): Promise<AppConfig> {
   const { data } = await supabase
     .from('app_config')
-    .select('drop_window_start_hour, drop_window_end_hour, photo_grace_minutes')
+    .select('drop_window_start_hour, drop_window_end_hour, moderation_grace_minutes')
     .single()
 
   return data ?? DEFAULTS

@@ -57,12 +57,12 @@ export default function SettingsForm({ initial }: { initial: AppConfig }) {
             </div>
           </div>
           <div className="space-y-1.5">
-            <label className="text-xs font-medium text-muted-foreground">Photo review grace period (minutes)</label>
+            <label className="text-xs font-medium text-muted-foreground">Moderation grace period (minutes)</label>
             <Input
               type="number"
               min={1}
-              value={config.photo_grace_minutes}
-              onChange={(e) => setConfig({ ...config, photo_grace_minutes: Number(e.target.value) })}
+              value={config.moderation_grace_minutes}
+              onChange={(e) => setConfig({ ...config, moderation_grace_minutes: Number(e.target.value) })}
             />
           </div>
           <Button type="submit" variant="secondary" disabled={submitting}>

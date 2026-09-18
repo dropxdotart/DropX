@@ -7,7 +7,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Textarea } from '@/components/ui/textarea'
-import { Heart, ShieldCheck, CheckCircle2, XCircle, UserPlus, UserCheck, Clock, Flag, Loader2 } from 'lucide-react'
+import { Heart, ShieldCheck, Star, UserPlus, UserCheck, Flag, Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import { timeAgo } from '@/lib/time'
@@ -43,13 +43,15 @@ export default function FeedItemCard({ item, currentUserId }: { item: FeedItem; 
     })
   }
 
+  const targetType = item.kind === 'caption' ? 'caption_response' : 'dare_submission'
+
   const handleLike = () => {
     const next = !liked
     setLiked(next)
     setLikeCount((c) => c + (next ? 1 : -1))
     startTransition(async () => {
       try {
-        await toggleLike(item.id)
+        await toggleLike(targetType, item.id)
       } catch (err) {
         setLiked(!next)
         setLikeCount((c) => c + (next ? -1 : 1))
@@ -106,7 +108,7 @@ export default function FeedItemCard({ item, currentUserId }: { item: FeedItem; 
                 </Badge>
               ))}
             </div>
-            <p className="text-xs text-muted-foreground">{timeAgo(item.answered_at)}</p>
+            <p className="text-xs text-muted-foreground">{timeAgo(item.submitted_at)}</p>
           </div>
           {!isOwn && (
             <button
@@ -134,29 +136,25 @@ export default function FeedItemCard({ item, currentUserId }: { item: FeedItem; 
 
         <div className="rounded-lg bg-white/5 border border-white/10 overflow-hidden">
           <div className="p-3 space-y-1.5">
-            <p className="text-sm text-muted-foreground">{item.challenges.prompt}</p>
-            {!item.photo_url && (
-              <div className="flex items-center gap-1.5 text-sm font-medium">
-                {item.is_correct ? (
-                  <CheckCircle2 className="w-4 h-4 text-green-400 shrink-0" />
-                ) : (
-                  <XCircle className="w-4 h-4 text-destructive shrink-0" />
+            <p className="text-sm text-muted-foreground">{item.prompt}</p>
+            {item.kind === 'caption' && (
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-sm font-medium">&ldquo;{item.caption}&rdquo;</p>
+                {item.rating !== null && (
+                  <span className="shrink-0 flex items-center gap-0.5 text-xs font-semibold text-[color:var(--neon-orange)]">
+                    <Star className="w-3.5 h-3.5" fill="currentColor" />
+                    {item.rating}
+                  </span>
                 )}
-                {item.answer}
               </div>
             )}
           </div>
-          {item.photo_url && (
-            <div className="relative">
-              {/* eslint-disable-next-line @next/next/no-img-element -- external Storage URL, no known dimensions */}
-              <img src={item.photo_url} alt="" className="w-full aspect-square object-cover" />
-              {item.is_correct === null && (
-                <span className="absolute top-2 right-2 flex items-center gap-1 text-[10px] font-semibold bg-black/60 backdrop-blur-sm text-[color:var(--neon-orange)] px-2 py-1 rounded-full">
-                  <Clock className="w-3 h-3" />
-                  Under review
-                </span>
-              )}
-            </div>
+          {item.kind === 'caption' && item.imageUrl && (
+            // eslint-disable-next-line @next/next/no-img-element -- external Storage URL, no known dimensions
+            <img src={item.imageUrl} alt="" className="w-full aspect-square object-cover" />
+          )}
+          {item.kind === 'dare' && item.videoUrl && (
+            <video src={item.videoUrl} className="w-full aspect-square object-cover bg-black" controls playsInline />
           )}
         </div>
 

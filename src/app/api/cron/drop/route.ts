@@ -5,12 +5,11 @@ import { getAppConfig } from '@/lib/config'
 import { findTodaysDrop } from '@/lib/drop'
 
 // Fired once daily by Vercel Cron (see vercel.json), safely after the window
-// opens. Prefers a challenge an admin scheduled for today (challenges.
-// scheduled_date); if none, falls back to the oldest un-dropped pool item,
-// same as before. Either way it gets a random drop_at somewhere inside
-// today's admin-configurable ET window, so the exact moment stays unknown
-// to players until it happens (see challenges RLS). An admin can also force
-// this early via "push now" in /admin/challenges (src/app/admin/challenges/actions.ts).
+// opens. Prefers a drop an admin scheduled for today (drops.scheduled_date);
+// if none, falls back to the oldest un-dropped confirmed pool item. Either
+// way it gets a random drop_at somewhere inside today's admin-configurable
+// ET window, so the exact moment stays unknown to players until it happens
+// (see drops RLS). An admin can also force this early via "push now".
 export async function GET(request: Request) {
   const authHeader = request.headers.get('authorization')
   if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
@@ -31,13 +30,13 @@ export async function GET(request: Request) {
   const dropAt = new Date(start.getTime() + Math.random() * (end.getTime() - start.getTime()))
 
   const { error } = await supabase
-    .from('challenges')
+    .from('drops')
     .update({ drop_at: dropAt.toISOString() })
-    .eq('id', result.challengeId)
+    .eq('id', result.dropId)
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
 
-  return NextResponse.json({ dropped: result.challengeId, drop_at: dropAt.toISOString(), scheduled: result.scheduled })
+  return NextResponse.json({ dropped: result.dropId, drop_at: dropAt.toISOString(), scheduled: result.scheduled })
 }

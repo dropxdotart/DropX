@@ -1,7 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 
 // Streak "days" are tracked in UTC to keep the math independent of each
-// player's local timezone — a challenge's drop_at date is its day.
+// player's local timezone — a drop's drop_at date is its day.
 function toDateString(iso: string): string {
   return new Date(iso).toISOString().slice(0, 10)
 }
@@ -16,13 +16,13 @@ function addDays(dateString: string, days: number): string {
   return d.toISOString().slice(0, 10)
 }
 
-// Shared by both instant grading (text/multiple_choice, in submitAnswer) and
-// deferred grading (a photo response, once a mod approves it) — whichever
-// path finally knows "this counts as today's correct answer" calls this.
-export async function updateStreakForAnswer(
+// Shared by every path that finally knows "this counts as today's
+// participation" — an instant hot-take vote, or a caption/dare once a mod
+// approves it.
+export async function creditStreakForDrop(
   supabase: SupabaseClient,
   userId: string,
-  challengeDropAt: string
+  dropAt: string
 ): Promise<{ currentStreak: number; longestStreak: number }> {
   const { data: profile } = await supabase
     .from('profiles')
@@ -30,8 +30,8 @@ export async function updateStreakForAnswer(
     .eq('id', userId)
     .single()
 
-  const challengeDate = toDateString(challengeDropAt)
-  const yesterday = addDays(challengeDate, -1)
+  const dropDate = toDateString(dropAt)
+  const yesterday = addDays(dropDate, -1)
   const currentStreak = profile?.last_answered_date === yesterday ? (profile?.current_streak ?? 0) + 1 : 1
   const longestStreak = Math.max(profile?.longest_streak ?? 0, currentStreak)
 
@@ -40,7 +40,7 @@ export async function updateStreakForAnswer(
     .update({
       current_streak: currentStreak,
       longest_streak: longestStreak,
-      last_answered_date: challengeDate,
+      last_answered_date: dropDate,
     })
     .eq('id', userId)
 
@@ -54,12 +54,14 @@ export type StreakDay = {
   hasResponse: boolean
 }
 
-type ChallengeDropAt = { drop_at: string | null }
+type DropAt = { drop_at: string | null }
 
-// Merges real answer history (responses joined to the challenge's drop date)
-// with any manual streak_overrides for that date — an override always wins.
-// Ordered most-recent first. `days` bounds how far back to look; pass a large
-// number (recomputeStreakForUser does) to walk full history.
+// Merges real participation (hot take votes count instantly; captions/dares
+// only once approved) with any manual streak_overrides for that date — an
+// override always wins. Ordered most-recent first. `days` bounds how far
+// back to look; pass a large number (recomputeStreakForUser does) to walk
+// full history. Three separate queries + a client-side merge, since
+// PostgREST has no UNION across the three response tables.
 export async function getStreakCalendar(
   supabase: SupabaseClient,
   userId: string,
@@ -68,27 +70,37 @@ export async function getStreakCalendar(
   const today = todayDateString()
   const since = addDays(today, -days)
 
-  const { data: responses } = await supabase
-    .from('responses')
-    .select('is_correct, challenges!inner(drop_at)')
-    .eq('user_id', userId)
-    .not('challenges.drop_at', 'is', null)
-
-  const { data: overrides } = await supabase
-    .from('streak_overrides')
-    .select('date, counts')
-    .eq('user_id', userId)
-    .gte('date', since)
+  const [{ data: votes }, { data: captions }, { data: dares }, { data: overrides }] = await Promise.all([
+    supabase.from('hot_take_votes').select('drops!inner(drop_at)').eq('user_id', userId).not('drops.drop_at', 'is', null),
+    supabase
+      .from('caption_responses')
+      .select('moderation_status, drops!inner(drop_at)')
+      .eq('user_id', userId)
+      .not('drops.drop_at', 'is', null),
+    supabase
+      .from('dare_submissions')
+      .select('moderation_status, drops!inner(drop_at)')
+      .eq('user_id', userId)
+      .not('drops.drop_at', 'is', null),
+    supabase.from('streak_overrides').select('date, counts').eq('user_id', userId).gte('date', since),
+  ])
 
   const byDate = new Map<string, { counts: boolean; hasResponse: boolean; overridden: boolean }>()
 
-  for (const r of responses ?? []) {
-    const dropAt = (r.challenges as unknown as ChallengeDropAt).drop_at
-    if (!dropAt) continue
+  const mark = (dropAt: string | null | undefined, counts: boolean) => {
+    if (!dropAt) return
     const date = toDateString(dropAt)
-    if (date < since) continue
-    byDate.set(date, { counts: r.is_correct === true, hasResponse: true, overridden: false })
+    if (date < since) return
+    // A date might already be marked by a different drop type across
+    // history (shouldn't happen day-to-day since only one drop goes live
+    // per day, but favor "counts" if it ever does).
+    const existing = byDate.get(date)
+    byDate.set(date, { counts: counts || Boolean(existing?.counts), hasResponse: true, overridden: false })
   }
+
+  for (const v of votes ?? []) mark((v.drops as unknown as DropAt).drop_at, true)
+  for (const c of captions ?? []) mark((c.drops as unknown as DropAt).drop_at, c.moderation_status === 'approved')
+  for (const d of dares ?? []) mark((d.drops as unknown as DropAt).drop_at, d.moderation_status === 'approved')
 
   for (const o of overrides ?? []) {
     const existing = byDate.get(o.date)

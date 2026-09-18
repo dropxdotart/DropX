@@ -1,56 +1,42 @@
-export type ChallengeType = 'multiple_choice' | 'text' | 'photo'
+export type DropType = 'hot_take' | 'caption' | 'dare'
+export type DropStatus = 'draft' | 'confirmed'
 
-export type Challenge = {
+export type Drop = {
   id: string
-  drop_at: string
-  type: ChallengeType
+  type: DropType
   prompt: string
-  prompt_image_url: string | null
-  choices: string[] | null
-  choices_are_images: boolean
-  // Not sensitive (unlike correct_answer) — the client needs it to decide
-  // how to submit and what to show after (see AnswerForm).
-  graded: boolean
-  text_scale: number
-  image_scale: number
+  drop_at: string
   created_at: string
 }
 
-export type ChallengeWithAnswer = Challenge & {
-  correct_answer: string
-  explanation: string | null
-}
-
-export type ChallengeStatus = 'draft' | 'confirmed'
-
-export type ChallengeAdmin = ChallengeWithAnswer & {
+export type DropAdmin = {
+  id: string
+  type: DropType
+  prompt: string
   drop_at: string | null
   scheduled_date: string | null
-  tags: string[]
-  status: ChallengeStatus
+  status: DropStatus
+  created_at: string
 }
 
-export type ChallengeIdea = {
-  id: string
-  submitted_by: string
-  type: ChallengeType
-  idea: string
-  created_at: string
+export type HotTakeDetails = {
+  drop_id: string
+  option_a: string
+  option_b: string
+}
+
+export type CaptionDetails = {
+  drop_id: string
+  image_url: string
+}
+
+export type DareDetails = {
+  drop_id: string
+  exercise_label: string | null
+  target_reps: number | null
 }
 
 export type ModerationStatus = 'pending' | 'approved' | 'rejected'
-
-export type Response = {
-  id: string
-  user_id: string
-  challenge_id: string
-  answer: string
-  is_correct: boolean | null
-  photo_url: string | null
-  moderation_status: ModerationStatus
-  rating: number | null
-  answered_at: string
-}
 
 export type UserRole = 'user' | 'mod' | 'admin'
 export type AccountStatus = 'active' | 'suspended' | 'banned'
@@ -79,7 +65,8 @@ export type Strike = {
   user_id: string
   issued_by: string
   reason: string | null
-  response_id: string | null
+  target_type: string | null
+  target_id: string | null
   created_at: string
   issuer: Pick<PublicProfile, 'username' | 'display_name'>
   revoked_at: string | null
@@ -99,53 +86,44 @@ export type AdminAction = {
 
 export type ModerationLogEntry = {
   id: string
-  response_id: string
+  target_type: 'caption_response' | 'dare_submission'
+  target_id: string
   moderator_id: string
   decision: ModerationStatus
   created_at: string
   moderator: Pick<PublicProfile, 'username' | 'display_name'>
-  response: {
-    user_id: string
-    photo_url: string | null
-    profiles: Pick<PublicProfile, 'username' | 'display_name'>
-  }
 }
 
 export type PublicProfile = Pick<Profile, 'id' | 'username' | 'display_name' | 'avatar_url' | 'role' | 'badges'>
 
-export type ModQueueItem = {
+export type CaptionQueueItem = {
   id: string
-  photo_url: string
-  answered_at: string
+  caption: string
+  submitted_at: string
   profiles: Pick<PublicProfile, 'username' | 'display_name'>
-  challenges: Pick<Challenge, 'prompt'>
+  drops: Pick<Drop, 'prompt'> & { caption_details: Pick<CaptionDetails, 'image_url'> | null }
 }
 
-export type TextReviewItem = {
+export type DareQueueItem = {
   id: string
-  answer: string
-  answered_at: string
+  video_url: string
+  counted_reps: number | null
+  submitted_at: string
   profiles: Pick<PublicProfile, 'username' | 'display_name'>
-  challenges: Pick<Challenge, 'prompt'>
-}
-
-export type CaptionReviewItem = {
-  id: string
-  answer: string
-  answered_at: string
-  profiles: Pick<PublicProfile, 'username' | 'display_name'>
-  challenges: Pick<Challenge, 'prompt' | 'prompt_image_url'>
+  drops: Pick<Drop, 'prompt'>
 }
 
 export type FeedItem = {
   id: string
+  kind: 'caption' | 'dare'
   user_id: string
-  answer: string
-  is_correct: boolean | null
-  photo_url: string | null
-  answered_at: string
+  prompt: string
+  caption: string | null
+  imageUrl: string | null
+  videoUrl: string | null
+  rating: number | null
+  submitted_at: string
   profiles: PublicProfile & Pick<Profile, 'share_to_everyone'>
-  challenges: Pick<Challenge, 'prompt' | 'type'>
   likeCount: number
   likedByMe: boolean
   authorFollowedByMe: boolean

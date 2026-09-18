@@ -3,7 +3,6 @@ import { createClient } from '@/lib/supabase/server'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import SettingsCard from '@/components/profile/SettingsCard'
-import SuggestChallengeCard from '@/components/profile/SuggestChallengeCard'
 import DisplayNameEditor from '@/components/profile/DisplayNameEditor'
 import AvatarUploader from '@/components/profile/AvatarUploader'
 import FollowListDialog from '@/components/shared/FollowListDialog'
@@ -98,8 +97,6 @@ export default async function ProfilePage() {
             </CardContent>
           </Card>
         </div>
-
-        <SuggestChallengeCard />
 
         <SettingsCard
           initialShowEveryone={profile?.show_everyone_tab ?? true}

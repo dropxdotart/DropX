@@ -4,34 +4,33 @@ import { useState } from 'react'
 import { toast } from 'sonner'
 import { Trash2 } from 'lucide-react'
 import { rateCaption, removeCaption } from '@/app/mod/actions'
-import type { CaptionReviewItem } from '@/lib/types'
+import type { CaptionQueueItem } from '@/lib/types'
 
-// Same card-stack look as SwipeStack (single top card, a next card peeking
-// behind), but the decision here is a 1-10 rating, not a binary swipe, so
-// this is its own small component rather than a SwipeStack variant.
-function CaptionCard({ item }: { item: CaptionReviewItem }) {
+// Same card-stack look as SwipeStack (single top card), but the decision
+// here is a 1-10 rating, not a binary swipe, so this is its own small
+// component rather than a SwipeStack variant.
+function CaptionCard({ item }: { item: CaptionQueueItem }) {
   return (
     <div className="flex flex-col">
-      {item.challenges.prompt_image_url && (
+      {item.drops.caption_details?.image_url && (
         // Capped, not filling the card — the rating grid below needs to
         // stay on-screen without scrolling for this queue to work as fast
-        // one-handed triage, so this can't grow the way the photo queue's
-        // hero image does.
+        // one-handed triage.
         <div className="w-full h-40 shrink-0">
           {/* eslint-disable-next-line @next/next/no-img-element -- external Storage URL */}
-          <img src={item.challenges.prompt_image_url} alt="" className="w-full h-full object-cover" draggable={false} />
+          <img src={item.drops.caption_details.image_url} alt="" className="w-full h-full object-cover" draggable={false} />
         </div>
       )}
       <div className="p-4 space-y-1.5">
-        <p className="text-xs text-muted-foreground">{item.challenges.prompt}</p>
-        <p className="text-lg font-semibold leading-snug break-words">&ldquo;{item.answer}&rdquo;</p>
+        <p className="text-xs text-muted-foreground">{item.drops.prompt}</p>
+        <p className="text-lg font-semibold leading-snug break-words">&ldquo;{item.caption}&rdquo;</p>
         <p className="text-xs text-muted-foreground">{item.profiles?.display_name ?? item.profiles?.username ?? 'Someone'}</p>
       </div>
     </div>
   )
 }
 
-export default function CaptionReviewQueue({ initialItems }: { initialItems: CaptionReviewItem[] }) {
+export default function CaptionReviewQueue({ initialItems }: { initialItems: CaptionQueueItem[] }) {
   const [queue, setQueue] = useState(initialItems)
   const [busy, setBusy] = useState(false)
   const top = queue[0]
