@@ -1,117 +1,66 @@
 'use server'
 
-import { revalidatePath } from 'next/cache'
+import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
-import { createAdminClient } from '@/lib/supabase/admin'
-import { creditStreakForDrop } from '@/lib/streak'
-import { logAdminAction } from '@/lib/audit'
 
-// Hot takes have no right/wrong and no moderation — an instant vote, streak
-// credited immediately (same "answering is what counts" rule as everything
-// else that doesn't need a mod pass).
-export async function submitHotTakeVote(dropId: string, choice: 'a' | 'b'): Promise<{ currentStreak: number }> {
+const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789' // no 0/O/1/I — easy to read aloud/text
+
+function randomCode(length = 4): string {
+  let code = ''
+  for (let i = 0; i < length; i++) code += CODE_CHARS[Math.floor(Math.random() * CODE_CHARS.length)]
+  return code
+}
+
+// Retries on the rare collision (unique constraint on rooms.code) rather
+// than checking existence first — cheaper, and race-safe if two hosts hit
+// this at the exact same moment.
+export async function createRoom(): Promise<never> {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
-  if (!user) throw new Error('Sign in to vote')
+  if (!user) throw new Error('Sign in to start a room')
 
-  const { data: drop, error: dropError } = await supabase.from('drops').select('drop_at').eq('id', dropId).single()
-  if (dropError || !drop) throw new Error('Drop not found')
+  let code = ''
+  for (let attempt = 0; attempt < 5; attempt++) {
+    code = randomCode()
+    const { data: room, error } = await supabase
+      .from('rooms')
+      .insert({ code, host_id: user.id })
+      .select('id, code')
+      .single()
 
-  const { error: insertError } = await supabase
-    .from('hot_take_votes')
-    .insert({ drop_id: dropId, user_id: user.id, choice })
-
-  let currentStreak: number
-  if (insertError) {
-    if (insertError.code !== '23505') throw new Error(insertError.message)
-    const { data: profile } = await supabase.from('profiles').select('current_streak').eq('id', user.id).single()
-    currentStreak = profile?.current_streak ?? 0
-  } else {
-    ;({ currentStreak } = await creditStreakForDrop(supabase, user.id, drop.drop_at))
+    if (!error && room) {
+      await supabase.from('room_players').insert({ room_id: room.id, user_id: user.id })
+      redirect(`/room/${room.code}`)
+    }
+    if (error && error.code !== '23505') throw new Error(error.message)
   }
-
-  revalidatePath('/')
-  revalidatePath('/profile')
-  return { currentStreak }
+  throw new Error('Could not generate a room code — try again')
 }
 
-// Aggregate counts are never sensitive (nothing here identifies who voted
-// which way), so this is a plain read — the "don't show the split until
-// you've voted" rule is enforced by the client only calling this after a
-// vote is cast, not by hiding the data itself.
-export async function getHotTakeCounts(dropId: string): Promise<{ a: number; b: number }> {
-  const supabase = await createClient()
-  const [{ count: a }, { count: b }] = await Promise.all([
-    supabase.from('hot_take_votes').select('id', { count: 'exact', head: true }).eq('drop_id', dropId).eq('choice', 'a'),
-    supabase.from('hot_take_votes').select('id', { count: 'exact', head: true }).eq('drop_id', dropId).eq('choice', 'b'),
-  ])
-  return { a: a ?? 0, b: b ?? 0 }
-}
-
-// Captions can't be auto-graded — every response inserts as 'pending' and
-// goes to the Caption review queue, where a mod either rates it 1-10
-// (credits the streak) or removes it (doesn't) — see mod/actions.ts's
-// rateCaption/removeCaption. "Remove" is meant to genuinely exclude spam/
-// abuse from counting, which is why this waits instead of crediting on
-// submission the way a hot take vote does.
-export async function submitCaption(dropId: string, caption: string): Promise<void> {
+export async function joinRoom(codeInput: string): Promise<never> {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
-  if (!user) throw new Error('Sign in to answer')
-  if (!caption.trim()) throw new Error('Caption cannot be empty')
+  if (!user) throw new Error('Sign in to join a room')
 
-  const { error: insertError } = await supabase
-    .from('caption_responses')
-    .insert({ drop_id: dropId, user_id: user.id, caption: caption.trim() })
+  const code = codeInput.trim().toUpperCase()
+  if (!code) throw new Error('Enter a room code')
 
-  if (insertError && insertError.code !== '23505') throw new Error(insertError.message)
-  revalidatePath('/')
-}
-
-// Same moderated-before-it-counts shape as captions — a rejected dare video
-// (faked, wrong exercise, inappropriate) shouldn't count toward the streak.
-export async function submitDare(dropId: string, videoUrl: string, countedReps: number | null): Promise<void> {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) throw new Error('Sign in to answer')
-
-  const { error: insertError } = await supabase
-    .from('dare_submissions')
-    .insert({ drop_id: dropId, user_id: user.id, video_url: videoUrl, counted_reps: countedReps })
-
-  if (insertError && insertError.code !== '23505') throw new Error(insertError.message)
-  revalidatePath('/')
-}
-
-// Retracts a user's own caption/dare — the row stays (unique(drop_id,
-// user_id) still blocks resubmitting to that drop), just hidden from
-// everyone but the owner and logged for admins. There's no RLS UPDATE
-// policy letting a user touch their own submission (deliberately — answers
-// are meant to be final), so this authorizes on the real session and
-// writes through the admin client, same pattern as every other privileged
-// mutation in this app.
-export async function deleteMyResponse(targetType: 'caption_response' | 'dare_submission', id: string): Promise<void> {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) throw new Error('Sign in required')
-
-  const table = targetType === 'caption_response' ? 'caption_responses' : 'dare_submissions'
-  const admin = createAdminClient()
-  const { data: updated, error } = await admin
-    .from(table)
-    .update({ deleted_at: new Date().toISOString() })
-    .eq('id', id)
-    .eq('user_id', user.id)
-    .is('deleted_at', null)
-    .select('id')
+  const { data: room, error: roomError } = await supabase
+    .from('rooms')
+    .select('id, code, status')
+    .eq('code', code)
     .maybeSingle()
 
-  if (error) throw new Error(error.message)
-  if (!updated) throw new Error('Nothing to delete')
+  if (roomError) throw new Error(roomError.message)
+  if (!room) throw new Error('No room with that code')
+  if (room.status === 'finished') throw new Error('That room already ended')
 
-  await logAdminAction(admin, { actorId: user.id, targetUserId: user.id, action: 'answer_deleted', detail: 'Deleted their own answer' })
+  const { error: joinError } = await supabase
+    .from('room_players')
+    .insert({ room_id: room.id, user_id: user.id })
 
-  revalidatePath('/')
-  revalidatePath('/feed')
-  revalidatePath('/profile')
+  // Already in the room (re-joining, e.g. after a refresh) — fine, not an error.
+  if (joinError && joinError.code !== '23505') throw new Error(joinError.message)
+
+  redirect(`/room/${room.code}`)
 }

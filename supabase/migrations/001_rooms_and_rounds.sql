@@ -148,11 +148,8 @@ create policy "Authenticated users can view profiles" on profiles
 create policy "Users can update own profile" on profiles
   for update using (auth.uid() = id);
 
--- Player lists/rounds are visible only to room members — no "browse all
--- rooms" concept, joining requires already knowing the code. Rooms
--- themselves are readable by any signed-in user (see below): the join flow
--- needs to look a room up by code *before* you're a member, and a room's
--- own metadata isn't sensitive — the code itself is the real access control.
+-- A room and its player list are visible to anyone who's joined it — no
+-- "browse all rooms" concept, joining requires already knowing the code.
 create function public.is_in_room(target_room_id uuid)
 returns boolean
 language sql
@@ -167,8 +164,8 @@ as $$
   );
 $$;
 
-create policy "Authenticated users can view rooms" on rooms
-  for select to authenticated using (true);
+create policy "Room members can view their room" on rooms
+  for select to authenticated using (is_in_room(id) or host_id = auth.uid());
 create policy "Any signed-in user can create a room" on rooms
   for insert to authenticated with check (host_id = auth.uid());
 create policy "Host can update their room" on rooms
@@ -238,10 +235,3 @@ create policy "Own caption vote visible while voting, everyone's once revealed" 
   );
 create policy "Users can cast their own caption vote" on caption_votes
   for insert to authenticated with check (voter_id = auth.uid());
-
--- ─── REALTIME ────────────────────────────────────────────────────────────────
--- Live sync (lobby roster, round transitions) is driven by Postgres
--- Changes over these three tables.
-alter publication supabase_realtime add table rooms;
-alter publication supabase_realtime add table room_players;
-alter publication supabase_realtime add table rounds;

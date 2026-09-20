@@ -1,71 +1,40 @@
 import type { Metadata } from "next";
-import { Space_Grotesk, Orbitron } from "next/font/google";
+import { Space_Grotesk } from "next/font/google";
 import "./globals.css";
 import { Toaster } from "@/components/ui/sonner";
 import Navbar from "@/components/layout/Navbar";
-import BottomNav from "@/components/layout/BottomNav";
-import MaintenanceScreen from "@/components/layout/MaintenanceScreen";
 import { createClient } from "@/lib/supabase/server";
-import type { Profile } from "@/lib/types";
 
 const spaceGrotesk = Space_Grotesk({
   variable: "--font-space-grotesk",
   subsets: ["latin"],
 });
 
-const orbitron = Orbitron({
-  variable: "--font-orbitron",
-  subsets: ["latin"],
-  weight: ["600", "700", "800"],
-});
-
 export const metadata: Metadata = {
   metadataBase: new URL("https://dropdotx.vercel.app"),
-  title: "DropX",
-  description: "A new challenge drops every day.",
+  title: "FleX",
+  description: "Party games with your friends, right from your phones.",
   openGraph: {
-    title: "DropX",
-    description: "A new challenge drops every day.",
-    images: ["/dropx-logo-full.png"],
+    title: "FleXGames",
+    description: "Party games with your friends, right from your phones.",
   },
 };
 
 export default async function RootLayout({ children }: LayoutProps<"/">) {
-  // Navbar/BottomNav used to learn who's signed in via a client-side
-  // useEffect fetch, which meant every page load flashed "signed out"
-  // (no streak badge, a "Sign in" link) before that resolved — even though
-  // the server rendering this exact request already knows the answer.
-  // Fetching it once here and seeding both components with it removes that
-  // flash entirely; they still listen for auth changes after mount for the
-  // rare case a session changes without a full navigation.
+  // Seeded from the server so Navbar has no signed-out flash on load — it
+  // still listens for auth changes itself for the rare case a session
+  // changes without a full navigation.
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
-  const { data: profile } = user
-    ? await supabase.from("profiles").select("*").eq("id", user.id).single()
-    : { data: null };
-
-  // Whole-app rebuild in progress — locked for everyone, admins included.
-  // There's no in-app escape hatch by design; lifting this is a code change
-  // (flip back to `Boolean(user) && profile?.role !== "admin"` to reopen
-  // admin-only access, or remove the gate entirely to reopen to everyone).
-  const blocked = true;
 
   return (
     <html
       lang="en"
-      className={`${spaceGrotesk.variable} ${orbitron.variable} dark h-full antialiased`}
+      className={`${spaceGrotesk.variable} dark h-full antialiased`}
     >
       <body className="min-h-full flex flex-col bg-background text-foreground">
-        <div className="ambient-glow pointer-events-none fixed inset-0 -z-10" />
-        {blocked ? (
-          <MaintenanceScreen />
-        ) : (
-          <>
-            <Navbar initialUser={user} initialProfile={profile as Profile | null} />
-            <main className="flex flex-1 flex-col pb-16">{children}</main>
-            <BottomNav initialSignedIn={!!user} />
-          </>
-        )}
+        <Navbar initialUser={user} />
+        <main className="flex flex-1 flex-col">{children}</main>
         <Toaster />
       </body>
     </html>

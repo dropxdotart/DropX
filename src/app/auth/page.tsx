@@ -1,11 +1,10 @@
 'use client'
 
-import { useEffect, useState } from 'react'
-import Image from 'next/image'
+import { useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Loader2, Puzzle, Brain, Lightbulb, HelpCircle, Sparkles, ShieldAlert } from 'lucide-react'
+import { Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { useRouter } from 'next/navigation'
 
@@ -15,15 +14,8 @@ export default function AuthPage() {
   const [password, setPassword] = useState('')
   const [username, setUsername] = useState('')
   const [loading, setLoading] = useState(false)
-  const [blocked, setBlocked] = useState<string | null>(null)
   const supabase = createClient()
   const router = useRouter()
-
-  // Read via window.location rather than useSearchParams() so this page can
-  // stay statically prerendered (useSearchParams forces a Suspense boundary).
-  useEffect(() => {
-    setBlocked(new URLSearchParams(window.location.search).get('blocked'))
-  }, [])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -52,44 +44,20 @@ export default function AuthPage() {
   }
 
   return (
-    <div className="relative min-h-[calc(100vh-4rem)] flex items-center justify-center px-4 overflow-hidden">
-      {/* Decorative trivia/puzzle motifs — placeholder until real artwork is ready. */}
-      <div className="pointer-events-none absolute inset-0 -z-10">
-        <Puzzle className="absolute -left-4 top-[12%] w-24 h-24 text-[color:var(--neon-violet)]/20 -rotate-12" />
-        <Brain className="absolute right-[6%] top-[8%] w-28 h-28 text-[color:var(--neon-cyan)]/20 rotate-6" />
-        <HelpCircle className="absolute left-[10%] bottom-[14%] w-20 h-20 text-[color:var(--neon-pink)]/20 -rotate-6" />
-        <Lightbulb className="absolute right-[10%] bottom-[10%] w-24 h-24 text-[color:var(--neon-orange)]/20 rotate-12" />
-        <Sparkles className="absolute left-[45%] top-[4%] w-14 h-14 text-[color:var(--neon-violet)]/20" />
-      </div>
-
+    <div className="flex min-h-[calc(100vh-3.5rem)] items-center justify-center px-4">
       <div className="w-full max-w-sm space-y-8">
-        {blocked && (
-          <div className="flex items-start gap-2.5 rounded-xl border border-destructive/30 bg-destructive/10 p-3.5 text-sm text-destructive">
-            <ShieldAlert className="w-4 h-4 shrink-0 mt-0.5" />
-            <span>
-              {blocked === 'banned'
-                ? 'This account has been banned.'
-                : 'This account is temporarily suspended.'}
-            </span>
-          </div>
-        )}
         <div className="text-center space-y-2">
-          <div className="flex justify-center mb-2">
-            <div className="rounded-full bg-white/5 p-4 glow-violet">
-              <Image src="/dropx-icon.png" alt="DropX" width={72} height={72} priority />
-            </div>
-          </div>
-          <h1 className="font-heading text-2xl font-bold tracking-wide">
+          {/* Placeholder mark until the real logo is ready. */}
+          <p className="font-mono text-3xl font-semibold tracking-tight mb-2">flex</p>
+          <h1 className="text-2xl font-bold tracking-tight">
             {mode === 'login' ? 'Welcome back' : 'Create account'}
           </h1>
           <p className="text-muted-foreground text-sm">
-            {mode === 'login'
-              ? "Sign in to keep your streak alive"
-              : 'Join DropX — a new challenge every day'}
+            {mode === 'login' ? 'Sign in to start a game' : 'Join FleX — party games with your friends'}
           </p>
         </div>
 
-        <div className="rounded-2xl border border-white/10 bg-card/60 backdrop-blur-sm p-6">
+        <div className="rounded-2xl border border-border bg-card p-6">
           <form onSubmit={handleSubmit} className="space-y-3.5">
             {mode === 'signup' && (
               <Input
@@ -98,7 +66,7 @@ export default function AuthPage() {
                 onChange={(e) => setUsername(e.target.value.toLowerCase())}
                 required
                 minLength={3}
-                className="h-11 rounded-xl border-white/10 bg-white/5 focus-visible:ring-[color:var(--neon-violet)]/50"
+                className="h-11 rounded-xl"
               />
             )}
             <Input
@@ -107,7 +75,7 @@ export default function AuthPage() {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
-              className="h-11 rounded-xl border-white/10 bg-white/5 focus-visible:ring-[color:var(--neon-violet)]/50"
+              className="h-11 rounded-xl"
             />
             <Input
               type="password"
@@ -116,9 +84,9 @@ export default function AuthPage() {
               onChange={(e) => setPassword(e.target.value)}
               required
               minLength={6}
-              className="h-11 rounded-xl border-white/10 bg-white/5 focus-visible:ring-[color:var(--neon-violet)]/50"
+              className="h-11 rounded-xl"
             />
-            <Button type="submit" className="w-full h-11 rounded-xl glow-violet" disabled={loading}>
+            <Button type="submit" className="w-full h-11 rounded-xl" disabled={loading}>
               {loading && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
               {mode === 'login' ? 'Sign in' : 'Create account'}
             </Button>
@@ -129,7 +97,7 @@ export default function AuthPage() {
           {mode === 'login' ? "Don't have an account? " : 'Already have an account? '}
           <button
             onClick={() => setMode(mode === 'login' ? 'signup' : 'login')}
-            className="text-[color:var(--neon-cyan)] hover:underline font-medium"
+            className="text-primary hover:underline font-medium"
           >
             {mode === 'login' ? 'Sign up' : 'Sign in'}
           </button>
