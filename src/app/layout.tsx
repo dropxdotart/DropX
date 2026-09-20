@@ -4,6 +4,7 @@ import "./globals.css";
 import { Toaster } from "@/components/ui/sonner";
 import Navbar from "@/components/layout/Navbar";
 import BottomNav from "@/components/layout/BottomNav";
+import MaintenanceScreen from "@/components/layout/MaintenanceScreen";
 import { createClient } from "@/lib/supabase/server";
 import type { Profile } from "@/lib/types";
 
@@ -43,6 +44,12 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
     ? await supabase.from("profiles").select("*").eq("id", user.id).single()
     : { data: null };
 
+  // Whole-app rebuild in progress — locked to admins only. A signed-out
+  // visitor still reaches /auth normally (so an admin can sign in); anyone
+  // signed in who isn't an admin sees the holding screen instead of the
+  // real app, on every route.
+  const blocked = Boolean(user) && profile?.role !== "admin";
+
   return (
     <html
       lang="en"
@@ -50,9 +57,15 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
     >
       <body className="min-h-full flex flex-col bg-background text-foreground">
         <div className="ambient-glow pointer-events-none fixed inset-0 -z-10" />
-        <Navbar initialUser={user} initialProfile={profile as Profile | null} />
-        <main className="flex flex-1 flex-col pb-16">{children}</main>
-        <BottomNav initialSignedIn={!!user} />
+        {blocked ? (
+          <MaintenanceScreen />
+        ) : (
+          <>
+            <Navbar initialUser={user} initialProfile={profile as Profile | null} />
+            <main className="flex flex-1 flex-col pb-16">{children}</main>
+            <BottomNav initialSignedIn={!!user} />
+          </>
+        )}
         <Toaster />
       </body>
     </html>
