@@ -44,11 +44,11 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
     ? await supabase.from("profiles").select("*").eq("id", user.id).single()
     : { data: null };
 
-  // Whole-app rebuild in progress — locked to admins only. A signed-out
-  // visitor still reaches /auth normally (so an admin can sign in); anyone
-  // signed in who isn't an admin sees the holding screen instead of the
-  // real app, on every route.
-  const blocked = Boolean(user) && profile?.role !== "admin";
+  // Whole-app rebuild in progress — locked for everyone, admins included.
+  // There's no in-app escape hatch by design; lifting this is a code change
+  // (flip back to `Boolean(user) && profile?.role !== "admin"` to reopen
+  // admin-only access, or remove the gate entirely to reopen to everyone).
+  const blocked = true;
 
   return (
     <html
