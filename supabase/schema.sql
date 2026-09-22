@@ -249,3 +249,27 @@ create policy "Users can cast their own caption vote" on caption_votes
 alter publication supabase_realtime add table rooms;
 alter publication supabase_realtime add table room_players;
 alter publication supabase_realtime add table rounds;
+
+-- ─── HOUSE ADS ───────────────────────────────────────────────────────────────
+-- Self-hosted ad module — a stopgap until the app is approved for Google
+-- Ads. No third-party network: the team uploads its own creative (image or
+-- video, each with an optional click-through link), shown between rounds.
+-- Writes only ever happen through the service-role client from a
+-- password-gated admin route (src/app/admin/ads) — deliberately not
+-- RLS-gated by a role column, since there's no per-user role system
+-- anymore after the rebuild.
+create type ad_kind as enum ('image', 'video');
+
+create table ads (
+  id uuid primary key default uuid_generate_v4(),
+  kind ad_kind not null,
+  media_url text not null,
+  click_url text,
+  active boolean not null default true,
+  created_at timestamptz not null default now()
+);
+
+alter table ads enable row level security;
+
+create policy "Anyone can view active ads" on ads
+  for select to authenticated using (active);

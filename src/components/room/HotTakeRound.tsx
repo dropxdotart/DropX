@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import { castHotTakeVote, getMyHotTakeVote, getHotTakeCounts, revealRound, nextRound } from '@/app/room/actions'
+import AdSlot from './AdSlot'
 import type { Round } from '@/lib/types'
 
 export default function HotTakeRound({ round }: { round: Round }) {
@@ -115,6 +116,8 @@ export default function HotTakeRound({ round }: { round: Round }) {
           <p className="text-xs text-muted-foreground text-center">{total} {total === 1 ? 'vote' : 'votes'}</p>
         </div>
       )}
+
+      {revealed && <AdSlot />}
 
       {!revealed && myChoice && (
         <button

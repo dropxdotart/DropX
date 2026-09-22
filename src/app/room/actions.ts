@@ -128,6 +128,17 @@ export async function getMyHotTakeVote(roundId: string): Promise<'a' | 'b' | nul
   return (data?.choice as 'a' | 'b' | undefined) ?? null
 }
 
+export type AdCreative = { id: string; kind: 'image' | 'video'; media_url: string; click_url: string | null }
+
+// A random active house ad — see src/app/admin/ads. Shown after a round's
+// results, before advancing, as the "between rounds" ad placement.
+export async function getRandomAd(): Promise<AdCreative | null> {
+  const supabase = await createClient()
+  const { data } = await supabase.from('ads').select('id, kind, media_url, click_url').eq('active', true)
+  if (!data || data.length === 0) return null
+  return data[Math.floor(Math.random() * data.length)]
+}
+
 export async function getHotTakeCounts(roundId: string): Promise<{ a: number; b: number }> {
   const supabase = await createClient()
   const [{ count: a }, { count: b }] = await Promise.all([
