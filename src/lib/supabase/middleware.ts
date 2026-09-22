@@ -44,12 +44,15 @@ export async function updateSession(request: NextRequest) {
   if (userResult === 'timeout') return supabaseResponse
   const { data: { user } } = userResult
 
-  const protectedRoutes = ['/room']
+  // No separate sign-in page anymore — identity is just a nickname, chosen
+  // on the home page itself (see NicknameGate), so an unauthenticated
+  // visitor to a protected route goes there instead of a dedicated /auth.
+  const protectedRoutes = ['/room', '/host']
   const isProtected = protectedRoutes.some(r => request.nextUrl.pathname.startsWith(r))
 
   if (!user && isProtected) {
     const url = request.nextUrl.clone()
-    url.pathname = '/auth'
+    url.pathname = '/'
     return NextResponse.redirect(url)
   }
 

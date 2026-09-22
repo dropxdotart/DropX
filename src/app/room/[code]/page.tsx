@@ -16,7 +16,7 @@ export default async function RoomPage({
 
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
-  if (!user) redirect(`/auth`)
+  if (!user) redirect('/')
 
   const { data: room } = await supabase.from('rooms').select('*').eq('code', code).maybeSingle()
   if (!room) notFound()

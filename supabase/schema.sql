@@ -19,9 +19,13 @@ create type room_status as enum ('lobby', 'in_round', 'finished');
 create type round_status as enum ('pending', 'answering', 'guessing', 'revealed');
 
 -- ─── PROFILES ────────────────────────────────────────────────────────────────
+-- Lightweight guest identity, not a real account — see
+-- NicknameGate.tsx. auth.users rows here are anonymous sessions (Supabase
+-- anonymous auth), and username is just a chosen nickname, not a unique
+-- handle: two party guests can both be "Mike".
 create table profiles (
   id uuid primary key references auth.users(id) on delete cascade,
-  username text unique check (username = lower(username)),
+  username text,
   display_name text,
   avatar_url text,
   created_at timestamptz not null default now()

@@ -1,36 +1,24 @@
 'use client'
 
 import { useState, useTransition } from 'react'
-import { Button } from '@/components/ui/button'
+import Link from 'next/link'
+import { Button, buttonVariants } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Loader2, Plus } from 'lucide-react'
+import { Loader2, Play } from 'lucide-react'
 import { toast } from 'sonner'
-import { createRoom, joinRoom } from '@/app/actions'
+import { joinRoom } from '@/app/actions'
+import { cn } from '@/lib/utils'
 
-// redirect() inside a server action throws a special digest-tagged error to
-// signal Next's own runtime to navigate — a plain try/catch around the call
-// intercepts that error just like any other, which stops the redirect from
-// ever happening. Every catch block below has to let this one specific
-// shape through unhandled instead of treating it as a real failure.
 function isRedirectSignal(err: unknown): boolean {
   return typeof err === 'object' && err !== null && 'digest' in err && typeof err.digest === 'string' && err.digest.startsWith('NEXT_REDIRECT')
 }
 
+// Hosting now has its own step in between (choosing which game — see
+// /host), so that button is a plain link, not an action here. Joining
+// stays a one-step inline form since there's nothing to choose.
 export default function HomeActions() {
   const [code, setCode] = useState('')
-  const [creating, startCreate] = useTransition()
   const [joining, startJoin] = useTransition()
-
-  const handleCreate = () => {
-    startCreate(async () => {
-      try {
-        await createRoom()
-      } catch (err) {
-        if (isRedirectSignal(err)) throw err
-        toast.error(err instanceof Error ? err.message : 'Something went wrong')
-      }
-    })
-  }
 
   const handleJoin = () => {
     if (!code.trim()) return
@@ -46,10 +34,10 @@ export default function HomeActions() {
 
   return (
     <div className="space-y-4">
-      <Button className="w-full h-12 rounded-xl text-base" disabled={creating} onClick={handleCreate}>
-        {creating ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Plus className="w-4 h-4 mr-2" />}
-        Start a room
-      </Button>
+      <Link href="/host" className={cn(buttonVariants(), 'w-full h-12 rounded-xl text-base')}>
+        <Play className="w-4 h-4 mr-2" />
+        Host a game
+      </Link>
 
       <div className="flex items-center gap-3 text-xs text-muted-foreground font-mono uppercase tracking-wide">
         <div className="h-px flex-1 bg-border" />
