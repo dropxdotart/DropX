@@ -44,10 +44,12 @@ export async function updateSession(request: NextRequest) {
   if (userResult === 'timeout') return supabaseResponse
   const { data: { user } } = userResult
 
-  // No separate sign-in page anymore — identity is just a nickname, chosen
-  // on the home page itself (see NicknameGate), so an unauthenticated
-  // visitor to a protected route goes there instead of a dedicated /auth.
-  const protectedRoutes = ['/room', '/host']
+  // No separate sign-in page — identity is just a nickname, asked for at
+  // the point someone actually starts or joins a room (see GamePicker and
+  // HomeActions), so /host itself doesn't require a session; only /room
+  // does, since it's only ever reached after createRoom/joinRoom already
+  // established one.
+  const protectedRoutes = ['/room']
   const isProtected = protectedRoutes.some(r => request.nextUrl.pathname.startsWith(r))
 
   if (!user && isProtected) {

@@ -26,13 +26,19 @@ async function requireHost(roomId: string) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) throw new Error('Sign in required')
-  const { data: room } = await supabase.from('rooms').select('host_id, code').eq('id', roomId).single()
+  const { data: room } = await supabase.from('rooms').select('host_id, code, game_key').eq('id', roomId).single()
   if (!room || room.host_id !== user.id) throw new Error('Only the host can do that')
-  return { supabase, code: room.code }
+  return { supabase, code: room.code, gameKey: room.game_key }
 }
 
 export async function startGame(roomId: string): Promise<void> {
-  const { supabase, code } = await requireHost(roomId)
+  const { supabase, code, gameKey } = await requireHost(roomId)
+
+  // Only hot_take has a built round UI so far — who_said_it/caption are
+  // marked unavailable in the games catalog, so this shouldn't be
+  // reachable for them yet, but guard it explicitly rather than silently
+  // starting a hot_take game under a different name.
+  if (gameKey !== 'hot_take') throw new Error('That game isn’t ready to play yet')
 
   const picks = pickRounds(3)
   const { error: roundsError } = await supabase.from('rounds').insert(

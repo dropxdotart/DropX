@@ -273,3 +273,51 @@ alter table ads enable row level security;
 
 create policy "Anyone can view active ads" on ads
   for select to authenticated using (active);
+
+-- ─── BANNED WORDS ────────────────────────────────────────────────────────────
+-- Admin-editable blocklist checked against a chosen nickname (see
+-- claimNickname in src/app/actions.ts). Never exposed to players for read —
+-- the check happens server-side via the service-role client.
+create table banned_words (
+  id uuid primary key default uuid_generate_v4(),
+  word text not null unique,
+  created_at timestamptz not null default now()
+);
+
+alter table banned_words enable row level security;
+
+-- ─── GAMES CATALOG ───────────────────────────────────────────────────────────
+-- What shows up when hosting, in what order, whether it's playable yet,
+-- and whether it's a paid game — all admin-editable (src/app/admin/games)
+-- instead of a code change.
+create table games (
+  id uuid primary key default uuid_generate_v4(),
+  key text not null unique,
+  label text not null,
+  description text not null,
+  icon text not null default '🎮',
+  sort_order int not null default 0,
+  available boolean not null default false,
+  is_paid boolean not null default false,
+  price_cents int,
+  active boolean not null default true,
+  created_at timestamptz not null default now()
+);
+
+insert into games (key, label, description, icon, sort_order, available) values
+  ('hot_take', 'Hot Take', 'Vote agree or disagree, see the split live.', '🔥', 0, true),
+  ('who_said_it', 'Who Said It', 'Answer anonymously, guess who wrote what.', '❓', 1, false),
+  ('caption', 'Caption This', 'Caption a photo, vote for the funniest.', '🖼️', 2, false);
+
+alter table games enable row level security;
+
+-- `anon` (not just `authenticated`) since hosting now asks for a nickname
+-- only after a game is picked — a visitor with no session yet still needs
+-- to read this table to render the picker on /host.
+create policy "Anyone can view active games" on games
+  for select to anon, authenticated using (active);
+
+-- ─── ROOM GAME SELECTION ────────────────────────────────────────────────────
+-- Threads the chosen game through room creation instead of every room
+-- silently being a hot_take room.
+alter table rooms add column game_key text not null default 'hot_take' references games (key);

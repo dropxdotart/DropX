@@ -1,0 +1,34 @@
+import { cookies } from 'next/headers'
+import Link from 'next/link'
+import PasswordGate from './PasswordGate'
+
+const TOOLS = [
+  { href: '/admin/ads', label: 'Ads', description: 'Upload and manage house ad creative' },
+  { href: '/admin/words', label: 'Banned words', description: 'Nicknames players can’t use' },
+  { href: '/admin/games', label: 'Games', description: 'What shows up when hosting, and pricing' },
+]
+
+export default async function AdminIndexPage() {
+  const store = await cookies()
+  const authed = store.get('admin_session')?.value === 'true'
+
+  if (!authed) return <PasswordGate title="Admin" />
+
+  return (
+    <div className="flex flex-1 flex-col items-center px-4 py-10">
+      <div className="w-full max-w-sm space-y-3">
+        <h1 className="text-lg font-semibold">Admin</h1>
+        {TOOLS.map((tool) => (
+          <Link
+            key={tool.href}
+            href={tool.href}
+            className="block rounded-xl border border-border bg-card p-4 hover:border-foreground/30 hover:bg-accent transition-colors"
+          >
+            <p className="font-medium">{tool.label}</p>
+            <p className="text-sm text-muted-foreground">{tool.description}</p>
+          </Link>
+        ))}
+      </div>
+    </div>
+  )
+}

@@ -6,9 +6,9 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
-import { checkAdminPassword } from './actions'
+import { checkAdminPassword } from './auth'
 
-export default function PasswordGate() {
+export default function PasswordGate({ title }: { title: string }) {
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
   const router = useRouter()
@@ -30,7 +30,7 @@ export default function PasswordGate() {
   return (
     <div className="flex flex-1 flex-col items-center justify-center px-4 py-12">
       <form onSubmit={handleSubmit} className="w-full max-w-xs space-y-3">
-        <h1 className="text-lg font-semibold text-center mb-4">Ads admin</h1>
+        <h1 className="text-lg font-semibold text-center mb-4">{title}</h1>
         <Input
           type="password"
           value={password}
