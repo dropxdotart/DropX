@@ -8,6 +8,10 @@ import { toast } from 'sonner'
 import { startGame } from '@/app/room/actions'
 import type { Room, RoomPlayer } from '@/lib/types'
 
+// Cycled by player index instead of one repeated accent — a roster of
+// avatars should look like a party, not a spreadsheet.
+const RING_COLORS = ['var(--fun-pink)', 'var(--fun-yellow)', 'var(--fun-teal)', 'var(--fun-violet)']
+
 export default function Lobby({ room, players, isHost }: { room: Room; players: RoomPlayer[]; isHost: boolean }) {
   const [starting, startTransition] = useTransition()
   const [copied, setCopied] = useState(false)
@@ -48,9 +52,9 @@ export default function Lobby({ room, players, isHost }: { room: Room; players: 
           {players.length} {players.length === 1 ? 'player' : 'players'}
         </div>
         <div className="grid grid-cols-4 gap-3">
-          {players.map((p) => (
+          {players.map((p, i) => (
             <div key={p.user_id} className="flex flex-col items-center gap-1">
-              <div className="gradient-ring rounded-full p-[2px]">
+              <div className="rounded-full p-[2px]" style={{ backgroundColor: RING_COLORS[i % RING_COLORS.length] }}>
                 <Avatar className="w-11 h-11 ring-1 ring-background">
                   {p.profiles.avatar_url && <AvatarImage src={p.profiles.avatar_url} alt="" />}
                   <AvatarFallback className="bg-secondary text-sm">

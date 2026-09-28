@@ -21,6 +21,10 @@ export type PickableGame = {
   price_cents: number | null
 }
 
+// Cycled by list position rather than tied to a specific game — a new
+// catalog entry should still land on a color, not fall back to gray.
+const ICON_COLORS = ['var(--fun-pink)', 'var(--fun-teal)', 'var(--fun-violet)', 'var(--fun-yellow)']
+
 export default function GamePicker({ games, needsNickname }: { games: PickableGame[]; needsNickname: boolean }) {
   const [pending, startTransition] = useTransition()
   const [selected, setSelected] = useState<PickableGame | null>(null)
@@ -88,20 +92,26 @@ export default function GamePicker({ games, needsNickname }: { games: PickableGa
 
   return (
     <div className="space-y-3">
-      {games.map((game) => (
+      {games.map((game, i) => (
         <button
           key={game.key}
           type="button"
           disabled={!game.available || pending}
           onClick={() => handlePick(game)}
-          className="w-full flex items-center gap-3 rounded-2xl border border-border bg-card p-4 text-left hover:border-foreground/30 hover:bg-accent transition-colors disabled:opacity-40 disabled:hover:border-border disabled:hover:bg-card"
+          className="w-full flex items-center gap-3 rounded-2xl border-2 border-border bg-card p-4 text-left transition-all hover:border-foreground hover:-translate-y-0.5 disabled:opacity-40 disabled:hover:border-border disabled:hover:translate-y-0"
         >
-          <span className="text-2xl shrink-0" aria-hidden>{game.icon}</span>
+          <span
+            className="flex items-center justify-center w-11 h-11 rounded-xl text-xl shrink-0"
+            style={{ backgroundColor: ICON_COLORS[i % ICON_COLORS.length] }}
+            aria-hidden
+          >
+            {game.icon}
+          </span>
           <span className="min-w-0 flex-1">
-            <span className="flex items-center gap-1.5 font-semibold">
+            <span className="flex items-center gap-1.5 font-bold">
               {game.label}
               {game.is_paid && (
-                <span className="text-[10px] font-mono uppercase tracking-wide text-accent border border-accent/40 rounded px-1 py-0.5">
+                <span className="text-[10px] font-bold uppercase tracking-wide bg-secondary text-secondary-foreground rounded-full px-1.5 py-0.5">
                   {((game.price_cents ?? 0) / 100).toFixed(2)}
                 </span>
               )}
