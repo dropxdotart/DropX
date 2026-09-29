@@ -3,6 +3,7 @@ import { Space_Grotesk } from "next/font/google";
 import "./globals.css";
 import { Toaster } from "@/components/ui/sonner";
 import Navbar from "@/components/layout/Navbar";
+import VersionBadge from "@/components/layout/VersionBadge";
 import { createClient } from "@/lib/supabase/server";
 
 const spaceGrotesk = Space_Grotesk({
@@ -11,7 +12,7 @@ const spaceGrotesk = Space_Grotesk({
 });
 
 export const metadata: Metadata = {
-  metadataBase: new URL("https://dropdotx.vercel.app"),
+  metadataBase: new URL("https://flexgames.vercel.app"),
   title: "FleX",
   description: "Party games with your friends, right from your phones.",
   openGraph: {
@@ -36,6 +37,7 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
         <Navbar initialUser={user} />
         <main className="flex flex-1 flex-col">{children}</main>
         <Toaster />
+        <VersionBadge />
       </body>
     </html>
   );
