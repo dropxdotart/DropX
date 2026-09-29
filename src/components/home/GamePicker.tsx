@@ -78,7 +78,18 @@ const PREVIEWS: Record<string, { example: string; render: () => ReactNode }> = {
   },
 }
 
-export default function GamePicker({ games, needsNickname }: { games: PickableGame[]; needsNickname: boolean }) {
+export default function GamePicker({
+  games,
+  needsNickname,
+  onPick,
+}: {
+  games: PickableGame[]
+  needsNickname: boolean
+  // Set when reusing this picker for "play another game" in an existing
+  // room — identity's already established there, so it skips straight past
+  // the nickname flow entirely instead of just not needing to ask.
+  onPick?: (gameKey: string) => Promise<void>
+}) {
   const [pending, startTransition] = useTransition()
   const [selected, setSelected] = useState<PickableGame | null>(null)
   const [name, setName] = useState('')
@@ -86,7 +97,8 @@ export default function GamePicker({ games, needsNickname }: { games: PickableGa
   const start = (gameKey: string, nickname?: string) => {
     startTransition(async () => {
       try {
-        await createRoom(gameKey, nickname)
+        if (onPick) await onPick(gameKey)
+        else await createRoom(gameKey, nickname)
       } catch (err) {
         if (isRedirectSignal(err)) throw err
         toast.error(err instanceof Error ? err.message : 'Something went wrong')
@@ -96,7 +108,7 @@ export default function GamePicker({ games, needsNickname }: { games: PickableGa
 
   const handlePick = (game: PickableGame) => {
     if (!game.available || pending) return
-    if (needsNickname) {
+    if (needsNickname && !onPick) {
       setSelected(game)
       return
     }

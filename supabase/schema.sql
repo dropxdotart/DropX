@@ -175,8 +175,16 @@ create policy "Authenticated users can view rooms" on rooms
   for select to authenticated using (true);
 create policy "Any signed-in user can create a room" on rooms
   for insert to authenticated with check (host_id = auth.uid());
+-- WITH CHECK is explicit (not just inherited from USING) because a host
+-- handoff changes host_id to someone else's id — without this, the new
+-- row would fail the implicit "USING doubles as WITH CHECK" default.
 create policy "Host can update their room" on rooms
-  for update to authenticated using (host_id = auth.uid());
+  for update to authenticated
+  using (host_id = auth.uid())
+  with check (
+    host_id = auth.uid()
+    or exists (select 1 from room_players where room_players.room_id = rooms.id and room_players.user_id = host_id)
+  );
 
 create policy "Room members can view the player list" on room_players
   for select to authenticated using (is_in_room(room_id));
@@ -188,6 +196,10 @@ create policy "Host can update player scores" on room_players
   );
 create policy "Users can leave a room as themselves" on room_players
   for delete to authenticated using (user_id = auth.uid());
+create policy "Anyone can delete an empty room" on rooms
+  for delete to authenticated using (
+    not exists (select 1 from room_players where room_players.room_id = rooms.id)
+  );
 
 create policy "Room members can view rounds" on rounds
   for select to authenticated using (is_in_room(room_id));

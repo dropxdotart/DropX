@@ -4,6 +4,7 @@ import Link from 'next/link'
 import Image from 'next/image'
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import { leaveAllRooms } from '@/app/actions'
 import type { User as SupabaseUser } from '@supabase/supabase-js'
 
 export default function Navbar({ initialUser }: { initialUser: SupabaseUser | null }) {
@@ -23,11 +24,11 @@ export default function Navbar({ initialUser }: { initialUser: SupabaseUser | nu
   // "Signing out" here just means forgetting this guest identity — there's
   // no account to log back into, so this drops the anonymous session and
   // sends them back to the nickname prompt. Also leaves any room they were
-  // in first — otherwise they'd linger as a phantom player nobody can
-  // remove, since forgetting their identity means they can never come back
-  // to leave properly.
+  // in first (and deletes it if that was the last player) — otherwise
+  // they'd linger as a phantom player nobody can remove, since forgetting
+  // their identity means they can never come back to leave properly.
   const handleForget = async () => {
-    if (user) await supabase.from('room_players').delete().eq('user_id', user.id)
+    await leaveAllRooms()
     await supabase.auth.signOut()
     window.location.href = '/'
   }

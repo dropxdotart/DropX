@@ -26,25 +26,29 @@ async function requireHost(roomId: string) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) throw new Error('Sign in required')
-  const { data: room } = await supabase.from('rooms').select('host_id, code, game_key').eq('id', roomId).single()
+  const { data: room } = await supabase.from('rooms').select('host_id, code, game_key, status').eq('id', roomId).single()
   if (!room || room.host_id !== user.id) throw new Error('Only the host can do that')
-  return { supabase, code: room.code, gameKey: room.game_key }
+  return { supabase, code: room.code, gameKey: room.game_key, status: room.status }
 }
 
-export async function startGame(roomId: string): Promise<void> {
-  const { supabase, code, gameKey } = await requireHost(roomId)
-
-  // Only hot_take has a built round UI so far — who_said_it/caption are
-  // marked unavailable in the games catalog, so this shouldn't be
-  // reachable for them yet, but guard it explicitly rather than silently
-  // starting a hot_take game under a different name.
+// Shared by startGame (first game, room fresh out of the lobby) and
+// startNewGame (a later game in the same room) — round_index keeps
+// climbing across games rather than resetting to 0, so the unique
+// (room_id, round_index) constraint never collides and there's no need to
+// track "which game" a round belongs to separately from its position.
+async function insertRoundBatch(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  roomId: string,
+  gameKey: string,
+  startIndex: number
+): Promise<void> {
   if (gameKey !== 'hot_take') throw new Error('That game isn’t ready to play yet')
 
   const picks = pickRounds(3)
   const { error: roundsError } = await supabase.from('rounds').insert(
     picks.map((p, i) => ({
       room_id: roomId,
-      round_index: i,
+      round_index: startIndex + i,
       type: 'hot_take' as const,
       prompt: p.prompt,
       option_a: p.optionA,
@@ -57,10 +61,27 @@ export async function startGame(roomId: string): Promise<void> {
 
   const { error: roomError } = await supabase
     .from('rooms')
-    .update({ status: 'in_round', current_round_index: 0 })
+    .update({ status: 'in_round', current_round_index: startIndex, game_key: gameKey })
     .eq('id', roomId)
   if (roomError) throw new Error(roomError.message)
+}
 
+export async function startGame(roomId: string): Promise<void> {
+  const { supabase, code, gameKey } = await requireHost(roomId)
+  await insertRoundBatch(supabase, roomId, gameKey, 0)
+  revalidatePath(`/room/${code}`)
+}
+
+// The "play another game" flow from Final Scores — same room, same code,
+// same players, just a fresh batch of rounds appended after whatever's
+// already there. Deliberately does NOT touch room_players.score, so points
+// keep accumulating across games instead of resetting each time.
+export async function startNewGame(roomId: string, gameKey: string): Promise<void> {
+  const { supabase, code, status } = await requireHost(roomId)
+  if (status !== 'finished') throw new Error('Wait for the current game to finish first')
+
+  const { count } = await supabase.from('rounds').select('id', { count: 'exact', head: true }).eq('room_id', roomId)
+  await insertRoundBatch(supabase, roomId, gameKey, count ?? 0)
   revalidatePath(`/room/${code}`)
 }
 

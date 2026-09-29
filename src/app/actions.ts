@@ -111,3 +111,43 @@ export async function joinRoom(codeInput: string, nickname?: string): Promise<ne
 
   redirect(`/room/${room.code}`)
 }
+
+// Called when someone forgets their identity ("Not you?" in the navbar) or
+// otherwise leaves for good — leaves every room they're currently in, so
+// they don't linger as a phantom player nobody can remove once their
+// session is gone. If they were the host, hands the room to whoever's
+// been there longest (rather than leaving it headless — nobody could
+// start/advance rounds otherwise). Finally, opportunistically deletes any
+// room that's now empty; the delete only actually matches if RLS confirms
+// zero players are left (see migration 010), so this is safe to call even
+// for rooms other players are still in.
+export async function leaveAllRooms(): Promise<void> {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return
+
+  const { data: memberships } = await supabase.from('room_players').select('room_id').eq('user_id', user.id)
+  const roomIds = (memberships ?? []).map((m) => m.room_id)
+  if (roomIds.length === 0) return
+
+  for (const roomId of roomIds) {
+    const { data: room } = await supabase.from('rooms').select('host_id').eq('id', roomId).maybeSingle()
+    if (room?.host_id !== user.id) continue
+
+    const { data: nextHost } = await supabase
+      .from('room_players')
+      .select('user_id')
+      .eq('room_id', roomId)
+      .neq('user_id', user.id)
+      .order('joined_at', { ascending: true })
+      .limit(1)
+      .maybeSingle()
+
+    if (nextHost) await supabase.from('rooms').update({ host_id: nextHost.user_id }).eq('id', roomId)
+  }
+
+  await supabase.from('room_players').delete().eq('user_id', user.id)
+  for (const roomId of roomIds) {
+    await supabase.from('rooms').delete().eq('id', roomId)
+  }
+}

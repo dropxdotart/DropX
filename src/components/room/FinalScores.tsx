@@ -1,10 +1,49 @@
-import Link from 'next/link'
+'use client'
+
+import { useState, useTransition } from 'react'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
-import { Trophy } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { Trophy, Loader2 } from 'lucide-react'
+import { toast } from 'sonner'
+import { leaveAllRooms } from '@/app/actions'
+import { startNewGame } from '@/app/room/actions'
+import GamePicker, { type PickableGame } from '@/components/home/GamePicker'
 import type { RoomPlayer } from '@/lib/types'
 
-export default function FinalScores({ players }: { players: RoomPlayer[] }) {
+export default function FinalScores({
+  players,
+  roomId,
+  isHost,
+  games,
+}: {
+  players: RoomPlayer[]
+  roomId: string
+  isHost: boolean
+  games: PickableGame[]
+}) {
   const ranked = [...players].sort((a, b) => b.score - a.score)
+  const [pickingGame, setPickingGame] = useState(false)
+  const [leaving, startLeave] = useTransition()
+
+  const handleLeave = () => {
+    startLeave(async () => {
+      try {
+        await leaveAllRooms()
+        window.location.href = '/'
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : 'Something went wrong')
+      }
+    })
+  }
+
+  if (pickingGame) {
+    return (
+      <div className="space-y-4">
+        <h1 className="text-xl font-bold text-center">Choose the next game</h1>
+        <GamePicker games={games} needsNickname={false} onPick={(gameKey) => startNewGame(roomId, gameKey)} />
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-6 text-center">
@@ -31,9 +70,19 @@ export default function FinalScores({ players }: { players: RoomPlayer[] }) {
         ))}
       </div>
 
-      <Link href="/" className="inline-flex h-11 items-center justify-center rounded-xl bg-primary text-primary-foreground text-sm font-semibold px-6 hover:opacity-90 transition-opacity">
-        Back home
-      </Link>
+      <div className="space-y-2">
+        {isHost ? (
+          <Button className="w-full h-12 rounded-xl text-base" onClick={() => setPickingGame(true)}>
+            Play another game
+          </Button>
+        ) : (
+          <p className="text-sm text-muted-foreground">Waiting for the host to pick another game&hellip;</p>
+        )}
+        <Button variant="outline" className="w-full h-11 rounded-xl" onClick={handleLeave} disabled={leaving}>
+          {leaving && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+          Leave for good
+        </Button>
+      </div>
     </div>
   )
 }

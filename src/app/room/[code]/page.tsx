@@ -22,7 +22,10 @@ export default async function RoomPage({
   if (!room) notFound()
 
   // Visiting a room link you were sent auto-joins you — same convenience as
-  // typing the code in on the home page, one less step.
+  // typing the code in on the home page, one less step. "finished" isn't a
+  // dead end anymore (the host can start another game from here), so it no
+  // longer blocks a new player from joining — an empty room gets deleted
+  // outright (see leaveAllRooms), so any room still around has someone in it.
   const { data: myMembership } = await supabase
     .from('room_players')
     .select('user_id')
@@ -31,7 +34,6 @@ export default async function RoomPage({
     .maybeSingle()
 
   if (!myMembership) {
-    if (room.status === 'finished') notFound()
     await supabase.from('room_players').insert({ room_id: room.id, user_id: user.id })
   }
 
@@ -40,6 +42,14 @@ export default async function RoomPage({
     .select('*, profiles(id, username, display_name, avatar_url)')
     .eq('room_id', room.id)
     .order('joined_at', { ascending: true })
+
+  const { data: games } =
+    room.status === 'finished'
+      ? await supabase
+          .from('games')
+          .select('key, label, description, icon, available, is_paid, price_cents')
+          .order('sort_order', { ascending: true })
+      : { data: null }
 
   const currentRound =
     room.status === 'in_round'
@@ -75,7 +85,12 @@ export default async function RoomPage({
         )}
 
         {room.status === 'finished' && (
-          <FinalScores players={(players ?? []) as unknown as RoomPlayer[]} />
+          <FinalScores
+            players={(players ?? []) as unknown as RoomPlayer[]}
+            roomId={room.id}
+            isHost={room.host_id === user.id}
+            games={games ?? []}
+          />
         )}
       </div>
     </div>
