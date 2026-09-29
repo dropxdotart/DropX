@@ -22,8 +22,12 @@ export default function Navbar({ initialUser }: { initialUser: SupabaseUser | nu
 
   // "Signing out" here just means forgetting this guest identity — there's
   // no account to log back into, so this drops the anonymous session and
-  // sends them back to the nickname prompt.
+  // sends them back to the nickname prompt. Also leaves any room they were
+  // in first — otherwise they'd linger as a phantom player nobody can
+  // remove, since forgetting their identity means they can never come back
+  // to leave properly.
   const handleForget = async () => {
+    if (user) await supabase.from('room_players').delete().eq('user_id', user.id)
     await supabase.auth.signOut()
     window.location.href = '/'
   }

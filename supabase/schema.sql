@@ -186,6 +186,8 @@ create policy "Host can update player scores" on room_players
   for update to authenticated using (
     exists (select 1 from rooms r where r.id = room_id and r.host_id = auth.uid())
   );
+create policy "Users can leave a room as themselves" on room_players
+  for delete to authenticated using (user_id = auth.uid());
 
 create policy "Room members can view rounds" on rounds
   for select to authenticated using (is_in_room(room_id));

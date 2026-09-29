@@ -16,14 +16,28 @@ export default function RoomRealtimeSync({ roomId }: { roomId: string }) {
 
   useEffect(() => {
     const supabase = createClient()
+
+    // Starting a game inserts all 3 rounds plus updates the room row in
+    // the same action — that's 4+ separate row-level change events landing
+    // within milliseconds of each other. Refreshing on every single one
+    // was causing a visible flicker (the whole page re-fetching several
+    // times in a row); batching them into one refresh per short burst
+    // fixes that without losing "live" responsiveness.
+    let pending: ReturnType<typeof setTimeout> | null = null
+    const refresh = () => {
+      if (pending) clearTimeout(pending)
+      pending = setTimeout(() => router.refresh(), 150)
+    }
+
     const channel = supabase
       .channel(`room:${roomId}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'rooms', filter: `id=eq.${roomId}` }, () => router.refresh())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'room_players', filter: `room_id=eq.${roomId}` }, () => router.refresh())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'rounds', filter: `room_id=eq.${roomId}` }, () => router.refresh())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'rooms', filter: `id=eq.${roomId}` }, refresh)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'room_players', filter: `room_id=eq.${roomId}` }, refresh)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'rounds', filter: `room_id=eq.${roomId}` }, refresh)
       .subscribe()
 
     return () => {
+      if (pending) clearTimeout(pending)
       supabase.removeChannel(channel)
     }
   }, [roomId, router])
