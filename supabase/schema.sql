@@ -188,3 +188,5 @@ $$;
 
 revoke execute on function ad_media_stats(timestamptz) from public, anon, authenticated;
 grant execute on function ad_media_stats(timestamptz) to service_role;
+
+alter table ads drop column kind, drop column media_url, drop column click_url;
