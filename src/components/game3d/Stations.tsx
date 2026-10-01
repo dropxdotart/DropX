@@ -1,13 +1,14 @@
 'use client'
 
-import { useRef, type ReactNode } from 'react'
+import { useMemo, useRef, type ReactNode } from 'react'
 import { useFrame, type ThreeEvent } from '@react-three/fiber'
 import * as THREE from 'three'
-import { DUMPSTER, TRUCK_STOP, stats, type Engine, type Site } from '@/lib/game/engine'
-import { getStation, type StationId } from '@/lib/game/stations'
+import { BRICK, DUMPSTER_SLOTS, LOT_HALF, TRUCK_STOP, stats, type Engine, type Site } from '@/lib/game/engine'
+import { dumpsterLevel, getStation, tierFor, type StationId } from '@/lib/game/stations'
 import Prop from './Prop'
 import { pointer } from './drag'
 import { Logo } from './SiteProps'
+import { brickGeometry, brickMaterial } from './Building'
 
 // Each station is built from simple shapes (plus a few Kenney models) and
 // swaps to a fancier look at milestone levels — see MILESTONES.
@@ -129,7 +130,8 @@ function DumpsterLook({ tier }: { tier: number }) {
       ))}
       <Logo size={0.85} position={[-0.32, 0.8, 0.88]} />
       {tier === 3 && (
-        <group position={[2.2, 0, 0]}>
+        // Compactor unit on the closed end; workers line up off the other.
+        <group position={[-2.2, 0, 0]}>
           <Box size={[1.1, 1.7, 1.6]} position={[0, 0.85, 0]} color="#7d8794" />
           <Box size={[1.12, 0.25, 1.62]} position={[0, 0.3, 0]} color="#f2c230" />
           <Box size={[0.4, 0.3, 0.3]} position={[0, 1.85, 0]} color="#e23f3f" />
@@ -140,57 +142,95 @@ function DumpsterLook({ tier }: { tier: number }) {
   )
 }
 
+// One of a plot's dumpsters, standing in its slot (see DUMPSTER_SLOTS),
+// filling up as workers tip bricks in.
 export function DumpsterStation({
-  engine,
   site,
-  tier,
+  index,
   affordable,
   onSelect,
 }: {
-  engine: Engine
   site: Site
-  tier: number
+  index: number
   affordable: boolean
   onSelect: (id: StationId) => void
 }) {
   const fill = useRef<THREE.Mesh>(null)
+  const dumpster = site.dumpsters[index]
+  const tier = tierFor(dumpsterLevel(dumpster))
   const dims = DUMPSTER_TIERS[tier]
+  const slot = DUMPSTER_SLOTS[index]
 
   useFrame(() => {
-    const ratio = Math.min(1, site.dumpsterLoad / stats.dumpsterCapacity(engine.upgrades))
-    if (fill.current) {
-      fill.current.visible = ratio > 0
-      fill.current.scale.y = Math.max(0.01, ratio)
-      fill.current.position.y = dims.y0 + (dims.h * ratio) / 2
-    }
+    const d = site.dumpsters[index]
+    if (!d || !fill.current) return
+    const ratio = Math.min(1, d.load / stats.dumpsterCapacity(d.level))
+    fill.current.visible = ratio > 0
+    fill.current.scale.y = Math.max(0.01, ratio)
+    fill.current.position.y = dims.y0 + (dims.h * ratio) / 2
   })
 
   return (
-    <Hotspot
-      id="dumpster"
-      position={[DUMPSTER.x, 0, DUMPSTER.z]}
-      hitSize={[tier >= 2 ? 3.4 : 2.6, 1.6, 1.8]}
-      arrowHeight={2}
-      affordable={affordable}
-      onSelect={onSelect}
-    >
-      <DumpsterLook tier={tier} />
-      <mesh ref={fill} position={[0, dims.y0, 0]}>
-        <boxGeometry args={[dims.w, dims.h, dims.d]} />
-        <meshStandardMaterial color="#b4553c" roughness={0.9} />
-      </mesh>
-    </Hotspot>
+    <group position={[slot.x, 0, slot.z]} rotation={[0, slot.rot, 0]}>
+      <Hotspot
+        id="dumpster"
+        position={[0, 0, 0]}
+        hitSize={[tier >= 2 ? 3.4 : 2.6, 1.6, 1.8]}
+        arrowHeight={2}
+        affordable={affordable}
+        onSelect={onSelect}
+      >
+        <DumpsterLook tier={tier} />
+        <mesh ref={fill} position={[0, dims.y0, 0]}>
+          <boxGeometry args={[dims.w, dims.h, dims.d]} />
+          <meshStandardMaterial color="#b4553c" roughness={0.9} />
+        </mesh>
+      </Hotspot>
+    </group>
   )
 }
 
 // ── Trucks ───────────────────────────────────────────────────────────────
 
+// `cargo` is where the load heap sits on each look (local, truck facing
+// +z): the Flatbed's open bed, and the top of the closed bodies.
 const TRUCK_TIERS = [
-  { url: '/models/vehicles/truck-flat.glb', size: 1.5, half: 0.78, logo: 0.6 },
-  { url: '/models/vehicles/truck.glb', size: 1.75, half: 0.9, logo: 0.75 },
-  { url: '/models/vehicles/garbage-truck.glb', size: 1.9, half: 0.87, logo: 0.8 },
-  { url: '/models/vehicles/garbage-truck.glb', size: 2.45, half: 1.11, logo: 1.05 },
+  { url: '/models/vehicles/truck-flat.glb', size: 1.5, half: 0.78, logo: 0.6, cargo: { y: 0.72, z: -0.45, w: 0.85, d: 1.0 } },
+  { url: '/models/vehicles/truck.glb', size: 1.75, half: 0.9, logo: 0.75, cargo: { y: 1.75, z: -0.4, w: 0.9, d: 1.3 } },
+  { url: '/models/vehicles/garbage-truck.glb', size: 1.9, half: 0.87, logo: 0.8, cargo: { y: 1.9, z: -0.5, w: 0.9, d: 1.2 } },
+  { url: '/models/vehicles/garbage-truck.glb', size: 2.45, half: 1.11, logo: 1.05, cargo: { y: 2.45, z: -0.6, w: 1.1, d: 1.6 } },
 ]
+
+// How many bricks show for each step of fullness: empty, a little,
+// medium, a lot, full (heaped over the top).
+const LOAD_STEPS = [0, 3, 7, 12, 18]
+const HEAP_BRICK = BRICK * 0.85
+
+function loadStep(cargo: number, capacity: number) {
+  if (cargo <= 0) return 0
+  const f = cargo / capacity
+  return f >= 1 ? 4 : f >= 0.6 ? 3 : f >= 0.25 ? 2 : 1
+}
+
+// Brick spots for a heap filling a w×d area: a wide bottom layer first,
+// then narrower layers on top, so a little load still covers the bed.
+function heapLayout(w: number, d: number): [number, number, number][] {
+  const out: [number, number, number][] = []
+  for (let layer = 0; layer < 4 && out.length < LOAD_STEPS[4]; layer++) {
+    const cols = Math.max(1, Math.floor(w / HEAP_BRICK) - layer)
+    const rows = Math.max(1, Math.floor(d / HEAP_BRICK) - layer)
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        out.push([(c - (cols - 1) / 2) * HEAP_BRICK, HEAP_BRICK * (0.5 + layer * 0.9), (r - (rows - 1) / 2) * HEAP_BRICK])
+      }
+    }
+  }
+  // Spread the first few across the area instead of filling one corner.
+  return out.sort((a, b) => a[1] - b[1] || (Math.abs(a[0]) + Math.abs(a[2]) > Math.abs(b[0]) + Math.abs(b[2]) ? 1 : -1)).slice(0, LOAD_STEPS[4])
+}
+
+const heapTmp = new THREE.Object3D()
+const heapColor = new THREE.Color('#b4553c')
 
 // One truck of the fleet, in world space, driven by the engine each frame.
 // Tapping it opens that truck's own upgrades.
@@ -206,12 +246,40 @@ function FleetTruck({
   onSelect: (truck: number) => void
 }) {
   const group = useRef<THREE.Group>(null)
+  const heap = useRef<THREE.InstancedMesh>(null)
+  const shownStep = useRef(-1)
+  const drawnMesh = useRef<THREE.InstancedMesh | null>(null)
   const look = TRUCK_TIERS[tier]
+  const spots = useMemo(() => heapLayout(look.cargo.w, look.cargo.d), [look])
 
   useFrame(() => {
     const g = group.current
     const t = engine.trucks[id]
     if (!g || !t) return
+    // Show the load in steps, re-laying the heap only when the step changes.
+    const step = loadStep(t.cargo, stats.truckCargo(t.load))
+    const mesh = heap.current
+    // A new look means a new heap mesh: draw it from scratch.
+    if (mesh !== drawnMesh.current) {
+      drawnMesh.current = mesh
+      shownStep.current = -1
+    }
+    if (mesh && step !== shownStep.current) {
+      shownStep.current = step
+      const n = Math.min(LOAD_STEPS[step], spots.length)
+      for (let i = 0; i < n; i++) {
+        const [x, y, z] = spots[i]
+        heapTmp.position.set(x, y, z)
+        heapTmp.rotation.set(0, (i % 3) * 0.3, 0)
+        heapTmp.scale.setScalar(0.85)
+        heapTmp.updateMatrix()
+        mesh.setMatrixAt(i, heapTmp.matrix)
+        mesh.setColorAt(i, heapColor)
+      }
+      mesh.count = n
+      mesh.instanceMatrix.needsUpdate = true
+      if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true
+    }
     g.position.set(t.x, 0.02, t.z)
     // Ease the turn so corners don't snap.
     let d = t.heading - g.rotation.y
@@ -231,6 +299,14 @@ function FleetTruck({
       <Prop url={look.url} size={look.size} />
       <Logo size={look.logo} position={[look.half, look.size * 0.55, -0.3]} rotationY={Math.PI / 2} />
       <Logo size={look.logo} position={[-look.half, look.size * 0.55, -0.3]} rotationY={-Math.PI / 2} />
+      <instancedMesh
+        key={tier}
+        ref={heap}
+        args={[brickGeometry, brickMaterial, LOAD_STEPS[4]]}
+        position={[0, look.cargo.y, look.cargo.z]}
+        castShadow
+        frustumCulled={false}
+      />
     </group>
   )
 }
@@ -281,51 +357,101 @@ export function TruckDepot({
 // ── Brick Yard ───────────────────────────────────────────────────────────
 
 // Where trucks unload and you get paid. Grows from a scrap heap into a
-// recycling plant at milestones. Local to YARD_BLOCK; the unload bay faces
-// the front road (+z).
+// recycling plant at milestones. Local to YARD_BLOCK: the front (+z) faces
+// the road with an IN gate (x −3) and an OUT gate (x +3); trucks unload at
+// the dock just inside IN, idle ones park in the painted bays, and the back
+// looks out over the water.
+const YARD_GATES = [-3, 3]
+const YARD_FENCE: { pos: [number, number, number]; rot: number }[] = []
+for (let t = -LOT_HALF + 1; t <= LOT_HALF - 1; t += 2) {
+  YARD_FENCE.push({ pos: [t, 0, -LOT_HALF], rot: Math.PI / 2 })
+  YARD_FENCE.push({ pos: [-LOT_HALF, 0, t], rot: 0 })
+  YARD_FENCE.push({ pos: [LOT_HALF, 0, t], rot: 0 })
+  if (YARD_GATES.every((g) => Math.abs(t - g) > 1.6)) YARD_FENCE.push({ pos: [t, 0, LOT_HALF], rot: Math.PI / 2 })
+}
+
 function YardLook({ tier }: { tier: number }) {
-  const piles = [
-    [-5.5, 4],
-    [-4, 5.2],
-    [5.5, 5],
+  const piles: [number, number][] = [
+    [6, 1.5],
+    [6.2, 4.3],
+    [-6.4, 2.6],
   ]
   return (
     <group>
-      {/* Concrete yard */}
+      {/* Yard surface */}
       <Box size={[16, 0.06, 16]} position={[0, 0.02, 0]} color={tier >= 2 ? '#b7bcc4' : '#c8ab7e'} />
+      {YARD_FENCE.map((f, i) => (
+        <Prop key={i} url="/models/roads/construction-fence.glb" size={0.9} position={f.pos} rotationY={f.rot} />
+      ))}
+      {/* Gate posts: green light IN, orange light OUT */}
+      {YARD_GATES.map((x, i) => (
+        <group key={x} position={[x, 0, LOT_HALF]}>
+          <Box size={[0.2, 1.6, 0.2]} position={[-1.3, 0.8, 0]} color="#5b6470" />
+          <Box size={[0.2, 1.6, 0.2]} position={[1.3, 0.8, 0]} color="#5b6470" />
+          <Box size={[2.8, 0.25, 0.2]} position={[0, 1.65, 0]} color="#1d3a6e" />
+          <mesh position={[0, 1.9, 0]}>
+            <sphereGeometry args={[0.18, 12, 8]} />
+            <meshStandardMaterial
+              color={i === 0 ? '#3fdc4f' : '#ff8a1a'}
+              emissive={i === 0 ? '#1f8a28' : '#c95a00'}
+              emissiveIntensity={0.7}
+            />
+          </mesh>
+        </group>
+      ))}
+      {/* Unload dock + hopper behind the bay (trucks stop at z 3.5) */}
+      <Box size={[3.2, 0.9, 1.4]} position={[-3, 0.45, 1.6]} color="#7d8794" />
+      <Box size={[2.2, 1.1, 1.2]} position={[-3, 1.45, 1.5]} color="#f2c230" />
+      <Box size={[2.6, 0.12, 1.5]} position={[-3, 2.05, 1.5]} color="#3a3a3e" />
+      {/* Parking bays */}
+      {[0, 1, 2, 3, 4].map((n) => (
+        <Box key={n} size={[0.1, 0.02, 2.4]} position={[-6.3 + n * 2.6, 0.06, -0.5]} color="#f4f1ea" />
+      ))}
       {piles.map(([x, z], i) => (
         <mesh key={i} position={[x, 0.45, z]} castShadow>
-          <coneGeometry args={[1.2, 0.9 + tier * 0.3, 7]} />
+          <coneGeometry args={[1.1, 0.9 + tier * 0.3, 7]} />
           <meshStandardMaterial color="#b4553c" roughness={0.95} />
         </mesh>
       ))}
       {tier === 0 ? (
         <>
           {/* Scrap heap: a shed and a weigh station */}
-          <Box size={[5, 2.4, 3.5]} position={[1, 1.2, -2]} color="#8d6e4c" />
-          <Box size={[5.4, 0.25, 3.9]} position={[1, 2.5, -2]} color="#5a5f6b" />
+          <Box size={[5, 2.4, 3.5]} position={[2, 1.2, -5]} color="#8d6e4c" />
+          <Box size={[5.4, 0.25, 3.9]} position={[2, 2.5, -5]} color="#5a5f6b" />
         </>
       ) : (
         <>
           {/* Plant hall */}
-          <Box size={[8, 3 + tier, 5]} position={[1, (3 + tier) / 2, -2.5]} color={tier >= 3 ? '#e8edf3' : '#cfd5dd'} />
-          <Box size={[8.4, 0.3, 5.4]} position={[1, 3 + tier + 0.15, -2.5]} color="#ff6b1a" />
-          <Box size={[3, 2.2, 0.15]} position={[1, 1.1, 0.05]} color="#3a3a3e" />
-          <Logo size={1.6} position={[-1.9, 2 + tier * 0.5, 0.05]} />
+          <Box size={[8, 3 + tier, 5]} position={[1.5, (3 + tier) / 2, -4.8]} color={tier >= 3 ? '#e8edf3' : '#cfd5dd'} />
+          <Box size={[8.4, 0.3, 5.4]} position={[1.5, 3 + tier + 0.15, -4.8]} color="#ff6b1a" />
+          <Box size={[3, 2.2, 0.15]} position={[1.5, 1.1, -2.25]} color="#3a3a3e" />
+          <Logo size={1.6} position={[-1.4, 2 + tier * 0.5, -2.25]} />
           {tier >= 2 && (
             <>
-              {/* Chimney + conveyor */}
-              <Box size={[0.9, 6 + tier, 0.9]} position={[4, (6 + tier) / 2, -4]} color="#7d8794" />
-              <Box size={[0.9, 0.3, 0.9]} position={[4, 6 + tier, -4]} color="#e23f3f" />
-              <Box size={[1, 0.25, 5]} position={[-4.5, 1.6, 0]} color="#3a3a3e" rotation={[0.35, 0, 0]} />
+              {/* Chimney + dockside crane */}
+              <Box size={[0.9, 6 + tier, 0.9]} position={[5, (6 + tier) / 2, -6.5]} color="#7d8794" />
+              <Box size={[0.9, 0.3, 0.9]} position={[5, 6 + tier, -6.5]} color="#e23f3f" />
+              <Box size={[0.5, 5, 0.5]} position={[-6, 2.5, -7]} color="#f2c230" />
+              <Box size={[0.4, 0.4, 6]} position={[-6, 5, -9.5]} color="#f2c230" />
             </>
           )}
         </>
       )}
-      {/* Unload bay sign by the road */}
-      <Box size={[0.15, 2, 0.15]} position={[3.5, 1, 6.6]} color="#5b6470" />
-      <Box size={[2.4, 0.8, 0.1]} position={[3.5, 2.1, 6.6]} color="#1d3a6e" />
-      <Logo size={0.6} position={[2.7, 2.1, 6.66]} />
+      {/* A barge moored on the water behind the yard, loaded with bricks */}
+      <group position={[0, 0, -15.5]}>
+        <Box size={[9, 0.9, 3.2]} position={[0, 0.2, 0]} color="#5b6470" />
+        <Box size={[9.2, 0.15, 3.4]} position={[0, 0.7, 0]} color="#ff6b1a" />
+        {tier >= 1 && (
+          <mesh position={[0.5, 1.1, 0]} castShadow>
+            <coneGeometry args={[1.3, 0.8, 7]} />
+            <meshStandardMaterial color="#b4553c" roughness={0.95} />
+          </mesh>
+        )}
+      </group>
+      {/* Brick Yard sign by the road */}
+      <Box size={[0.15, 2, 0.15]} position={[6.4, 1, 6.6]} color="#5b6470" />
+      <Box size={[2.4, 0.8, 0.1]} position={[6.4, 2.1, 6.6]} color="#1d3a6e" />
+      <Logo size={0.6} position={[5.6, 2.1, 6.66]} />
     </group>
   )
 }
@@ -340,9 +466,13 @@ export function BrickYard({
   onSelect: (id: StationId) => void
 }) {
   return (
-    <Hotspot id="yard" position={[0, 0, 0]} hitSize={[11, 5, 9]} arrowHeight={5 + tier} affordable={affordable} onSelect={onSelect}>
+    <>
       <YardLook tier={tier} />
-    </Hotspot>
+      {/* Tap the plant itself (not the open yard, where trucks drive). */}
+      <Hotspot id="yard" position={[1.5, 0, -4.8]} hitSize={[9, 5, 6]} arrowHeight={5 + tier} affordable={affordable} onSelect={onSelect}>
+        {null}
+      </Hotspot>
+    </>
   )
 }
 

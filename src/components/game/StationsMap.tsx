@@ -2,16 +2,19 @@
 
 import { ChevronRight, X } from 'lucide-react'
 import { upgradeCost, type Snapshot } from '@/lib/game/engine'
-import { STATIONS, fleetAffordable, tierFor, type StationId } from '@/lib/game/stations'
+import { STATIONS, dumpstersAffordable, fleetAffordable, tierFor, type StationId } from '@/lib/game/stations'
 
 // The Upgrades button's overview: every upgradable thing on the site.
 // Picking one closes this and flies the camera over to it with its panel.
 export default function StationsMap({
   snap,
+  plot,
   onPick,
   onClose,
 }: {
   snap: Snapshot
+  // The plot you're looking at: dumpsters are per plot.
+  plot: number
   onPick: (id: StationId) => void
   onClose: () => void
 }) {
@@ -30,13 +33,20 @@ export default function StationsMap({
         <div className="space-y-2">
           {STATIONS.map((s) => {
             const level = s.level(snap.upgrades)
+            const here = snap.plots[plot] ?? snap.plots[0]
             const ready =
-              s.id === 'truck' ? fleetAffordable(snap) : s.upgrades.some((k) => snap.scrap >= upgradeCost(k, snap.upgrades[k]))
+              s.id === 'truck'
+                ? fleetAffordable(snap)
+                : s.id === 'dumpster'
+                  ? dumpstersAffordable(here, snap.scrap)
+                  : s.upgrades.some((k) => snap.scrap >= upgradeCost(k, snap.upgrades[k]))
             // Trucks each have their own level, so show the fleet size.
             const subtitle =
               s.id === 'truck'
                 ? `${snap.trucks.length} truck${snap.trucks.length > 1 ? 's' : ''}`
-                : `Lv ${level} · ${s.tierNames[tierFor(level)]}`
+                : s.id === 'dumpster'
+                  ? `${here.dumpsters.length} on this plot`
+                  : `Lv ${level} · ${s.tierNames[tierFor(level)]}`
             return (
               <button
                 key={s.id}

@@ -10,6 +10,7 @@ import BannerAd from './BannerAd'
 import InterstitialAd from './InterstitialAd'
 import StationPanel from './StationPanel'
 import TruckPanel from './TruckPanel'
+import DumpsterPanel from './DumpsterPanel'
 import StationsMap from './StationsMap'
 import SitePicker from './SitePicker'
 import LoadingScreen from './LoadingScreen'
@@ -133,10 +134,10 @@ export default function Game() {
             engine.holdBonusDrop(true)
             setBonusOpen(true)
           }}
-          onSelectStation={(id, plotId) => {
+          onSelectStation={(id, plotId, index) => {
             setMapOpen(false)
             // The depot sign opens the fleet, following truck 1.
-            setSelected(id === 'truck' ? { id, plot: plotId, truck: 0 } : { id, plot: plotId })
+            setSelected(id === 'truck' ? { id, plot: plotId, truck: 0 } : { id, plot: plotId, index })
           }}
           onBreakTap={doBreak}
           onRubbleTap={handleRubbleTap}
@@ -315,17 +316,28 @@ export default function Game() {
       {mapOpen && (
         <StationsMap
           snap={snap}
+          plot={plot.id}
           onPick={(id) => {
             setMapOpen(false)
             // Tool rack and crew trailer live on the home lot; dumpsters and
             // trucks are on every plot, so use the one you're looking at.
             if (id === 'truck') setSelected({ id, plot: plot.id, truck: 0 })
+            else if (id === 'dumpster') setSelected({ id, plot: plot.id, index: 0 })
             else setSelected({ id, plot: id === 'tools' || id === 'crew' || id === 'yard' ? 0 : plot.id })
           }}
           onClose={() => setMapOpen(false)}
         />
       )}
-      {selected?.id === 'truck' ? (
+      {selected?.id === 'dumpster' ? (
+        <DumpsterPanel
+          engine={engine}
+          snap={snap}
+          plot={selected.plot}
+          index={selected.index ?? 0}
+          onPick={(index) => setSelected({ ...selected, index })}
+          onClose={() => setSelected(null)}
+        />
+      ) : selected?.id === 'truck' ? (
         <TruckPanel
           engine={engine}
           snap={snap}

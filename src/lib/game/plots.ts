@@ -27,9 +27,13 @@ export function plotSlot(id: number): PlotSlot {
   return PLOT_SLOTS[id]
 }
 
-// The Brick Yard, where trucks unload and you get paid. Sits on the block
-// just behind home so trucks are seen driving there.
-export const YARD_BLOCK = { x: 0, z: -BLOCK }
+// The far edge of the map (behind everything, top-right on screen) is
+// water. SHORE_Z is where the quay meets it.
+export const SHORE_Z = -MAP_BLOCKS * BLOCK - BLOCK / 2 - 1.2
+
+// The Brick Yard, where trucks unload and you get paid: on the waterfront
+// at the edge of the city, so trucks make a real trip across town.
+export const YARD_BLOCK = { x: 0, z: -MAP_BLOCKS * BLOCK }
 
 // Blocks that aren't filler neighbourhood: plots and the yard.
 export function isReservedBlock(x: number, z: number) {

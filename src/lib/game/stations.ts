@@ -6,6 +6,9 @@ import {
   stats,
   truckUpgradeCost,
   upgradeCost,
+  dumpsterBuyCost,
+  dumpsterUpgradeCost,
+  type PlotSnap,
   type Snapshot,
   type UpgradeKey,
   type Upgrades,
@@ -78,20 +81,16 @@ export const STATIONS: StationDef[] = [
     ],
   },
   {
+    // Each plot's dumpsters are bought and sized up one by one in the
+    // dumpster panel (DumpsterPanel); this entry is for the map and looks.
     id: 'dumpster',
-    name: 'Dumpster',
+    name: 'Dumpsters',
     emoji: '🗑️',
-    upgrades: ['dumpster'],
+    upgrades: [],
     position: { x: DUMPSTER.x, z: DUMPSTER.z },
-    level: (u) => 1 + u.dumpster,
+    level: () => 1,
     tierNames: ['Skip', 'Big Skip', 'Roll-off Container', 'Compactor'],
-    effects: (u) => [
-      {
-        label: 'Holds',
-        now: `${stats.dumpsterCapacity(u)} bricks`,
-        next: () => `${stats.dumpsterCapacity({ ...u, dumpster: u.dumpster + 1 })} bricks`,
-      },
-    ],
+    effects: () => [],
   },
   {
     // The fleet. Each truck's own load/speed upgrades and look live in the
@@ -138,6 +137,19 @@ export const STATIONS: StationDef[] = [
 // A single truck's level drives its look (Flatbed → Mega Hauler).
 export function truckLevel(t: { load: number; speed: number }) {
   return 1 + t.load + t.speed
+}
+
+// A single dumpster's level drives its look (Skip → Compactor).
+export function dumpsterLevel(d: { level: number }) {
+  return 1 + d.level
+}
+
+// Anything to buy for a plot's dumpsters: another one, or any one bigger.
+export function dumpstersAffordable(plot: PlotSnap | undefined, scrap: number): boolean {
+  if (!plot) return false
+  const buy = dumpsterBuyCost(plot.dumpsters.length)
+  if (buy !== null && scrap >= buy) return true
+  return plot.dumpsters.some((d) => scrap >= dumpsterUpgradeCost(d.level))
 }
 
 // Anything to buy for the fleet: another truck, or any truck's upgrade.

@@ -6,9 +6,9 @@ import { Html, OrthographicCamera, useProgress } from '@react-three/drei'
 import * as THREE from 'three'
 import { getBlueprintSize } from '@/lib/game/blueprints'
 import { getBuilding } from '@/lib/game/buildings'
-import { BRICK, LOT_HALF, upgradeCost, type Engine, type Snapshot } from '@/lib/game/engine'
+import { BRICK, DUMPSTER_SLOTS, LOT_HALF, upgradeCost, type Engine, type Snapshot } from '@/lib/game/engine'
 import { BLOCK, MAP_BLOCKS, PLOT_SLOTS, YARD_BLOCK } from '@/lib/game/plots'
-import { STATIONS, fleetAffordable, getStation, tierFor, truckLevel, type StationId } from '@/lib/game/stations'
+import { STATIONS, dumpstersAffordable, fleetAffordable, getStation, tierFor, truckLevel, type StationId } from '@/lib/game/stations'
 import { formatNumber } from '@/components/game/format'
 import Building from './Building'
 import Worker, { vestMaterial } from './Worker'
@@ -25,8 +25,9 @@ const GROUND_FORWARD = new THREE.Vector3(-1, 0, -1).normalize()
 const PAN_LIMIT = MAP_BLOCKS * BLOCK
 const DRAG_THRESHOLD = 8
 
-// `truck` set = one specific truck (the camera follows it as it drives).
-export type StationFocus = { id: StationId; plot: number; truck?: number }
+// `truck` set = one specific truck (the camera follows it as it drives);
+// `index` = which of the plot's dumpsters.
+export type StationFocus = { id: StationId; plot: number; truck?: number; index?: number }
 
 // Advances the simulation once per frame. Mounted first inside the canvas so
 // its frame callback runs before anything that draws engine state.
@@ -89,7 +90,7 @@ function CameraRig({
       target.set(followed.x, -1.5, followed.z)
     } else if (focus) {
       const base = focus.id === 'yard' ? YARD_BLOCK : PLOT_SLOTS[focus.plot]
-      const p = getStation(focus.id).position
+      const p = focus.id === 'dumpster' ? DUMPSTER_SLOTS[focus.index ?? 0] : getStation(focus.id).position
       target.set(base.x + p.x, -1.5, base.z + p.z)
     } else {
       target.copy(center.current)
@@ -216,7 +217,7 @@ export default function Scene({
   focus: StationFocus | null
   // Bump `nonce` to glide the camera over to a plot.
   flyTo: { plot: number; nonce: number }
-  onSelectStation: (id: StationId, plot: number) => void
+  onSelectStation: (id: StationId, plot: number, index?: number) => void
   onSelectTruck: (truck: number) => void
   onBreakTap: (plot: number, x: number, y: number) => void
   onRubbleTap: (x: number, y: number) => void
@@ -316,7 +317,15 @@ export default function Scene({
             return (
               <group key={site.id} position={[slot.x, 0, slot.z]}>
                 <Building engine={engine} site={site} onBreakTap={onBreakTap} onRubbleTap={onRubbleTap} />
-                <DumpsterStation engine={engine} site={site} {...station.dumpster} onSelect={select} />
+                {site.dumpsters.map((_, i) => (
+                  <DumpsterStation
+                    key={i}
+                    site={site}
+                    index={i}
+                    affordable={dumpstersAffordable(snap.plots[site.id], snap.scrap)}
+                    onSelect={(id) => onSelectStation(id, site.id, i)}
+                  />
+                ))}
                 <TruckDepot affordable={station.truck.affordable} onSelect={select} />
                 {site.id === 0 && (
                   <>

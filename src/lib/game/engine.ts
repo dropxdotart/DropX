@@ -1,7 +1,20 @@
 import { getBlueprintSize, getBricks, type Brick, type BrickColor } from './blueprints'
 import { BUILDINGS, brickCount, getBuilding, levelForXp, type BuildingDef } from './buildings'
 import { PLOT_SLOTS } from './plots'
-import { parkingSpot, planRoute, plotStop, routeLength, YARD_STOP, type Point, type RoadSpot } from './roads'
+import {
+  parkingSpot,
+  parkPath,
+  planRoute,
+  plotStop,
+  routeLength,
+  YARD_BAY,
+  YARD_GATE_IN,
+  YARD_GATE_OUT,
+  yardEnterPath,
+  yardExitPath,
+  type Point,
+  type RoadSpot,
+} from './roads'
 
 // The whole game simulation lives here, outside React: workers walking and
 // carrying, rubble on the ground, the dumpsters and trucks, and the economy.
@@ -12,8 +25,8 @@ import { parkingSpot, planRoute, plotStop, routeLength, YARD_STOP, type Point, t
 // HUD subscribes to a throttled snapshot. Keeping it framework-free also
 // means the same logic can be ported to the native app later.
 
-import { BRICK, DUMPSTER, LOT_HALF } from './layout'
-export { BRICK, DUMPSTER, LOT_HALF, ROAD_Z, TRUCK_STOP } from './layout'
+import { BRICK, DUMPSTER, DUMPSTER_SLOTS, LOT_HALF, MAX_DUMPSTERS } from './layout'
+export { BRICK, DUMPSTER, DUMPSTER_SLOTS, LOT_HALF, MAX_DUMPSTERS, ROAD_Z, TRUCK_STOP } from './layout'
 
 const SAVE_KEY = 'rubble-save-v5'
 const LEGACY_SAVE_KEY = 'rubble-save-v4'
@@ -36,12 +49,11 @@ export const BONUS_SPOT = { x: 5.5, z: LOT_HALF + 0.7 }
 const TRAILER_DROP_AT = (TRAILER_FAR - BONUS_SPOT.x) / (TRAILER_FAR * 2)
 const nextBonusDelay = () => 180 + Math.random() * 120
 
-// Site-wide upgrades. Each truck also has its own load/speed levels.
+// Site-wide upgrades. Each truck and each dumpster also has its own level.
 export type Upgrades = {
   tools: number
   speed: number
   workers: number
-  dumpster: number
   fleet: number
   yardSpeed: number
   yardBonus: number
@@ -52,10 +64,20 @@ export const UPGRADE_INFO: Record<UpgradeKey, { label: string; base: number; gro
   tools: { label: 'Better tools', base: 15, growth: 1.5 },
   speed: { label: 'Walking speed', base: 25, growth: 1.45 },
   workers: { label: 'Hire worker', base: 40, growth: 1.7 },
-  dumpster: { label: 'Bigger dumpster', base: 30, growth: 1.5 },
   fleet: { label: 'Buy a truck', base: 300, growth: 2.6 },
   yardSpeed: { label: 'Faster unloading', base: 60, growth: 1.55 },
   yardBonus: { label: 'Better prices', base: 120, growth: 1.7 },
+}
+
+// Each dumpster is bought per plot and sized up on its own.
+export const DUMPSTER_UPGRADE = { label: 'Bigger dumpster', base: 30, growth: 1.5 }
+export function dumpsterUpgradeCost(level: number): number {
+  return Math.round(DUMPSTER_UPGRADE.base * Math.pow(DUMPSTER_UPGRADE.growth, level))
+}
+// Price of a plot's 2nd and 3rd dumpster.
+const DUMPSTER_BUY_COSTS = [0, 400, 2500]
+export function dumpsterBuyCost(owned: number): number | null {
+  return owned < MAX_DUMPSTERS ? DUMPSTER_BUY_COSTS[owned] : null
 }
 
 export type TruckUpgrade = 'load' | 'speed'
@@ -90,7 +112,7 @@ export const stats = {
   pullSeconds: (u: Upgrades) => 3 / (1 + 0.15 * u.tools),
   walkSpeed: (u: Upgrades) => 2 * (1 + 0.15 * u.speed),
   workerCount: (u: Upgrades) => 1 + u.workers,
-  dumpsterCapacity: (u: Upgrades) => 8 + 6 * u.dumpster,
+  dumpsterCapacity: (level: number) => 8 + 6 * level,
   truckCount: (u: Upgrades) => 1 + u.fleet,
   // Per truck, from that truck's own levels.
   truckCargo: (loadLevel: number) => 8 + 6 * loadLevel,
@@ -116,6 +138,7 @@ export type Worker = {
   // many they're holding.
   carrying: BrickColor | null
   held: number
+  dumpster: number // which of the plot's dumpsters they're heading to / lined up at
 }
 
 export type Rubble = { id: number; x: number; z: number; color: BrickColor; claimed: boolean; readyAt: number }
@@ -137,7 +160,8 @@ export type Truck = {
   heading: number
   path: Point[]
   dest: { kind: 'plot'; plot: number } | { kind: 'yard' } | { kind: 'park' }
-  at: RoadSpot // the stop it last set off from / is at
+  at: RoadSpot // the plot stop it's at, when out on the road
+  inYard: 'bay' | 'parked' | null // inside the fenced Brick Yard
   lap: number // next plot index to visit this lap
   timer: number
   cargo: number
@@ -163,7 +187,8 @@ export type PlotSnap = {
   bricksTotal: number
   bricksLeft: number
   rubbleLeft: number
-  dumpsterLoad: number
+  dumpsterLoad: number // all of the plot's dumpsters together
+  dumpsters: { level: number; load: number; capacity: number }[]
   truckState: TruckState
   crew: number
 }
@@ -178,7 +203,6 @@ export type Snapshot = {
   plots: PlotSnap[]
   trucks: TruckSnap[]
   crewAuto: boolean
-  dumpsterCapacity: number
   incomePerMinute: number
   offlineEarnings: number
   sitesCleared: number
@@ -192,7 +216,8 @@ type PlotSave = {
   buildingId: string
   removed: string
   rubble: number
-  dumpsterLoad: number
+  dumpsterLoad?: number // before each plot could have several dumpsters
+  dumpsters?: { level: number; load: number }[]
 }
 
 type SaveData = {
@@ -209,7 +234,7 @@ type SaveData = {
 type LegacySave = {
   scrap: number
   xp: number
-  upgrades: Partial<Upgrades> & { hammer?: number; truck?: number }
+  upgrades: Partial<Upgrades> & { hammer?: number; truck?: number; dumpster?: number }
   buildingId: string
   phase: 'demolishing' | 'picking'
   removed: string
@@ -258,11 +283,14 @@ export class Site {
   halfZ = 0
 
   rubble: Rubble[] = []
-  // Worker ids lined up at the dumpster, front first. Only the front one
-  // tips their bricks in; the rest wait their turn.
-  queue: number[] = []
+  // Each dumpster's size level, how full it is, and the worker ids lined
+  // up at it (front first; only the front one tips their bricks in).
+  dumpsters: { level: number; load: number; queue: number[] }[] = [{ level: 0, load: 0, queue: [] }]
   private nextRubbleId = 1
-  dumpsterLoad = 0
+
+  get dumpsterLoad() {
+    return this.dumpsters.reduce((n, d) => n + d.load, 0)
+  }
   // Drained by this plot's Building renderer.
   events: EngineEvent[] = []
 
@@ -358,14 +386,31 @@ export class Site {
     return r
   }
 
-  // The line at the dumpster's right-hand end (the side facing the camera,
-  // clear of even the compactor): front spot first, stretching toward the
-  // fence, then wrapping into rows nearer the building.
-  queueSpot(i: number) {
-    const perRow = 6
+  // A spot in a dumpster's line: front first, along the slot's direction,
+  // wrapping into a second row (see DUMPSTER_SLOTS).
+  queueSpot(dumpster: number, i: number) {
+    const slot = DUMPSTER_SLOTS[dumpster]
+    const perRow = 4
     const row = Math.floor(i / perRow)
     const col = i % perRow
-    return { x: DUMPSTER.x + 3.4 + col * 0.7, z: DUMPSTER.z - row * 0.75 }
+    return {
+      x: slot.line.x + slot.dir.x * col + slot.wrap.x * row,
+      z: slot.line.z + slot.dir.z * col + slot.wrap.z * row,
+    }
+  }
+
+  // Shortest line wins; ties go to the dumpster with the most room.
+  pickDumpster(capacityOf: (level: number) => number, walkingTo: number[]): number {
+    let best = 0
+    let bestScore = Infinity
+    this.dumpsters.forEach((d, i) => {
+      const score = (d.queue.length + walkingTo[i]) * 1000 - (capacityOf(d.level) - d.load)
+      if (score < bestScore) {
+        bestScore = score
+        best = i
+      }
+    })
+    return best
   }
 
   // A preferred spot around the building for each worker (golden-angle
@@ -390,7 +435,7 @@ export class Engine {
   time = 0
   scrap = 0
   xp = 0
-  upgrades: Upgrades = { tools: 0, speed: 0, workers: 0, dumpster: 0, fleet: 0, yardSpeed: 0, yardBonus: 0 }
+  upgrades: Upgrades = { tools: 0, speed: 0, workers: 0, fleet: 0, yardSpeed: 0, yardBonus: 0 }
   sitesCleared = 0
   offlineEarnings = 0
 
@@ -430,11 +475,12 @@ export class Engine {
       speed: levels?.speed ?? 0,
       state: 'parked',
       x: spot.x,
-      z: spot.line - 0.6,
-      heading: Math.PI / 2,
+      z: spot.z,
+      heading: 0,
       path: [],
       dest: { kind: 'park' },
-      at: spot,
+      at: YARD_GATE_OUT,
+      inYard: 'parked',
       lap: 0,
       timer: 0,
       cargo: 0,
@@ -466,6 +512,7 @@ export class Engine {
       timer: 0,
       carrying: null,
       held: 0,
+      dumpster: 0,
     }
   }
 
@@ -497,7 +544,13 @@ export class Engine {
     this.xp = save.xp
     // Before per-truck levels, there was one shared "truck" upgrade: it
     // becomes the first truck's load level.
-    const { truck: oldTruckLevel, ...upgrades } = save.upgrades as Upgrades & { truck?: number }
+    // Likewise the one shared "dumpster" upgrade becomes each plot's first
+    // dumpster's level.
+    const {
+      truck: oldTruckLevel,
+      dumpster: oldDumpsterLevel,
+      ...upgrades
+    } = save.upgrades as Upgrades & { truck?: number; dumpster?: number }
     this.upgrades = { ...this.upgrades, ...upgrades }
     this.sitesCleared = save.sitesCleared ?? 0
     this.crewPlan = save.crewPlan ?? null
@@ -505,7 +558,9 @@ export class Engine {
     this.plots = save.plots.slice(0, PLOT_SLOTS.length).map((ps, id) => {
       const site = new Site(id)
       site.phase = ps.phase
-      site.dumpsterLoad = ps.dumpsterLoad
+      site.dumpsters = (ps.dumpsters ?? [{ level: oldDumpsterLevel ?? 0, load: ps.dumpsterLoad ?? 0 }])
+        .slice(0, MAX_DUMPSTERS)
+        .map((d) => ({ level: d.level, load: d.load, queue: [] }))
       const def = getBuilding(ps.buildingId)
       if (ps.phase === 'empty') {
         site.building = def
@@ -536,7 +591,7 @@ export class Engine {
         removed: encodeBits(p.removed),
         // Carried bricks go back on the ground on reload rather than vanishing.
         rubble: p.rubble.length + this.workers.reduce((n, w) => n + (w.plot === p.id ? w.held : 0), 0),
-        dumpsterLoad: p.dumpsterLoad,
+        dumpsters: p.dumpsters.map((d) => ({ level: d.level, load: d.load })),
       })),
     }
     try {
@@ -572,9 +627,11 @@ export class Engine {
       if (total <= 0) continue
       any = true
 
-      const fromDumpster = Math.min(hauled, site.dumpsterLoad)
-      site.dumpsterLoad -= fromDumpster
-      hauled -= fromDumpster
+      for (const d of site.dumpsters) {
+        const take = Math.min(hauled, d.load)
+        d.load -= take
+        hauled -= take
+      }
       const fromRubble = Math.min(hauled, site.rubble.length)
       site.rubble.splice(0, fromRubble)
       hauled -= fromRubble
@@ -791,8 +848,9 @@ export class Engine {
 
   // Bricks per second the whole fleet can haul, lapping every plot.
   private fleetRate(): number {
-    const stops = [YARD_STOP, ...this.plots.map((p) => plotStop(p.id)), YARD_STOP]
-    let length = 0
+    const stops = [YARD_GATE_OUT, ...this.plots.map((p) => plotStop(p.id)), YARD_GATE_IN]
+    // Plus the drive through the yard: in, to the bay, and back out.
+    let length = 20
     for (let i = 0; i < stops.length - 1; i++) {
       const from = stops[i]
       length += routeLength(planRoute(from, stops[i + 1]), { x: from.x, z: from.line })
@@ -874,7 +932,6 @@ export class Engine {
     dt = Math.min(dt, 0.1)
     this.time += dt
     const u = this.upgrades
-    const capacity = stats.dumpsterCapacity(u)
 
     this.rebalanceCrew()
 
@@ -922,9 +979,11 @@ export class Engine {
             }
             if (w.carrying) {
               w.state = 'toDumpster'
-              // Drop-off spot behind the dumpster, clear of even the biggest
-              // (compactor) version of it.
-              const tail = site.queueSpot(site.queue.length)
+              // Head for whichever dumpster has the shortest line.
+              const walking = site.dumpsters.map(() => 0)
+              for (const o of this.workers) if (o.plot === site.id && o.state === 'toDumpster' && o !== w) walking[o.dumpster]++
+              w.dumpster = site.pickDumpster(stats.dumpsterCapacity, walking)
+              const tail = site.queueSpot(w.dumpster, site.dumpsters[w.dumpster].queue.length)
               w.tx = tail.x
               w.tz = tail.z
             } else {
@@ -935,31 +994,35 @@ export class Engine {
         case 'toDumpster': {
           // Head for the back of the line (it may have moved since setting
           // off) and join it on arrival.
-          const tail = site.queueSpot(site.queue.length)
+          const dumpster = site.dumpsters[w.dumpster] ?? site.dumpsters[(w.dumpster = 0)]
+          const tail = site.queueSpot(w.dumpster, dumpster.queue.length)
           w.tx = tail.x
           w.tz = tail.z
           if (this.moveToward(w, dt)) {
-            site.queue.push(w.id)
+            dumpster.queue.push(w.id)
             w.state = 'waiting'
           }
           break
         }
         case 'waiting': {
-          const place = site.queue.indexOf(w.id)
-          const spot = site.queueSpot(Math.max(0, place))
+          const dumpster = site.dumpsters[w.dumpster]
+          const place = dumpster.queue.indexOf(w.id)
+          const spot = site.queueSpot(w.dumpster, Math.max(0, place))
           w.tx = spot.x
           w.tz = spot.z
-          // Shuffle up as the line moves, then face the front.
+          // Shuffle up as the line moves, then face the front of the line.
           if (!this.moveToward(w, dt)) break
-          w.heading = -Math.PI / 2
-          if (place === 0 && site.dumpsterLoad < capacity && !this.loadingAt(site)) {
-            const n = Math.min(w.held, capacity - site.dumpsterLoad)
-            site.dumpsterLoad += n
+          const dir = DUMPSTER_SLOTS[w.dumpster].dir
+          w.heading = Math.atan2(-dir.x, -dir.z)
+          const capacity = stats.dumpsterCapacity(dumpster.level)
+          if (place === 0 && dumpster.load < capacity && !this.loadingAt(site)) {
+            const n = Math.min(w.held, capacity - dumpster.load)
+            dumpster.load += n
             w.held -= n
             if (w.held === 0) {
               w.carrying = null
               w.state = 'idle'
-              site.queue.shift()
+              dumpster.queue.shift()
             }
             this.markDirty()
           }
@@ -1048,11 +1111,34 @@ export class Engine {
 
   claimBonusDrop() {
     if (!this.bonusDrop) return
-    this.home.dumpsterLoad += this.bonusDrop.amount
+    this.home.dumpsters[0].load += this.bonusDrop.amount
     this.lastBonusClaim = { at: this.time, amount: this.bonusDrop.amount }
     this.bonusDrop = null
     this.bonusHeld = false
     this.markDirty()
+  }
+
+  // ── Dumpsters (per plot) ──────────────────────────────────────────────
+
+  buyDumpster(plot: number): boolean {
+    const site = this.plots[plot]
+    const cost = site ? dumpsterBuyCost(site.dumpsters.length) : null
+    if (!site || cost === null || this.scrap < cost) return false
+    this.scrap -= cost
+    site.dumpsters.push({ level: 0, load: 0, queue: [] })
+    this.markDirty()
+    return true
+  }
+
+  upgradeDumpster(plot: number, index: number): boolean {
+    const d = this.plots[plot]?.dumpsters[index]
+    if (!d) return false
+    const cost = dumpsterUpgradeCost(d.level)
+    if (this.scrap < cost) return false
+    this.scrap -= cost
+    d.level++
+    this.markDirty()
+    return true
   }
 
   // ── Trucks ────────────────────────────────────────────────────────────
@@ -1070,10 +1156,30 @@ export class Engine {
 
   private lastDeparture = -Infinity
 
-  private driveTo(truck: Truck, dest: Truck['dest'], spot: RoadSpot) {
-    truck.path = planRoute(truck.at, spot)
+  // Builds the route: out of the yard by the OUT gate if it's inside, along
+  // the roads, and in by the IN gate to the bay (and on to a parking bay).
+  private driveTo(truck: Truck, dest: Truck['dest']) {
+    const path: Point[] = []
+    let from: RoadSpot | null = truck.inYard ? null : truck.at
+    if (truck.inYard) {
+      if (dest.kind === 'plot') {
+        path.push(...yardExitPath({ x: truck.x, z: truck.z }))
+        from = YARD_GATE_OUT
+      } else if (dest.kind === 'park') {
+        if (truck.inYard === 'bay') path.push(...parkPath(truck.id))
+      } else {
+        path.push(YARD_BAY)
+      }
+    }
+    if (from) {
+      if (dest.kind === 'plot') path.push(...planRoute(from, plotStop(dest.plot)))
+      else {
+        path.push(...planRoute(from, YARD_GATE_IN), ...yardEnterPath())
+        if (dest.kind === 'park') path.push(...parkPath(truck.id))
+      }
+    }
+    truck.path = path
     truck.dest = dest
-    truck.at = spot
     truck.state = 'driving'
   }
 
@@ -1081,17 +1187,17 @@ export class Engine {
   // anything in its dumpster; else unload whatever's aboard to end the
   // lap; else park at the yard until there's something to collect.
   private nextStop(truck: Truck) {
-    if (truck.cargo >= stats.truckCargo(truck.load)) return this.driveTo(truck, { kind: 'yard' }, YARD_STOP)
+    if (truck.cargo >= stats.truckCargo(truck.load)) return this.driveTo(truck, { kind: 'yard' })
     for (let i = truck.lap; i < this.plots.length; i++) {
       if (this.plots[i].dumpsterLoad > 0) {
         truck.lap = i + 1
-        return this.driveTo(truck, { kind: 'plot', plot: i }, plotStop(i))
+        return this.driveTo(truck, { kind: 'plot', plot: i })
       }
     }
     truck.lap = this.plots.length
-    if (truck.cargo > 0) return this.driveTo(truck, { kind: 'yard' }, YARD_STOP)
+    if (truck.cargo > 0) return this.driveTo(truck, { kind: 'yard' })
     truck.lap = 0
-    this.driveTo(truck, { kind: 'park' }, parkingSpot(truck.id))
+    this.driveTo(truck, { kind: 'park' })
   }
 
   private tickTrucks(dt: number) {
@@ -1112,8 +1218,15 @@ export class Engine {
           truck.timer -= dt
           if (truck.timer <= 0 && truck.dest.kind === 'plot') {
             const site = this.plots[truck.dest.plot]
-            const n = Math.min(site.dumpsterLoad, stats.truckCargo(truck.load) - truck.cargo)
-            site.dumpsterLoad -= n
+            // Empty the fullest dumpsters first.
+            let room = stats.truckCargo(truck.load) - truck.cargo
+            let n = 0
+            for (const d of [...site.dumpsters].sort((a, b) => b.load - a.load)) {
+              const take = Math.min(room, d.load)
+              d.load -= take
+              room -= take
+              n += take
+            }
             truck.cargo += n
             truck.cargoValue += n * site.building.brickValue
             this.markDirty()
@@ -1168,12 +1281,16 @@ export class Engine {
     if (truck.path.length) return
 
     if (truck.dest.kind === 'plot') {
+      truck.at = plotStop(truck.dest.plot)
+      truck.inYard = null
       truck.state = 'loading'
       truck.timer = LOAD_SECONDS
     } else if (truck.dest.kind === 'yard') {
+      truck.inYard = 'bay'
       truck.state = 'unloading'
       truck.timer = stats.unloadSeconds(this.upgrades)
     } else {
+      truck.inYard = 'parked'
       truck.state = 'parked'
     }
     this.markDirty()
@@ -1223,12 +1340,12 @@ export class Engine {
           bricksLeft: p.bricksLeft,
           rubbleLeft: p.rubble.length,
           dumpsterLoad: p.dumpsterLoad,
+          dumpsters: p.dumpsters.map((d) => ({ level: d.level, load: d.load, capacity: stats.dumpsterCapacity(d.level) })),
           truckState: this.truckAt(p)?.state ?? 'away',
           crew: crew[p.id],
         })),
         trucks: this.trucks.map((t) => ({ id: t.id, load: t.load, speed: t.speed, cargo: t.cargo, state: t.state })),
         crewAuto: this.crewPlan === null,
-        dumpsterCapacity: stats.dumpsterCapacity(this.upgrades),
         incomePerMinute: Math.round((earned / span) * 60),
         offlineEarnings: this.offlineEarnings,
         sitesCleared: this.sitesCleared,
@@ -1252,7 +1369,6 @@ function migrateLegacy(old: LegacySave): SaveData {
       tools: u.tools ?? u.hammer ?? 0,
       speed: u.speed ?? 0,
       workers: u.workers ?? 0,
-      dumpster: u.dumpster ?? u.truck ?? 0,
       fleet: 0,
       yardSpeed: 0,
       yardBonus: 0,
@@ -1267,7 +1383,7 @@ function migrateLegacy(old: LegacySave): SaveData {
         buildingId: old.buildingId,
         removed: old.removed,
         rubble: old.rubble,
-        dumpsterLoad: old.dumpsterLoad,
+        dumpsters: [{ level: u.dumpster ?? u.truck ?? 0, load: old.dumpsterLoad }],
       },
     ],
   }

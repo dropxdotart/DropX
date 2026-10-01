@@ -5,8 +5,8 @@ import { useFrame } from '@react-three/fiber'
 import { useGLTF } from '@react-three/drei'
 import * as THREE from 'three'
 import { LOT_HALF, ROAD_Z } from '@/lib/game/engine'
-import { BLOCK, MAP_BLOCKS, PLOT_SLOTS, isReservedBlock } from '@/lib/game/plots'
-import { ROAD_LINES } from '@/lib/game/roads'
+import { BLOCK, MAP_BLOCKS, PLOT_SLOTS, SHORE_Z, isReservedBlock } from '@/lib/game/plots'
+import { ROAD_LINES, ROAD_LINES_Z } from '@/lib/game/roads'
 import Prop from './Prop'
 import { Billboard } from './SiteProps'
 
@@ -38,21 +38,26 @@ const asphalt = new THREE.MeshStandardMaterial({ color: '#646b76', roughness: 0.
 const paint = new THREE.MeshStandardMaterial({ color: '#eef1f4', roughness: 0.8 })
 
 function Roads() {
-  const length = EXTENT * 2 + ROAD_WIDTH
+  // Streets along x stop at the waterfront; cross streets run from the
+  // quay to the near edge of the map.
+  const lengthX = EXTENT * 2 + ROAD_WIDTH
+  const crossStart = SHORE_Z + 0.6
+  const crossEnd = EXTENT + ROAD_WIDTH / 2
   const dashes = useRef<THREE.InstancedMesh>(null)
 
   // Centre dashes, skipping the crossings.
   const dashPositions = useMemo(() => {
     const out: { x: number; z: number; alongX: boolean }[] = []
-    for (const line of ROAD_LINES) {
-      for (let t = -EXTENT; t <= EXTENT; t += 2) {
-        if (ROAD_LINES.some((c) => Math.abs(c - t) < ROAD_WIDTH)) continue
-        out.push({ x: t, z: line, alongX: true })
-        out.push({ x: line, z: t, alongX: false })
+    for (let t = -EXTENT; t <= EXTENT; t += 2) {
+      for (const line of ROAD_LINES_Z) {
+        if (!ROAD_LINES.some((c) => Math.abs(c - t) < ROAD_WIDTH)) out.push({ x: t, z: line, alongX: true })
+      }
+      for (const line of ROAD_LINES) {
+        if (t > crossStart + 1 && !ROAD_LINES_Z.some((c) => Math.abs(c - t) < ROAD_WIDTH)) out.push({ x: line, z: t, alongX: false })
       }
     }
     return out
-  }, [])
+  }, [crossStart])
 
   useLayoutEffect(() => {
     const mesh = dashes.current
@@ -69,15 +74,15 @@ function Roads() {
 
   return (
     <group>
-      {ROAD_LINES.map((c) => (
-        <group key={c}>
-          <mesh material={asphalt} position={[0, 0.02, c]} receiveShadow>
-            <boxGeometry args={[length, 0.04, ROAD_WIDTH]} />
-          </mesh>
-          <mesh material={asphalt} position={[c, 0.021, 0]} receiveShadow>
-            <boxGeometry args={[ROAD_WIDTH, 0.04, length]} />
-          </mesh>
-        </group>
+      {ROAD_LINES_Z.map((z) => (
+        <mesh key={`z${z}`} material={asphalt} position={[0, 0.02, z]} receiveShadow>
+          <boxGeometry args={[lengthX, 0.04, ROAD_WIDTH]} />
+        </mesh>
+      ))}
+      {ROAD_LINES.map((x) => (
+        <mesh key={`x${x}`} material={asphalt} position={[x, 0.021, (crossStart + crossEnd) / 2]} receiveShadow>
+          <boxGeometry args={[ROAD_WIDTH, 0.04, crossEnd - crossStart]} />
+        </mesh>
       ))}
       <instancedMesh
         ref={dashes}
@@ -87,6 +92,47 @@ function Roads() {
       >
         <boxGeometry args={[0.9, 0.012, 0.12]} />
       </instancedMesh>
+    </group>
+  )
+}
+
+// ── Waterfront ───────────────────────────────────────────────────────────
+
+const WATER_DEPTH = 120
+
+// Beyond the last row of blocks: a stone quay along the shore, then water
+// with a few gentle bobbing buoys.
+function Waterfront() {
+  const buoys = useRef<THREE.Group>(null)
+  useFrame(({ clock }) => {
+    const g = buoys.current
+    if (!g) return
+    const t = clock.getElapsedTime()
+    g.children.forEach((b, i) => {
+      b.position.y = 0.1 + Math.sin(t * 1.4 + i * 1.7) * 0.08
+      b.rotation.z = Math.sin(t * 1.1 + i) * 0.12
+    })
+  })
+  const width = EXTENT * 2 + 80
+  return (
+    <group>
+      {/* Quay: a stone edge along the shore */}
+      <mesh position={[0, 0.05, SHORE_Z + 0.6]} receiveShadow>
+        <boxGeometry args={[width, 0.2, 1.4]} />
+        <meshStandardMaterial color="#b9b2a4" roughness={0.9} />
+      </mesh>
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.05, SHORE_Z - WATER_DEPTH / 2]}>
+        <planeGeometry args={[width, WATER_DEPTH]} />
+        <meshStandardMaterial color="#3d9fd6" roughness={0.35} metalness={0.05} />
+      </mesh>
+      <group ref={buoys}>
+        {[-30, -12, 9, 26, 41].map((x, i) => (
+          <mesh key={x} position={[x, 0.1, SHORE_Z - 6 - (i % 2) * 5]} castShadow>
+            <cylinderGeometry args={[0.35, 0.45, 0.6, 10]} />
+            <meshStandardMaterial color={i % 2 ? '#ff6b1a' : '#f4f1ea'} />
+          </mesh>
+        ))}
+      </group>
     </group>
   )
 }
@@ -306,10 +352,12 @@ export default function World({ ownedPlots }: { ownedPlots: number }) {
 
   return (
     <group>
-      <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow position={[0, -0.01, 0]}>
-        <planeGeometry args={[EXTENT * 2 + 80, EXTENT * 2 + 80]} />
+      {/* Grass from the shore to past the near edge of the map */}
+      <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow position={[0, -0.01, (SHORE_Z + EXTENT + 40) / 2]}>
+        <planeGeometry args={[EXTENT * 2 + 80, EXTENT + 40 - SHORE_Z]} />
         <meshStandardMaterial color="#86c56b" />
       </mesh>
+      <Waterfront />
 
       <Roads />
 
