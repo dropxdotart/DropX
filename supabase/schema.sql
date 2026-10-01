@@ -9,7 +9,7 @@
 create extension if not exists "uuid-ossp";
 
 create type ad_kind as enum ('image', 'video');
-create type ad_placement as enum ('rewarded', 'interstitial', 'banner');
+create type ad_placement as enum ('rewarded', 'interstitial', 'banner', 'billboard');
 
 create table ads (
   id uuid primary key default uuid_generate_v4(),

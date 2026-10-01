@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { X } from 'lucide-react'
 import { getAdByPlacement, type AdCreative } from '@/app/actions'
 
@@ -12,9 +12,11 @@ const MIN_SECONDS_BEFORE_CLOSE = 3
 export default function InterstitialAd({ trigger }: { trigger: number }) {
   const [ad, setAd] = useState<AdCreative | null | undefined>(undefined)
   const [canClose, setCanClose] = useState(false)
+  const initialTrigger = useRef(trigger)
 
   useEffect(() => {
-    if (trigger === 0) return
+    // Only show on a change after mount — not for the value a save loads with.
+    if (trigger === initialTrigger.current) return
     let cancelled = false
     setCanClose(false)
     getAdByPlacement('interstitial').then((creative) => {

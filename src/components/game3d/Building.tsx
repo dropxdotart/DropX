@@ -1,400 +1,286 @@
 'use client'
 
-import { useEffect, useMemo, useRef } from 'react'
-import { useFrame, type ThreeEvent } from '@react-three/fiber'
+import { useMemo, useRef } from 'react'
+import { useFrame } from '@react-three/fiber'
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js'
 import * as THREE from 'three'
-import { BRICK_COLORS, getBricks, type Brick } from '@/lib/game/blueprints'
+import { BRICK_COLORS } from '@/lib/game/blueprints'
+import { BRICK, type Engine } from '@/lib/game/engine'
 
-export const BRICK = 0.5
-
-const MAX_FALLING = 700
-const MAX_RUBBLE = 1200
+const MAX_BRICKS = 2200
+const MAX_FLYING = 300
+const MAX_RUBBLE = 1500
 const MAX_DUST = 160
-const GRAVITY = -22
-const HIDDEN_Y = -1000
-const BUILD_IN_SECONDS = 1.1
+const HIDDEN = new THREE.Matrix4().makeTranslation(0, -1000, 0)
+const BUILD_IN_SECONDS = 1.2
+const FALL_SECONDS = 0.7
+const PULL_SECONDS = 0.35
 
-const brickGeometry = new RoundedBoxGeometry(BRICK * 0.95, BRICK * 0.95, BRICK * 0.95, 2, 0.05)
-const dustGeometry = new THREE.BoxGeometry(0.16, 0.16, 0.16)
-const brickMaterial = new THREE.MeshStandardMaterial({ roughness: 0.85 })
+export const brickGeometry = new RoundedBoxGeometry(BRICK * 0.94, BRICK * 0.94, BRICK * 0.94, 2, BRICK * 0.12)
+export const brickMaterial = new THREE.MeshStandardMaterial({ roughness: 0.85 })
+const dustGeometry = new THREE.BoxGeometry(0.12, 0.12, 0.12)
 const dustMaterial = new THREE.MeshStandardMaterial({ color: '#d8cbb2', roughness: 1 })
 
 const tmp = new THREE.Object3D()
 const tmpColor = new THREE.Color()
 
-function brickWorld(b: Brick, out: THREE.Vector3) {
-  return out.set(b.x * BRICK, b.y * BRICK + BRICK / 2, b.z * BRICK)
-}
-
-type Falling = {
+// A brick in flight: either knocked off by BREAK (arcs onto the ground where
+// it becomes rubble) or pulled out by a worker (arcs into their hands).
+type Flying = {
   alive: boolean
-  pos: THREE.Vector3
-  vel: THREE.Vector3
-  rot: THREE.Euler
+  from: THREE.Vector3
+  to: THREE.Vector3
+  arc: number
+  t: number
+  duration: number
   spin: THREE.Vector3
   color: THREE.Color
+  workerId: number | null
 }
 
 type Dust = { alive: boolean; pos: THREE.Vector3; vel: THREE.Vector3; age: number }
 
-export type BuildingHandle = {
-  // Where the next brick(s) should come off from — set by a tap just before
-  // the damage lands, otherwise a random crew member's position is used.
-  hitPoint: THREE.Vector3 | null
+function hash(n: number) {
+  const x = Math.sin(n * 91.345 + 12.9898) * 43758.5453
+  return x - Math.floor(x)
 }
 
-export default function Building({
-  blueprint,
-  structureKey,
-  health,
-  maxHealth,
-  crewPositions,
-  handle,
-  onTap,
-}: {
-  blueprint: number
-  structureKey: number
-  health: number
-  maxHealth: number
-  crewPositions: THREE.Vector3[]
-  handle: React.RefObject<BuildingHandle>
-  onTap: (e: ThreeEvent<PointerEvent>) => void
-}) {
-  const bricks = useMemo(() => getBricks(blueprint), [blueprint])
-  const meshRef = useRef<THREE.InstancedMesh>(null)
-  const fallRef = useRef<THREE.InstancedMesh>(null)
-  const rubbleRef = useRef<THREE.InstancedMesh>(null)
-  const dustRef = useRef<THREE.InstancedMesh>(null)
-  const groupRef = useRef<THREE.Group>(null)
+export default function Building({ engine }: { engine: Engine }) {
+  const brickMesh = useRef<THREE.InstancedMesh>(null)
+  const flyMesh = useRef<THREE.InstancedMesh>(null)
+  const rubbleMesh = useRef<THREE.InstancedMesh>(null)
+  const dustMesh = useRef<THREE.InstancedMesh>(null)
+  const shakeGroup = useRef<THREE.Group>(null)
 
-  const removed = useRef<Uint8Array>(new Uint8Array(0))
-  const visibleCount = useRef(0)
-  const columns = useRef<Map<string, number[]>>(new Map())
-  const buildStart = useRef(0)
-  const buildSettled = useRef(false)
+  const buildStart = useRef(-1)
+  const buildSettled = useRef(true)
+  const needsSync = useRef(true)
   const shake = useRef(0)
 
-  const falling = useRef<Falling[]>(
-    Array.from({ length: MAX_FALLING }, () => ({
-      alive: false,
-      pos: new THREE.Vector3(),
-      vel: new THREE.Vector3(),
-      rot: new THREE.Euler(),
-      spin: new THREE.Vector3(),
-      color: new THREE.Color(),
-    }))
+  const flying = useMemo<Flying[]>(
+    () =>
+      Array.from({ length: MAX_FLYING }, () => ({
+        alive: false,
+        from: new THREE.Vector3(),
+        to: new THREE.Vector3(),
+        arc: 0,
+        t: 0,
+        duration: 1,
+        spin: new THREE.Vector3(),
+        color: new THREE.Color(),
+        workerId: null,
+      })),
+    []
   )
-  const fallCursor = useRef(0)
-  const rubbleCursor = useRef(0)
-  const rubbleFade = useRef(1)
-  const dust = useRef<Dust[]>(
-    Array.from({ length: MAX_DUST }, () => ({ alive: false, pos: new THREE.Vector3(), vel: new THREE.Vector3(), age: 0 }))
+  const flyCursor = useRef(0)
+  const dust = useMemo<Dust[]>(
+    () => Array.from({ length: MAX_DUST }, () => ({ alive: false, pos: new THREE.Vector3(), vel: new THREE.Vector3(), age: 0 })),
+    []
   )
   const dustCursor = useRef(0)
 
-  const prevBricks = useRef<Brick[]>([])
-  const prevStructureKey = useRef(structureKey)
-  const rubbleFadeAt = useRef(0)
-
-  // Fresh structure: collapse whatever was left of the previous one, reset
-  // every brick, index columns for "top brick" lookups, and schedule the
-  // drop-in animation for after the collapse has played out.
-  useEffect(() => {
-    const mesh = meshRef.current
-    if (!mesh) return
-
-    const isNextStructure = structureKey !== prevStructureKey.current
-    prevStructureKey.current = structureKey
-    if (isNextStructure) {
-      const pos = new THREE.Vector3()
-      prevBricks.current.forEach((b, i) => {
-        if (removed.current[i]) return
-        brickWorld(b, pos)
-        tmpColor.set(BRICK_COLORS[b.color])
-        if (i % 3 === 0) spawnDust(pos)
-        spawnFalling(pos, tmpColor)
-      })
-      shake.current = 0.6
-      rubbleFadeAt.current = performance.now() + 1400
-    }
-
-    prevBricks.current = bricks
-    removed.current = new Uint8Array(bricks.length)
-    visibleCount.current = bricks.length
-    tmp.rotation.set(0, 0, 0)
-    tmp.scale.setScalar(0.0001)
-    const hidePos = new THREE.Vector3()
-    bricks.forEach((b, i) => {
-      tmp.position.copy(brickWorld(b, hidePos))
-      tmp.updateMatrix()
-      mesh.setMatrixAt(i, tmp.matrix)
-    })
-    mesh.instanceMatrix.needsUpdate = true
-
-    const cols = new Map<string, number[]>()
-    bricks.forEach((b, i) => {
-      const key = `${b.x},${b.z}`
-      const list = cols.get(key)
-      if (list) list.push(i)
-      else cols.set(key, [i])
-      // Small per-brick shade variation so walls read as individual bricks.
-      tmpColor.set(BRICK_COLORS[b.color]).offsetHSL(0, 0, (Math.sin(i * 12.9898) * 43758.5453) % 1 * 0.04)
-      mesh.setColorAt(i, tmpColor)
-    })
-    for (const list of cols.values()) list.sort((a, b) => bricks[a].y - bricks[b].y)
-    columns.current = cols
-
-    buildStart.current = performance.now() + (isNextStructure ? 2200 : 0)
-    buildSettled.current = false
-    if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- spawn helpers are stable refs-in-closure
-  }, [bricks, structureKey])
-
-  // Health dropped → knock off however many bricks that damage is worth.
-  useEffect(() => {
-    const mesh = meshRef.current
-    if (!mesh || bricks.length === 0) return
-    const target = Math.ceil((bricks.length * Math.max(0, health)) / maxHealth)
-    let toRemove = visibleCount.current - target
-    if (toRemove <= 0) return
-
-    const origin =
-      handle.current.hitPoint ??
-      (crewPositions.length > 0 ? crewPositions[Math.floor(Math.random() * crewPositions.length)] : new THREE.Vector3())
-    handle.current.hitPoint = null
-    shake.current = Math.min(0.25, shake.current + 0.06)
-
-    const pos = new THREE.Vector3()
-    while (toRemove > 0) {
-      let best = -1
-      let bestDist = Infinity
-      for (const list of columns.current.values()) {
-        for (let k = list.length - 1; k >= 0; k--) {
-          const i = list[k]
-          if (removed.current[i]) continue
-          const d = brickWorld(bricks[i], pos).distanceToSquared(origin)
-          if (d < bestDist) {
-            bestDist = d
-            best = i
-          }
-          break
-        }
-      }
-      if (best < 0) break
-
-      removed.current[best] = 1
-      visibleCount.current--
-      toRemove--
-
-      brickWorld(bricks[best], pos)
-      tmp.position.set(0, HIDDEN_Y, 0)
-      tmp.updateMatrix()
-      mesh.setMatrixAt(best, tmp.matrix)
-      // Crew damage that lands while the next building is still dropping in
-      // just thins it out; spawning debris there would look like bricks
-      // raining from an empty lot.
-      if (performance.now() >= buildStart.current) {
-        mesh.getColorAt(best, tmpColor)
-        spawnFalling(pos, tmpColor)
-        spawnDust(pos)
-      }
-    }
-    mesh.instanceMatrix.needsUpdate = true
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- reacts to damage only
-  }, [health])
-
-  function spawnFalling(at: THREE.Vector3, color: THREE.Color) {
-    const f = falling.current[fallCursor.current]
-    fallCursor.current = (fallCursor.current + 1) % MAX_FALLING
-    if (f.alive) settle(f)
-    const outward = new THREE.Vector3(at.x, 0, at.z)
-    if (outward.lengthSq() < 0.01) outward.set(Math.random() - 0.5, 0, Math.random() - 0.5)
-    outward.normalize().multiplyScalar(1.5 + Math.random() * 2.5)
+  function launch(fromIndex: number, to: THREE.Vector3, duration: number, workerId: number | null, arc: number) {
+    const f = flying[flyCursor.current]
+    flyCursor.current = (flyCursor.current + 1) % MAX_FLYING
+    const p = engine.brickWorld(fromIndex)
     f.alive = true
-    f.pos.copy(at)
-    f.vel.set(outward.x + (Math.random() - 0.5), 2 + Math.random() * 3, outward.z + (Math.random() - 0.5))
-    f.rot.set(0, 0, 0)
-    f.spin.set((Math.random() - 0.5) * 12, (Math.random() - 0.5) * 12, (Math.random() - 0.5) * 12)
-    f.color.copy(color)
+    f.from.set(p.x, p.y, p.z)
+    f.to.copy(to)
+    f.arc = arc
+    f.t = 0
+    f.duration = duration
+    f.spin.set((Math.random() - 0.5) * 14, (Math.random() - 0.5) * 14, (Math.random() - 0.5) * 14)
+    f.color.set(BRICK_COLORS[engine.bricks[fromIndex].color])
+    f.workerId = workerId
   }
 
-  function spawnDust(at: THREE.Vector3) {
-    for (let n = 0; n < 3; n++) {
-      const d = dust.current[dustCursor.current]
+  function puff(x: number, y: number, z: number, count: number) {
+    for (let n = 0; n < count; n++) {
+      const d = dust[dustCursor.current]
       dustCursor.current = (dustCursor.current + 1) % MAX_DUST
       d.alive = true
       d.age = 0
-      d.pos.copy(at)
-      d.vel.set((Math.random() - 0.5) * 2, 0.5 + Math.random() * 1.2, (Math.random() - 0.5) * 2)
+      d.pos.set(x, y, z)
+      d.vel.set((Math.random() - 0.5) * 1.6, 0.4 + Math.random(), (Math.random() - 0.5) * 1.6)
     }
   }
 
-  function settle(f: Falling) {
-    f.alive = false
-    const rubble = rubbleRef.current
-    if (!rubble) return
-    const i = rubbleCursor.current
-    rubbleCursor.current = (rubbleCursor.current + 1) % MAX_RUBBLE
-    tmp.position.set(f.pos.x, BRICK * 0.4, f.pos.z)
-    tmp.rotation.set(0, f.rot.y, (Math.random() - 0.5) * 0.4)
-    tmp.scale.setScalar(0.85)
-    tmp.updateMatrix()
-    rubble.setMatrixAt(i, tmp.matrix)
-    rubble.setColorAt(i, f.color)
-    rubble.instanceMatrix.needsUpdate = true
-    if (rubble.instanceColor) rubble.instanceColor.needsUpdate = true
+  // Write every brick's matrix + colour from engine state (used on a new
+  // site and after offline catch-up removed bricks in bulk).
+  function syncBricks(animateIn: boolean) {
+    const mesh = brickMesh.current
+    if (!mesh) return
+    mesh.count = engine.bricks.length
+    engine.bricks.forEach((b, i) => {
+      tmpColor.set(BRICK_COLORS[b.color]).offsetHSL(0, 0, (hash(i) - 0.5) * 0.05)
+      mesh.setColorAt(i, tmpColor)
+      if (engine.removed[i]) {
+        mesh.setMatrixAt(i, HIDDEN)
+      } else {
+        const p = engine.brickWorld(i)
+        tmp.position.set(p.x, p.y, p.z)
+        tmp.rotation.set(0, 0, 0)
+        tmp.scale.setScalar(animateIn ? 0.0001 : 1)
+        tmp.updateMatrix()
+        mesh.setMatrixAt(i, tmp.matrix)
+      }
+    })
+    mesh.instanceMatrix.needsUpdate = true
+    if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true
+    if (animateIn) {
+      buildStart.current = performance.now()
+      buildSettled.current = false
+    }
   }
 
-  // Hide every pool instance up front so unused slots don't render at origin.
-  useEffect(() => {
-    tmp.position.set(0, HIDDEN_Y, 0)
-    tmp.rotation.set(0, 0, 0)
-    tmp.scale.setScalar(1)
-    tmp.updateMatrix()
-    for (const ref of [fallRef, rubbleRef, dustRef]) {
-      const m = ref.current
-      if (!m) continue
-      for (let i = 0; i < m.count; i++) m.setMatrixAt(i, tmp.matrix)
-      m.instanceMatrix.needsUpdate = true
-    }
-    const rubble = rubbleRef.current
-    if (rubble) {
-      for (let i = 0; i < MAX_RUBBLE; i++) rubble.setColorAt(i, tmpColor.set('#999'))
-    }
-  }, [])
+  function hideBrick(i: number) {
+    const mesh = brickMesh.current
+    if (!mesh) return
+    mesh.setMatrixAt(i, HIDDEN)
+    mesh.instanceMatrix.needsUpdate = true
+  }
 
-  useFrame((state, delta) => {
-    const dt = Math.min(delta, 1 / 30)
-    const mesh = meshRef.current
-    const pos = new THREE.Vector3()
+  useFrame((_, delta) => {
+    const dt = Math.min(delta, 1 / 20)
 
-    // Drop-in build animation, one layer after another. It keeps running for
-    // one frame past the end so bricks always land in their final spot even
-    // if frames were skipped (e.g. the tab was hidden mid-animation).
-    const elapsed = (performance.now() - buildStart.current) / 1000
-    const animating = elapsed < BUILD_IN_SECONDS + 0.3
-    if (mesh && (animating || !buildSettled.current)) {
-      if (!animating) buildSettled.current = true
-      const maxY = bricks.reduce((m, b) => Math.max(m, b.y), 0) || 1
-      bricks.forEach((b, i) => {
-        if (removed.current[i]) return
-        const t = THREE.MathUtils.clamp((elapsed - (b.y / maxY) * BUILD_IN_SECONDS * 0.7) / 0.3, 0, 1)
+    if (needsSync.current) {
+      needsSync.current = false
+      syncBricks(false)
+    }
+
+    for (const e of engine.events.splice(0)) {
+      if (e.type === 'siteStarted') {
+        for (const f of flying) f.alive = false
+        syncBricks(true)
+      } else if (e.type === 'resync') {
+        syncBricks(false)
+      } else if (e.type === 'brickBroken') {
+        hideBrick(e.index)
+        launch(e.index, new THREE.Vector3(e.toX, BRICK / 2, e.toZ), FALL_SECONDS, null, 1.2)
+        const p = engine.brickWorld(e.index)
+        puff(p.x, p.y, p.z, 3)
+        shake.current = Math.min(0.2, shake.current + 0.05)
+      } else if (e.type === 'brickPulled') {
+        hideBrick(e.index)
+        const w = engine.workers[e.workerId]
+        launch(e.index, new THREE.Vector3(w.x, 0.55, w.z), PULL_SECONDS, e.workerId, 0.5)
+        const p = engine.brickWorld(e.index)
+        puff(p.x, p.y, p.z, 2)
+      }
+    }
+
+    // Drop-in, one layer after another; always finishes with a final frame
+    // so bricks land in place even if frames were skipped mid-animation.
+    const mesh = brickMesh.current
+    if (mesh && !buildSettled.current) {
+      const elapsed = (performance.now() - buildStart.current) / 1000
+      const done = elapsed >= BUILD_IN_SECONDS + 0.3
+      const maxY = engine.bricks.reduce((m, b) => Math.max(m, b.y), 0) || 1
+      engine.bricks.forEach((b, i) => {
+        if (engine.removed[i]) return
+        const t = done ? 1 : THREE.MathUtils.clamp((elapsed - (b.y / maxY) * BUILD_IN_SECONDS * 0.7) / 0.3, 0, 1)
         const ease = 1 - Math.pow(1 - t, 3)
-        brickWorld(b, pos)
-        tmp.position.set(pos.x, pos.y + (1 - ease) * 3, pos.z)
+        const p = engine.brickWorld(i)
+        tmp.position.set(p.x, p.y + (1 - ease) * 2, p.z)
         tmp.rotation.set(0, 0, 0)
         tmp.scale.setScalar(Math.max(0.0001, ease))
         tmp.updateMatrix()
         mesh.setMatrixAt(i, tmp.matrix)
       })
       mesh.instanceMatrix.needsUpdate = true
+      if (done) buildSettled.current = true
     }
 
-    if (groupRef.current) {
-      shake.current = Math.max(0, shake.current - dt * 1.2)
-      const s = shake.current * 0.35
-      groupRef.current.position.set((Math.random() - 0.5) * s, 0, (Math.random() - 0.5) * s)
+    if (shakeGroup.current) {
+      shake.current = Math.max(0, shake.current - dt)
+      const s = shake.current * 0.3
+      shakeGroup.current.position.set((Math.random() - 0.5) * s, 0, (Math.random() - 0.5) * s)
     }
 
-    const fall = fallRef.current
-    if (fall) {
-      falling.current.forEach((f, i) => {
+    const fly = flyMesh.current
+    if (fly) {
+      flying.forEach((f, i) => {
         if (!f.alive) {
+          fly.setMatrixAt(i, HIDDEN)
           return
         }
-        f.vel.y += GRAVITY * dt
-        f.pos.addScaledVector(f.vel, dt)
-        f.rot.x += f.spin.x * dt
-        f.rot.y += f.spin.y * dt
-        f.rot.z += f.spin.z * dt
-        if (f.pos.y <= BRICK * 0.45) {
-          f.pos.y = BRICK * 0.45
-          if (f.vel.y < -3) {
-            f.vel.y *= -0.3
-            f.vel.x *= 0.5
-            f.vel.z *= 0.5
-            f.spin.multiplyScalar(0.5)
-          } else {
-            settle(f)
-            tmp.position.set(0, HIDDEN_Y, 0)
-            tmp.updateMatrix()
-            fall.setMatrixAt(i, tmp.matrix)
-            return
-          }
+        f.t += dt / f.duration
+        if (f.t >= 1) {
+          f.alive = false
+          fly.setMatrixAt(i, HIDDEN)
+          if (f.workerId === null) puff(f.to.x, f.to.y, f.to.z, 2)
+          return
         }
-        tmp.position.copy(f.pos)
-        tmp.rotation.copy(f.rot)
-        tmp.scale.setScalar(0.95)
-        tmp.updateMatrix()
-        fall.setMatrixAt(i, tmp.matrix)
-        fall.setColorAt(i, f.color)
-      })
-      fall.instanceMatrix.needsUpdate = true
-      if (fall.instanceColor) fall.instanceColor.needsUpdate = true
-    }
-
-    const dustMesh = dustRef.current
-    if (dustMesh) {
-      dust.current.forEach((d, i) => {
-        if (!d.alive) return
-        d.age += dt
-        if (d.age > 0.7) {
-          d.alive = false
-          tmp.position.set(0, HIDDEN_Y, 0)
-          tmp.scale.setScalar(1)
-        } else {
-          d.pos.addScaledVector(d.vel, dt)
-          d.vel.multiplyScalar(0.94)
-          tmp.position.copy(d.pos)
-          tmp.scale.setScalar(Math.sin((d.age / 0.7) * Math.PI) * 2.2)
+        // Pulled bricks home in on where the worker is now, not where they were.
+        if (f.workerId !== null) {
+          const w = engine.workers[f.workerId]
+          if (w) f.to.set(w.x, 0.55, w.z)
         }
-        tmp.rotation.set(d.age * 3, d.age * 2, 0)
-        tmp.updateMatrix()
-        dustMesh.setMatrixAt(i, tmp.matrix)
-      })
-      dustMesh.instanceMatrix.needsUpdate = true
-    }
-
-    // Sink the previous structure's rubble into the ground once its collapse
-    // has landed, clearing the lot for the next one.
-    const rubble = rubbleRef.current
-    if (rubbleFadeAt.current && performance.now() >= rubbleFadeAt.current) {
-      rubbleFadeAt.current = 0
-      rubbleFade.current = 0.999
-    }
-    if (rubble && rubbleFade.current < 1) {
-      rubbleFade.current -= dt * 1.5
-      rubble.position.y = -BRICK * (1 - Math.max(0, rubbleFade.current)) * 1.2
-      if (rubbleFade.current <= 0) {
-        tmp.position.set(0, HIDDEN_Y, 0)
-        tmp.rotation.set(0, 0, 0)
+        tmp.position.lerpVectors(f.from, f.to, f.t)
+        tmp.position.y += Math.sin(f.t * Math.PI) * f.arc
+        tmp.rotation.set(f.spin.x * f.t, f.spin.y * f.t, f.spin.z * f.t)
         tmp.scale.setScalar(1)
         tmp.updateMatrix()
-        for (let i = 0; i < MAX_RUBBLE; i++) rubble.setMatrixAt(i, tmp.matrix)
-        rubble.instanceMatrix.needsUpdate = true
-        rubble.position.y = 0
-        rubbleCursor.current = 0
-        rubbleFade.current = 1
+        fly.setMatrixAt(i, tmp.matrix)
+        fly.setColorAt(i, f.color)
+      })
+      fly.instanceMatrix.needsUpdate = true
+      if (fly.instanceColor) fly.instanceColor.needsUpdate = true
+    }
+
+    // Rubble is drawn straight from the engine's list each frame — it's the
+    // source of truth for what's on the ground and what workers can pick up.
+    const rubble = rubbleMesh.current
+    if (rubble) {
+      let n = 0
+      for (const r of engine.rubble) {
+        if (r.readyAt > engine.time || n >= MAX_RUBBLE) continue
+        tmp.position.set(r.x, BRICK * 0.42, r.z)
+        tmp.rotation.set(0, hash(r.id) * Math.PI, (hash(r.id + 7) - 0.5) * 0.5)
+        tmp.scale.setScalar(0.9)
+        tmp.updateMatrix()
+        rubble.setMatrixAt(n, tmp.matrix)
+        rubble.setColorAt(n, tmpColor.set(BRICK_COLORS[r.color]))
+        n++
       }
+      rubble.count = n
+      rubble.instanceMatrix.needsUpdate = true
+      if (rubble.instanceColor) rubble.instanceColor.needsUpdate = true
+    }
+
+    const dm = dustMesh.current
+    if (dm) {
+      dust.forEach((d, i) => {
+        if (!d.alive) {
+          dm.setMatrixAt(i, HIDDEN)
+          return
+        }
+        d.age += dt
+        if (d.age > 0.6) {
+          d.alive = false
+          dm.setMatrixAt(i, HIDDEN)
+          return
+        }
+        d.pos.addScaledVector(d.vel, dt)
+        d.vel.multiplyScalar(0.93)
+        tmp.position.copy(d.pos)
+        tmp.rotation.set(d.age * 3, d.age * 2, 0)
+        tmp.scale.setScalar(Math.sin((d.age / 0.6) * Math.PI) * 2)
+        tmp.updateMatrix()
+        dm.setMatrixAt(i, tmp.matrix)
+      })
+      dm.instanceMatrix.needsUpdate = true
     }
   })
 
   return (
     <group>
-      <group ref={groupRef}>
-        <instancedMesh
-          key={`${blueprint}-${structureKey}`}
-          ref={meshRef}
-          args={[brickGeometry, brickMaterial, bricks.length]}
-          castShadow
-          receiveShadow
-          onPointerDown={onTap}
-        />
+      <group ref={shakeGroup}>
+        <instancedMesh ref={brickMesh} args={[brickGeometry, brickMaterial, MAX_BRICKS]} castShadow receiveShadow frustumCulled={false} />
       </group>
-      <instancedMesh ref={fallRef} args={[brickGeometry, brickMaterial, MAX_FALLING]} castShadow frustumCulled={false} />
-      <instancedMesh ref={rubbleRef} args={[brickGeometry, brickMaterial, MAX_RUBBLE]} castShadow receiveShadow frustumCulled={false} />
-      <instancedMesh ref={dustRef} args={[dustGeometry, dustMaterial, MAX_DUST]} frustumCulled={false} />
+      <instancedMesh ref={flyMesh} args={[brickGeometry, brickMaterial, MAX_FLYING]} castShadow frustumCulled={false} />
+      <instancedMesh ref={rubbleMesh} args={[brickGeometry, brickMaterial, MAX_RUBBLE]} castShadow receiveShadow frustumCulled={false} />
+      <instancedMesh ref={dustMesh} args={[dustGeometry, dustMaterial, MAX_DUST]} frustumCulled={false} />
     </group>
   )
 }

@@ -1,11 +1,12 @@
 'use client'
 
 import { useGLTF } from '@react-three/drei'
+import { LOT_HALF, ROAD_Z } from '@/lib/game/engine'
 import Prop from './Prop'
+import { Billboard } from './SiteProps'
 
-export const LOT_HALF = 8
 const ROAD_TILE = 3
-const ROAD_OFFSET = LOT_HALF + 3.5
+const ROAD_OFFSET = ROAD_Z
 
 // Deterministic pseudo-random so the neighborhood looks the same each load.
 function seeded(i: number) {
@@ -19,7 +20,7 @@ for (let i = 0; i < 46; i++) {
   const z = -30 + seeded(i + 100) * 52
   const inLot = Math.abs(x) < LOT_HALF + 1.5 && Math.abs(z) < LOT_HALF + 1.5
   const onRoad = Math.abs(z - ROAD_OFFSET) < 2.6 || Math.abs(x - ROAD_OFFSET) < 2.6
-  const nearBuildings = (x < -LOT_HALF - 2 && Math.abs(z) < 12) || (z < -LOT_HALF - 2 && Math.abs(x) < 12)
+  const nearBuildings = (x < -LOT_HALF - 1 && Math.abs(z) < 14) || (z < -LOT_HALF - 1 && Math.abs(x) < 14)
   if (!inLot && !onRoad && !nearBuildings) TREES.push([x, z, 1.6 + seeded(i + 200) * 1.4])
 }
 
@@ -72,18 +73,20 @@ export default function World() {
       <Prop url="/models/roads/construction-light.glb" size={1.3} position={[2.8, 0, LOT_HALF + 0.6]} />
       <Prop url="/models/roads/construction-cone.glb" size={0.5} position={[-1.6, 0, LOT_HALF + 1]} />
       <Prop url="/models/roads/construction-cone.glb" size={0.5} position={[1.6, 0, LOT_HALF + 1]} />
-      <Prop url="/models/roads/dumpster.glb" size={1.1} position={[-LOT_HALF + 1.4, 0, LOT_HALF - 1.4]} rotationY={0.3} />
-      <Prop url="/models/vehicles/tractor-shovel.glb" size={2.2} position={[LOT_HALF - 1.8, 0, LOT_HALF - 2]} rotationY={-Math.PI / 4} />
-      <Prop url="/models/vehicles/truck-flat.glb" size={1.7} position={[LOT_HALF - 1.8, 0, -LOT_HALF + 2.4]} rotationY={Math.PI} />
+      <Prop url="/models/vehicles/tractor-shovel.glb" size={1.6} position={[LOT_HALF - 1.4, 0, -LOT_HALF + 1.6]} rotationY={-Math.PI / 4} />
+
+      {/* Ad billboards just behind the lot, angled toward the camera. */}
+      <Billboard position={[-2, 0, -LOT_HALF - 2.6]} rotationY={Math.PI / 8} />
+      <Billboard position={[-LOT_HALF - 2.6, 0, -1]} rotationY={Math.PI / 2 - Math.PI / 8} />
 
       {/* Neighborhood behind the lot */}
-      <Prop url="/models/commercial/building-skyscraper-a.glb" size={11} position={[-14, 0, -15]} />
-      <Prop url="/models/commercial/building-a.glb" size={7} position={[-14, 0, -6]} rotationY={Math.PI / 2} />
-      <Prop url="/models/commercial/building-c.glb" size={5} position={[-14, 0, 3]} rotationY={Math.PI / 2} />
-      <Prop url="/models/commercial/building-e.glb" size={5} position={[-5, 0, -14]} />
-      <Prop url="/models/suburban/building-type-c.glb" size={4} position={[4, 0, -14]} />
-      <Prop url="/models/suburban/building-type-f.glb" size={4.5} position={[-14, 0, 10]} rotationY={Math.PI / 2} />
-      <Prop url="/models/suburban/building-type-a.glb" size={3.5} position={[11, 0, -14]} />
+      <Prop url="/models/commercial/building-skyscraper-a.glb" size={11} position={[-17, 0, -17]} />
+      <Prop url="/models/commercial/building-a.glb" size={7} position={[-17, 0, -7]} rotationY={Math.PI / 2} />
+      <Prop url="/models/commercial/building-c.glb" size={5} position={[-17, 0, 3]} rotationY={Math.PI / 2} />
+      <Prop url="/models/commercial/building-e.glb" size={5} position={[-7, 0, -17]} />
+      <Prop url="/models/suburban/building-type-c.glb" size={4} position={[4, 0, -16]} />
+      <Prop url="/models/suburban/building-type-f.glb" size={4.5} position={[-16, 0, 11]} rotationY={Math.PI / 2} />
+      <Prop url="/models/suburban/building-type-a.glb" size={3.5} position={[11, 0, -16]} />
 
       {/* Parked cars along the front road */}
       <Prop url="/models/vehicles/taxi.glb" size={1.5} position={[-6, 0, ROAD_OFFSET + 0.7]} rotationY={Math.PI / 2} />

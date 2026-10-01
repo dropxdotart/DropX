@@ -1,48 +1,35 @@
 'use client'
 
-import { Suspense, useMemo, useRef } from 'react'
-import { Canvas, useFrame, useThree, type ThreeEvent } from '@react-three/fiber'
+import { Suspense, useMemo } from 'react'
+import { Canvas, useFrame, useThree } from '@react-three/fiber'
 import { OrthographicCamera, useProgress } from '@react-three/drei'
 import * as THREE from 'three'
 import { getBlueprintSize } from '@/lib/game/blueprints'
-import Building, { BRICK, type BuildingHandle } from './Building'
+import { BRICK, LOT_HALF, type Engine } from '@/lib/game/engine'
+import Building from './Building'
 import Worker from './Worker'
 import World from './World'
+import { Dumpster, Truck } from './SiteProps'
 
-const MAX_VISIBLE_CREW = 16
+const MAX_VISIBLE_WORKERS = 24
 const CAMERA_DIR = new THREE.Vector3(1, 0.95, 1).normalize()
 
-// Spots around the building footprint, front-facing sides first so the
-// first few hires are always in view.
-function crewSpots(width: number, depth: number, count: number) {
-  const hx = (width * BRICK) / 2 + 1.25
-  const hz = (depth * BRICK) / 2 + 1.25
-  const spots: { pos: THREE.Vector3; rotY: number }[] = []
-  const sides: [THREE.Vector3, THREE.Vector3][] = [
-    [new THREE.Vector3(-hx, 0, hz), new THREE.Vector3(hx, 0, hz)],
-    [new THREE.Vector3(hx, 0, hz), new THREE.Vector3(hx, 0, -hz)],
-    [new THREE.Vector3(-hx, 0, -hz), new THREE.Vector3(-hx, 0, hz)],
-    [new THREE.Vector3(hx, 0, -hz), new THREE.Vector3(-hx, 0, -hz)],
-  ]
-  const perSide = Math.ceil(count / 4)
-  for (let n = 0; n < count; n++) {
-    const side = sides[n % 4]
-    const slot = Math.floor(n / 4)
-    const t = (slot + 1) / (perSide + 1)
-    const offset = slot % 2 === 0 ? 0 : 0.2
-    const pos = side[0].clone().lerp(side[1], (t + offset) % 1 || 0.5)
-    spots.push({ pos, rotY: Math.atan2(-pos.x, -pos.z) })
-  }
-  return spots
+// Advances the simulation once per frame. Mounted first inside the canvas so
+// its frame callback runs before anything that draws engine state.
+function EngineTicker({ engine }: { engine: Engine }) {
+  useFrame((_, delta) => engine.tick(delta))
+  return null
 }
 
 function CameraRig({ blueprint }: { blueprint: number }) {
   const camera = useThree((s) => s.camera) as THREE.OrthographicCamera
   const size = useThree((s) => s.size)
-  const [w, h, d] = getBlueprintSize(blueprint)
-  const span = Math.max(w, d, h * 1.1) * BRICK * 1.55 + 6
-  const targetZoom = Math.min(size.width, size.height * 0.85) / span
-  const lookAt = useMemo(() => new THREE.Vector3(0, h * BRICK * 0.3, 0), [h])
+  const [, h] = getBlueprintSize(blueprint)
+  // Frame the whole lot (dumpster and truck stop included), pulling back a
+  // little more for tall buildings.
+  const span = Math.max(LOT_HALF * 2 + 6, h * BRICK * 1.3 + 10)
+  const targetZoom = Math.min(size.width, size.height * 0.8) / span
+  const lookAt = useMemo(() => new THREE.Vector3(0, Math.min(h * BRICK * 0.25, 3), 1.5), [h])
 
   useFrame((_, delta) => {
     camera.zoom = THREE.MathUtils.lerp(camera.zoom, targetZoom, Math.min(1, delta * 2.5))
@@ -67,69 +54,41 @@ function LoadingOverlay() {
   )
 }
 
-export default function Scene({
-  blueprint,
-  structureIndex,
-  health,
-  maxHealth,
-  crew,
-  onTap,
-}: {
-  blueprint: number
-  structureIndex: number
-  health: number
-  maxHealth: number
-  crew: number
-  onTap: (clientX: number, clientY: number) => void
-}) {
-  const handle = useRef<BuildingHandle>({ hitPoint: null })
-  const [w, , d] = getBlueprintSize(blueprint)
-  const spots = useMemo(() => crewSpots(w, d, Math.min(crew, MAX_VISIBLE_CREW)), [w, d, crew])
-  const crewPositions = useMemo(() => spots.map((s) => s.pos), [spots])
-
-  const handleTap = (e: ThreeEvent<PointerEvent>) => {
-    e.stopPropagation()
-    handle.current.hitPoint = e.point.clone()
-    onTap(e.nativeEvent.clientX, e.nativeEvent.clientY)
-  }
+export default function Scene({ engine, workerCount, blueprint }: { engine: Engine; workerCount: number; blueprint: number }) {
+  const visibleWorkers = engine.workers.slice(0, Math.min(workerCount, MAX_VISIBLE_WORKERS))
 
   return (
     <>
-    <LoadingOverlay />
-    <Canvas shadows dpr={[1, 2]} gl={{ antialias: true }} style={{ touchAction: 'none' }}>
-      <color attach="background" args={['#9fd4ef']} />
-      <OrthographicCamera makeDefault near={0.1} far={400} zoom={20} position={[40, 38, 40]} />
-      <CameraRig blueprint={blueprint} />
+      <LoadingOverlay />
+      <Canvas shadows dpr={[1, 2]} gl={{ antialias: true }} style={{ touchAction: 'none' }}>
+        <EngineTicker engine={engine} />
+        <color attach="background" args={['#9fd4ef']} />
+        <OrthographicCamera makeDefault near={0.1} far={400} zoom={20} position={[40, 38, 40]} />
+        <CameraRig blueprint={blueprint} />
 
-      <hemisphereLight args={['#e8f4ff', '#6f8f4a', 0.9]} />
-      <directionalLight
-        position={[18, 30, 12]}
-        intensity={2.2}
-        castShadow
-        shadow-mapSize={[2048, 2048]}
-        shadow-camera-left={-22}
-        shadow-camera-right={22}
-        shadow-camera-top={22}
-        shadow-camera-bottom={-22}
-        shadow-bias={-0.0005}
-      />
-
-      <Suspense fallback={null}>
-        <World />
-        <Building
-          blueprint={blueprint}
-          structureKey={structureIndex}
-          health={health}
-          maxHealth={maxHealth}
-          crewPositions={crewPositions}
-          handle={handle}
-          onTap={handleTap}
+        <hemisphereLight args={['#e8f4ff', '#6f8f4a', 0.9]} />
+        <directionalLight
+          position={[18, 30, 12]}
+          intensity={2.2}
+          castShadow
+          shadow-mapSize={[2048, 2048]}
+          shadow-camera-left={-22}
+          shadow-camera-right={22}
+          shadow-camera-top={22}
+          shadow-camera-bottom={-22}
+          shadow-bias={-0.0005}
         />
-        {spots.map((s, i) => (
-          <Worker key={i} index={i} position={[s.pos.x, 0.04, s.pos.z]} rotationY={s.rotY} />
-        ))}
-      </Suspense>
-    </Canvas>
+
+        <Suspense fallback={null}>
+          <World />
+          <Building engine={engine} />
+          <Dumpster engine={engine} />
+          <Truck engine={engine} />
+          {visibleWorkers.map((w) => (
+            <Worker key={w.id} sim={w} />
+          ))}
+        </Suspense>
+      </Canvas>
     </>
   )
 }

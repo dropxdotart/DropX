@@ -20,8 +20,9 @@ type Ad = {
 
 const PLACEMENTS: { value: AdPlacement; label: string; hint: string }[] = [
   { value: 'rewarded', label: 'Rewarded video', hint: 'Opt-in "watch for a bonus" button' },
-  { value: 'interstitial', label: 'Interstitial', hint: 'Full-screen, shown after demolishing a structure' },
+  { value: 'interstitial', label: 'Interstitial', hint: 'Full-screen, shown when a site is cleared' },
   { value: 'banner', label: 'Banner', hint: 'Persistent strip at the bottom of the screen' },
+  { value: 'billboard', label: 'Billboard', hint: 'Shown on the 3D billboards beside the lot — landscape 16:9 images or videos work best' },
 ]
 
 export default function AdManager({ initialAds }: { initialAds: Ad[] }) {
