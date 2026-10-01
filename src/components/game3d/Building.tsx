@@ -5,7 +5,7 @@ import { useFrame } from '@react-three/fiber'
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js'
 import * as THREE from 'three'
 import { BRICK_COLORS } from '@/lib/game/blueprints'
-import { BRICK, type Engine } from '@/lib/game/engine'
+import { BRICK, type Engine, type Site } from '@/lib/game/engine'
 
 const MAX_BRICKS = 2200
 const MAX_FLYING = 300
@@ -45,7 +45,9 @@ function hash(n: number) {
   return x - Math.floor(x)
 }
 
-export default function Building({ engine }: { engine: Engine }) {
+// Draws one plot's building, flying bricks, rubble and dust, in that plot's
+// local coordinates (the parent group sits on the plot's block).
+export default function Building({ engine, site }: { engine: Engine; site: Site }) {
   const brickMesh = useRef<THREE.InstancedMesh>(null)
   const flyMesh = useRef<THREE.InstancedMesh>(null)
   const rubbleMesh = useRef<THREE.InstancedMesh>(null)
@@ -82,7 +84,7 @@ export default function Building({ engine }: { engine: Engine }) {
   function launch(fromIndex: number, to: THREE.Vector3, duration: number, workerId: number | null, arc: number) {
     const f = flying[flyCursor.current]
     flyCursor.current = (flyCursor.current + 1) % MAX_FLYING
-    const p = engine.brickWorld(fromIndex)
+    const p = site.brickWorld(fromIndex)
     f.alive = true
     f.from.set(p.x, p.y, p.z)
     f.to.copy(to)
@@ -90,7 +92,7 @@ export default function Building({ engine }: { engine: Engine }) {
     f.t = 0
     f.duration = duration
     f.spin.set((Math.random() - 0.5) * 14, (Math.random() - 0.5) * 14, (Math.random() - 0.5) * 14)
-    f.color.set(BRICK_COLORS[engine.bricks[fromIndex].color])
+    f.color.set(BRICK_COLORS[site.bricks[fromIndex].color])
     f.workerId = workerId
   }
 
@@ -110,14 +112,14 @@ export default function Building({ engine }: { engine: Engine }) {
   function syncBricks(animateIn: boolean) {
     const mesh = brickMesh.current
     if (!mesh) return
-    mesh.count = engine.bricks.length
-    engine.bricks.forEach((b, i) => {
+    mesh.count = site.bricks.length
+    site.bricks.forEach((b, i) => {
       tmpColor.set(BRICK_COLORS[b.color]).offsetHSL(0, 0, (hash(i) - 0.5) * 0.05)
       mesh.setColorAt(i, tmpColor)
-      if (engine.removed[i]) {
+      if (site.removed[i]) {
         mesh.setMatrixAt(i, HIDDEN)
       } else {
-        const p = engine.brickWorld(i)
+        const p = site.brickWorld(i)
         tmp.position.set(p.x, p.y, p.z)
         tmp.rotation.set(0, 0, 0)
         tmp.scale.setScalar(animateIn ? 0.0001 : 1)
@@ -148,7 +150,7 @@ export default function Building({ engine }: { engine: Engine }) {
       syncBricks(false)
     }
 
-    for (const e of engine.events.splice(0)) {
+    for (const e of site.events.splice(0)) {
       if (e.type === 'siteStarted') {
         for (const f of flying) f.alive = false
         syncBricks(true)
@@ -157,14 +159,14 @@ export default function Building({ engine }: { engine: Engine }) {
       } else if (e.type === 'brickBroken') {
         hideBrick(e.index)
         launch(e.index, new THREE.Vector3(e.toX, BRICK / 2, e.toZ), FALL_SECONDS, null, 1.2)
-        const p = engine.brickWorld(e.index)
+        const p = site.brickWorld(e.index)
         puff(p.x, p.y, p.z, 3)
         shake.current = Math.min(0.2, shake.current + 0.05)
       } else if (e.type === 'brickPulled') {
         hideBrick(e.index)
         const w = engine.workers[e.workerId]
         launch(e.index, new THREE.Vector3(w.x, 0.55, w.z), PULL_SECONDS, e.workerId, 0.5)
-        const p = engine.brickWorld(e.index)
+        const p = site.brickWorld(e.index)
         puff(p.x, p.y, p.z, 2)
       }
     }
@@ -175,12 +177,12 @@ export default function Building({ engine }: { engine: Engine }) {
     if (mesh && !buildSettled.current) {
       const elapsed = (performance.now() - buildStart.current) / 1000
       const done = elapsed >= BUILD_IN_SECONDS + 0.3
-      const maxY = engine.bricks.reduce((m, b) => Math.max(m, b.y), 0) || 1
-      engine.bricks.forEach((b, i) => {
-        if (engine.removed[i]) return
+      const maxY = site.bricks.reduce((m, b) => Math.max(m, b.y), 0) || 1
+      site.bricks.forEach((b, i) => {
+        if (site.removed[i]) return
         const t = done ? 1 : THREE.MathUtils.clamp((elapsed - (b.y / maxY) * BUILD_IN_SECONDS * 0.7) / 0.3, 0, 1)
         const ease = 1 - Math.pow(1 - t, 3)
-        const p = engine.brickWorld(i)
+        const p = site.brickWorld(i)
         tmp.position.set(p.x, p.y + (1 - ease) * 2, p.z)
         tmp.rotation.set(0, 0, 0)
         tmp.scale.setScalar(Math.max(0.0001, ease))
@@ -233,7 +235,7 @@ export default function Building({ engine }: { engine: Engine }) {
     const rubble = rubbleMesh.current
     if (rubble) {
       let n = 0
-      for (const r of engine.rubble) {
+      for (const r of site.rubble) {
         if (r.readyAt > engine.time || n >= MAX_RUBBLE) continue
         tmp.position.set(r.x, BRICK * 0.42, r.z)
         tmp.rotation.set(0, hash(r.id) * Math.PI, (hash(r.id + 7) - 0.5) * 0.5)

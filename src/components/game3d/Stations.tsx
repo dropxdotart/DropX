@@ -3,9 +3,10 @@
 import { useRef, type ReactNode } from 'react'
 import { useFrame, type ThreeEvent } from '@react-three/fiber'
 import * as THREE from 'three'
-import { DUMPSTER, TRUCK_STOP, stats, type Engine } from '@/lib/game/engine'
+import { DUMPSTER, TRUCK_STOP, stats, type Engine, type Site } from '@/lib/game/engine'
 import { getStation, type StationId } from '@/lib/game/stations'
 import Prop from './Prop'
+import { pointer } from './drag'
 import { Logo } from './SiteProps'
 
 // Each station is built from simple shapes (plus a few Kenney models) and
@@ -71,6 +72,7 @@ function Hotspot({
 }) {
   const click = (e: ThreeEvent<MouseEvent>) => {
     e.stopPropagation()
+    if (pointer.dragged) return
     onSelect(id)
   }
   return (
@@ -140,11 +142,13 @@ function DumpsterLook({ tier }: { tier: number }) {
 
 export function DumpsterStation({
   engine,
+  site,
   tier,
   affordable,
   onSelect,
 }: {
   engine: Engine
+  site: Site
   tier: number
   affordable: boolean
   onSelect: (id: StationId) => void
@@ -153,7 +157,7 @@ export function DumpsterStation({
   const dims = DUMPSTER_TIERS[tier]
 
   useFrame(() => {
-    const ratio = Math.min(1, engine.dumpsterLoad / stats.dumpsterCapacity(engine.upgrades))
+    const ratio = Math.min(1, site.dumpsterLoad / stats.dumpsterCapacity(engine.upgrades))
     if (fill.current) {
       fill.current.visible = ratio > 0
       fill.current.scale.y = Math.max(0.01, ratio)
@@ -191,11 +195,13 @@ const TRUCK_FAR = 34
 
 export function TruckStation({
   engine,
+  site,
   tier,
   affordable,
   onSelect,
 }: {
   engine: Engine
+  site: Site
   tier: number
   affordable: boolean
   onSelect: (id: StationId) => void
@@ -206,9 +212,9 @@ export function TruckStation({
   useFrame(() => {
     const g = group.current
     if (!g) return
-    const state = engine.truckState
+    const state = site.truckState
     g.visible = state !== 'away'
-    const p = engine.truckProgress()
+    const p = engine.truckProgress(site)
     const x =
       state === 'arriving'
         ? THREE.MathUtils.lerp(-TRUCK_FAR, TRUCK_STOP.x, 1 - Math.pow(1 - p, 2))
@@ -220,6 +226,7 @@ export function TruckStation({
 
   const select = (e: ThreeEvent<MouseEvent>) => {
     e.stopPropagation()
+    if (pointer.dragged) return
     onSelect('truck')
   }
 

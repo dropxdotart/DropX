@@ -2,18 +2,30 @@
 
 import { Suspense, useEffect, useMemo, useRef } from 'react'
 import { Canvas, useFrame, useThree } from '@react-three/fiber'
-import { OrthographicCamera, useProgress } from '@react-three/drei'
+import { Html, OrthographicCamera, useProgress } from '@react-three/drei'
 import * as THREE from 'three'
 import { getBlueprintSize } from '@/lib/game/blueprints'
-import { BRICK, LOT_HALF, upgradeCost, type Engine, type Upgrades } from '@/lib/game/engine'
+import { getBuilding } from '@/lib/game/buildings'
+import { BRICK, LOT_HALF, upgradeCost, type Engine, type Snapshot } from '@/lib/game/engine'
+import { BLOCK, MAP_BLOCKS, PLOT_SLOTS } from '@/lib/game/plots'
 import { STATIONS, getStation, tierFor, type StationId } from '@/lib/game/stations'
+import { formatNumber } from '@/components/game/format'
 import Building from './Building'
 import Worker from './Worker'
 import World from './World'
+import BonusDrop from './BonusDrop'
 import { CrewStation, DumpsterStation, ToolStation, TruckStation } from './Stations'
+import { pointer } from './drag'
 
 const MAX_VISIBLE_WORKERS = 24
 const CAMERA_DIR = new THREE.Vector3(1, 0.95, 1).normalize()
+// Screen-right and screen-up as directions on the ground, for drag-to-pan.
+const GROUND_RIGHT = new THREE.Vector3(1, 0, -1).normalize()
+const GROUND_FORWARD = new THREE.Vector3(-1, 0, -1).normalize()
+const PAN_LIMIT = MAP_BLOCKS * BLOCK
+const DRAG_THRESHOLD = 8
+
+export type StationFocus = { id: StationId; plot: number }
 
 // Advances the simulation once per frame. Mounted first inside the canvas so
 // its frame callback runs before anything that draws engine state.
@@ -22,94 +34,239 @@ function EngineTicker({ engine }: { engine: Engine }) {
   return null
 }
 
-function CameraRig({ blueprint, focus }: { blueprint: number; focus: StationId | null }) {
+// Where the camera looks: `center` is the free-panning point on the ground
+// (moved by dragging or by flying to a plot); a selected station overrides
+// it with a close-up. Reports whichever owned plot is nearest the middle of
+// the screen, so the HUD and BREAK follow what you're looking at.
+function CameraRig({
+  center,
+  zoomRef,
+  focus,
+  snap,
+  onFocusPlot,
+}: {
+  center: React.RefObject<THREE.Vector3>
+  zoomRef: React.RefObject<number>
+  focus: StationFocus | null
+  snap: Snapshot
+  onFocusPlot: (plot: number) => void
+}) {
   const camera = useThree((s) => s.camera) as THREE.OrthographicCamera
   const size = useThree((s) => s.size)
-  const [, h] = getBlueprintSize(blueprint)
-  // Frame the whole lot (dumpster and truck stop included), pulling back a
-  // little more for tall buildings — or glide in close on a selected
-  // station, nudged down so it sits above the upgrade panel.
-  const span = Math.max(LOT_HALF * 2 + 6, h * BRICK * 1.3 + 10)
+  const lookAt = useRef(center.current.clone())
+  const nearest = useRef(-1)
+
+  // Frame a whole lot (dumpster and truck stop included), pulling back a
+  // little more for the tallest building among your plots.
+  const tallest = Math.max(
+    0,
+    ...snap.plots.map((p) => (p.phase === 'empty' ? 0 : getBlueprintSize(getBuilding(p.buildingId).blueprint)[1]))
+  )
+  const span = Math.max(LOT_HALF * 2 + 6, tallest * BRICK * 1.3 + 10)
   const baseZoom = Math.min(size.width, size.height * 0.8) / span
-  const target = useMemo(() => {
-    if (!focus) return new THREE.Vector3(0, Math.min(h * BRICK * 0.25, 3), 1.5)
-    const p = getStation(focus).position
-    return new THREE.Vector3(p.x, -1.5, p.z)
-  }, [focus, h])
-  const lookAt = useRef(target.clone())
+
+  const target = useMemo(() => new THREE.Vector3(), [])
 
   useFrame((_, delta) => {
+    if (focus) {
+      const slot = PLOT_SLOTS[focus.plot]
+      const p = getStation(focus.id).position
+      target.set(slot.x + p.x, -1.5, slot.z + p.z)
+    } else {
+      target.copy(center.current)
+    }
     const k = Math.min(1, delta * 3)
-    lookAt.current.lerp(target, k)
+    // Follow the finger exactly while dragging; glide otherwise.
+    if (pointer.dragged && !focus) lookAt.current.copy(target)
+    else lookAt.current.lerp(target, k)
     camera.zoom = THREE.MathUtils.lerp(camera.zoom, focus ? baseZoom * 2.4 : baseZoom, k)
+    zoomRef.current = camera.zoom
     camera.position.copy(CAMERA_DIR).multiplyScalar(60).add(lookAt.current)
     camera.lookAt(lookAt.current)
     camera.updateProjectionMatrix()
+
+    let best = 0
+    let bestD = Infinity
+    snap.plots.forEach((p) => {
+      const slot = PLOT_SLOTS[p.id]
+      const d = (slot.x - lookAt.current.x) ** 2 + (slot.z - lookAt.current.z) ** 2
+      if (d < bestD) {
+        bestD = d
+        best = p.id
+      }
+    })
+    if (best !== nearest.current) {
+      nearest.current = best
+      onFocusPlot(best)
+    }
   })
   return null
 }
 
-// Reports model-loading progress up to the HUD's loading screen. Says 100 a
-// beat after the last model arrives, so first-frame shader compiles happen
-// behind the screen instead of flashing an empty sky. Reads drei's store
-// outside render: loads start while other components render, and the hook
-// would set state mid-render.
+// Reports model-loading progress up to the HUD's loading screen (capped
+// below 100). Reads drei's store outside render: loads start while other
+// components render, and the hook would set state mid-render.
 function LoadReporter({ onProgress }: { onProgress: (progress: number) => void }) {
-  useEffect(() => {
-    let timer: ReturnType<typeof setTimeout> | undefined
-    const check = (s: { active: boolean; progress: number }) => {
-      clearTimeout(timer)
-      if (!s.active && s.progress >= 100) timer = setTimeout(() => onProgress(100), 500)
-      else onProgress(Math.min(95, s.progress))
-    }
-    check(useProgress.getState())
-    const unsubscribe = useProgress.subscribe(check)
-    return () => {
-      clearTimeout(timer)
-      unsubscribe()
-    }
-  }, [onProgress])
+  useEffect(
+    () =>
+      useProgress.subscribe((s) => {
+        onProgress(Math.min(95, s.progress))
+      }),
+    [onProgress]
+  )
   return null
+}
+
+// Mounted last inside the scene's Suspense boundary, so it only exists once
+// every model has loaded; after a few drawn frames (first-frame shader
+// compiles) it tells the loading screen to go.
+function SceneReady({ onReady }: { onReady: () => void }) {
+  const frames = useRef(0)
+  useFrame(() => {
+    if (frames.current++ === 3) onReady()
+  })
+  return null
+}
+
+// Floating bubbles over plots that need you: claim a cleared site, pick a
+// building for an empty one, or buy the next plot for sale.
+function PlotLabels({ snap, onPlotAction }: { snap: Snapshot; onPlotAction: (plot: number) => void }) {
+  const tap = (plot: number) => () => {
+    if (!pointer.dragged) onPlotAction(plot)
+  }
+  return (
+    <>
+      {PLOT_SLOTS.map((slot) => {
+        const owned = snap.plots[slot.id]
+        let label: React.ReactNode = null
+        if (owned?.phase === 'cleared') {
+          const bonus = getBuilding(owned.buildingId).bonus
+          label = (
+            <button onClick={tap(slot.id)} className="animate-bounce rounded-2xl border-[3px] border-white bg-[#ff6b1a] px-4 py-2 font-display text-white shadow-[0_4px_0_#c94e0a]">
+              <span className="block text-xl leading-none">CLEARED!</span>
+              <span className="block text-sm leading-tight">Tap to claim 🧱{formatNumber(bonus)}</span>
+            </button>
+          )
+        } else if (owned?.phase === 'empty') {
+          label = (
+            <button onClick={tap(slot.id)} className="rounded-2xl border-[3px] border-white bg-[#2d7ff9] px-4 py-2 font-display text-white shadow-[0_4px_0_#1b5bbd]">
+              <span className="block text-lg leading-none">Pick a building</span>
+              <span className="block text-xs leading-tight opacity-90">Tap to start a demolition</span>
+            </button>
+          )
+        } else if (slot.id === snap.plots.length) {
+          // Only the next plot up for sale gets a bubble; later ones just
+          // show their sign so the map stays clean.
+          const locked = snap.level < slot.requiredLevel
+          label = (
+            <button onClick={tap(slot.id)} className="rounded-2xl border-[3px] border-white bg-[#e23f3f] px-3 py-1.5 font-display text-white shadow-[0_4px_0_#a82a2a]">
+              <span className="block text-base leading-none">FOR SALE</span>
+              <span className="block text-xs leading-tight">
+                {locked ? `🔒 Level ${slot.requiredLevel}` : `🧱${formatNumber(slot.cost)}`}
+              </span>
+            </button>
+          )
+        }
+        if (!label) return null
+        return (
+          <Html key={slot.id} position={[slot.x, owned ? 2.2 : 3.2, slot.z + (owned ? 0 : LOT_HALF - 1.1)]} center zIndexRange={[5, 0]} className="whitespace-nowrap">
+            {label}
+          </Html>
+        )
+      })}
+    </>
+  )
 }
 
 export default function Scene({
   engine,
-  workerCount,
-  blueprint,
-  upgrades,
-  scrap,
+  snap,
   focus,
+  flyTo,
   onSelectStation,
+  onFocusPlot,
+  onPlotAction,
   onLoadProgress,
+  onOpenBonus,
 }: {
   engine: Engine
-  workerCount: number
-  blueprint: number
-  upgrades: Upgrades
-  scrap: number
-  focus: StationId | null
-  onSelectStation: (id: StationId) => void
+  snap: Snapshot
+  focus: StationFocus | null
+  // Bump `nonce` to glide the camera over to a plot.
+  flyTo: { plot: number; nonce: number }
+  onSelectStation: (id: StationId, plot: number) => void
+  onFocusPlot: (plot: number) => void
+  onPlotAction: (plot: number) => void
   onLoadProgress: (progress: number) => void
+  onOpenBonus: () => void
 }) {
-  const visibleWorkers = engine.workers.slice(0, Math.min(workerCount, MAX_VISIBLE_WORKERS))
+  const center = useRef(new THREE.Vector3(0, 0, 1.5))
+  const zoomRef = useRef(20)
+  const drag = useRef<{ x: number; y: number; id: number } | null>(null)
+
+  useEffect(() => {
+    const slot = PLOT_SLOTS[flyTo.plot]
+    if (slot) center.current.set(slot.x, 0, slot.z + 1.5)
+  }, [flyTo])
+
   const station = Object.fromEntries(
     STATIONS.map((s) => [
       s.id,
       {
-        tier: tierFor(s.level(upgrades)),
-        affordable: s.upgrades.some((k) => scrap >= upgradeCost(k, upgrades[k])),
+        tier: tierFor(s.level(snap.upgrades)),
+        affordable: s.upgrades.some((k) => snap.scrap >= upgradeCost(k, snap.upgrades[k])),
       },
     ])
   ) as Record<StationId, { tier: number; affordable: boolean }>
 
+  let shown = 0
+  const visibleWorkers = engine.workers.filter(() => shown++ < MAX_VISIBLE_WORKERS)
+
+  // Drag anywhere to pan around the city. Taps still reach the scene; a
+  // pointer that moved past the threshold marks itself as a drag so the
+  // click handlers ignore it.
+  const onPointerDown = (e: React.PointerEvent) => {
+    if (!e.isPrimary) return
+    pointer.dragged = false
+    drag.current = { x: e.clientX, y: e.clientY, id: e.pointerId }
+  }
+  const onPointerMove = (e: React.PointerEvent) => {
+    const d = drag.current
+    if (!d || e.pointerId !== d.id || focus) return
+    const dx = e.clientX - d.x
+    const dy = e.clientY - d.y
+    if (!pointer.dragged && Math.hypot(dx, dy) < DRAG_THRESHOLD) return
+    pointer.dragged = true
+    d.x = e.clientX
+    d.y = e.clientY
+    const zoom = zoomRef.current || 20
+    const c = center.current
+    c.addScaledVector(GROUND_RIGHT, -dx / zoom)
+    c.addScaledVector(GROUND_FORWARD, dy / (zoom * CAMERA_DIR.y))
+    c.x = THREE.MathUtils.clamp(c.x, -PAN_LIMIT, PAN_LIMIT)
+    c.z = THREE.MathUtils.clamp(c.z, -PAN_LIMIT, PAN_LIMIT)
+  }
+  const onPointerUp = () => {
+    drag.current = null
+    // Leave `dragged` set until the click that follows this pointerup has
+    // been seen, then clear it.
+    setTimeout(() => (pointer.dragged = false), 0)
+  }
+
   return (
-    <>
+    <div
+      className="absolute inset-0"
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={onPointerUp}
+      onPointerCancel={onPointerUp}
+    >
       <LoadReporter onProgress={onLoadProgress} />
       <Canvas shadows dpr={[1, 2]} gl={{ antialias: true }} style={{ touchAction: 'none' }}>
         <EngineTicker engine={engine} />
         <color attach="background" args={['#9fd4ef']} />
         <OrthographicCamera makeDefault near={0.1} far={400} zoom={20} position={[40, 38, 40]} />
-        <CameraRig blueprint={blueprint} focus={focus} />
+        <CameraRig center={center} zoomRef={zoomRef} focus={focus} snap={snap} onFocusPlot={onFocusPlot} />
 
         <hemisphereLight args={['#e8f4ff', '#6f8f4a', 0.9]} />
         <directionalLight
@@ -117,25 +274,42 @@ export default function Scene({
           intensity={2.2}
           castShadow
           shadow-mapSize={[2048, 2048]}
-          shadow-camera-left={-22}
-          shadow-camera-right={22}
-          shadow-camera-top={22}
-          shadow-camera-bottom={-22}
+          shadow-camera-left={-40}
+          shadow-camera-right={40}
+          shadow-camera-top={40}
+          shadow-camera-bottom={-40}
           shadow-bias={-0.0005}
         />
 
         <Suspense fallback={null}>
-          <World />
-          <Building engine={engine} />
-          <DumpsterStation engine={engine} {...station.dumpster} onSelect={onSelectStation} />
-          <TruckStation engine={engine} {...station.truck} onSelect={onSelectStation} />
-          <CrewStation {...station.crew} onSelect={onSelectStation} />
-          <ToolStation {...station.tools} onSelect={onSelectStation} />
-          {visibleWorkers.map((w) => (
-            <Worker key={w.id} sim={w} />
-          ))}
+          <World ownedPlots={snap.plots.length} />
+          {engine.plots.map((site) => {
+            const slot = PLOT_SLOTS[site.id]
+            const select = (id: StationId) => onSelectStation(id, site.id)
+            return (
+              <group key={site.id} position={[slot.x, 0, slot.z]}>
+                <Building engine={engine} site={site} />
+                <DumpsterStation engine={engine} site={site} {...station.dumpster} onSelect={select} />
+                <TruckStation engine={engine} site={site} {...station.truck} onSelect={select} />
+                {site.id === 0 && (
+                  <>
+                    <CrewStation {...station.crew} onSelect={select} />
+                    <ToolStation {...station.tools} onSelect={select} />
+                    <BonusDrop engine={engine} onOpen={onOpenBonus} />
+                  </>
+                )}
+                {visibleWorkers
+                  .filter((w) => w.plot === site.id)
+                  .map((w) => (
+                    <Worker key={w.id} sim={w} />
+                  ))}
+              </group>
+            )
+          })}
+          <PlotLabels snap={snap} onPlotAction={onPlotAction} />
+          <SceneReady onReady={() => onLoadProgress(100)} />
         </Suspense>
       </Canvas>
-    </>
+    </div>
   )
 }

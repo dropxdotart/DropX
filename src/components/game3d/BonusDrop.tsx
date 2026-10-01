@@ -7,6 +7,7 @@ import { BONUS_LIFETIME_SECONDS, BONUS_SPOT, BRICK, DUMPSTER, ROAD_Z, TRAILER_FA
 import Prop from './Prop'
 import { Logo } from './SiteProps'
 import { brickGeometry, brickMaterial } from './Building'
+import { pointer } from './drag'
 
 // The bonus trailer: it rolls along the far lane every few minutes and spills
 // a pile of bricks onto the sidewalk. Tapping the pile (or the side tab in
@@ -17,6 +18,7 @@ const TRAILER_Z = ROAD_Z + 0.65
 const COLORS = ['#c8553d', '#b4553c', '#d96c4f', '#a84a35', '#cf7b5a']
 const FALL_SECONDS = 0.5
 const FLY_SECONDS = 0.9
+const PILE_SCALE = 1.7
 
 const tmp = new THREE.Object3D()
 const tmpColor = new THREE.Color()
@@ -26,6 +28,7 @@ export default function BonusDrop({ engine, onOpen }: { engine: Engine; onOpen: 
   const pile = useRef<THREE.InstancedMesh>(null)
   const hit = useRef<THREE.Mesh>(null)
   const ring = useRef<THREE.Mesh>(null)
+  const marker = useRef<THREE.Group>(null)
 
   // A loose heap: wider at the bottom, a few bricks stacked on top.
   const offsets = useMemo(() => {
@@ -36,9 +39,9 @@ export default function BonusDrop({ engine, onOpen }: { engine: Engine; onOpen: 
       const r = (0.7 - layer * 0.22) * Math.sqrt(rand())
       const a = rand() * Math.PI * 2
       return {
-        x: Math.cos(a) * r * 1.4,
-        z: Math.sin(a) * r * 0.6,
-        y: BRICK * (0.5 + layer * 0.9),
+        x: Math.cos(a) * r * 1.6,
+        z: Math.sin(a) * r * 0.7,
+        y: BRICK * PILE_SCALE * (0.5 + layer * 0.9),
         rot: rand() * Math.PI,
         tilt: (rand() - 0.5) * 0.5,
         delay: rand() * 0.25,
@@ -80,6 +83,11 @@ export default function BonusDrop({ engine, onOpen }: { engine: Engine; onOpen: 
       }
     }
 
+    if (marker.current) {
+      marker.current.visible = !!drop && t - drop.droppedAt > FALL_SECONDS + 0.3
+      marker.current.position.y = 2.1 + Math.sin(t * 4) * 0.15
+    }
+
     if (!drop && !flying) {
       mesh.visible = false
       return
@@ -110,7 +118,7 @@ export default function BonusDrop({ engine, onOpen }: { engine: Engine; onOpen: 
       }
       tmp.position.set(x, y, z)
       tmp.rotation.set(o.tilt, o.rot, 0)
-      tmp.scale.setScalar(s)
+      tmp.scale.setScalar(s * PILE_SCALE)
       tmp.updateMatrix()
       mesh.setMatrixAt(i, tmp.matrix)
     }
@@ -119,7 +127,7 @@ export default function BonusDrop({ engine, onOpen }: { engine: Engine; onOpen: 
 
   const open = (e: ThreeEvent<MouseEvent>) => {
     e.stopPropagation()
-    if (engine.bonusDrop) onOpen()
+    if (engine.bonusDrop && !pointer.dragged) onOpen()
   }
 
   return (
@@ -143,18 +151,29 @@ export default function BonusDrop({ engine, onOpen }: { engine: Engine; onOpen: 
         frustumCulled={false}
       />
       <mesh ref={ring} rotation={[-Math.PI / 2, 0, 0]} position={[BONUS_SPOT.x, 0.06, BONUS_SPOT.z]} visible={false}>
-        <ringGeometry args={[1.05, 1.25, 40]} />
+        <ringGeometry args={[1.25, 1.55, 40]} />
         <meshBasicMaterial color="#3aa0ff" transparent opacity={0.7} depthWrite={false} />
       </mesh>
+      {/* Bobbing blue marker so the pile reads as tappable */}
+      <group ref={marker} position={[BONUS_SPOT.x, 2.1, BONUS_SPOT.z]} visible={false}>
+        <mesh position={[0, -0.1, 0]} rotation={[Math.PI, 0, 0]}>
+          <coneGeometry args={[0.4, 0.5, 4]} />
+          <meshStandardMaterial color="#3aa0ff" emissive="#1d5fa8" emissiveIntensity={0.5} />
+        </mesh>
+        <mesh position={[0, 0.3, 0]}>
+          <boxGeometry args={[0.22, 0.4, 0.22]} />
+          <meshStandardMaterial color="#3aa0ff" emissive="#1d5fa8" emissiveIntensity={0.5} />
+        </mesh>
+      </group>
       <mesh
         ref={hit}
-        position={[BONUS_SPOT.x, 0.6, BONUS_SPOT.z]}
+        position={[BONUS_SPOT.x, 1.2, BONUS_SPOT.z]}
         visible={false}
         onClick={open}
         onPointerOver={() => engine.bonusDrop && (document.body.style.cursor = 'pointer')}
         onPointerOut={() => (document.body.style.cursor = '')}
       >
-        <boxGeometry args={[2.6, 1.4, 1.6]} />
+        <boxGeometry args={[3, 2.6, 2]} />
         <meshBasicMaterial transparent opacity={0} depthWrite={false} />
       </mesh>
     </>

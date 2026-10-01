@@ -2,18 +2,19 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import dynamic from 'next/dynamic'
-import { ArrowBigUpDash, Play, X } from 'lucide-react'
+import { ArrowBigUpDash, Map as MapIcon, Minus, Plus, X } from 'lucide-react'
 import { useEngine } from '@/lib/game/useEngine'
 import { getBuilding, xpForLevel } from '@/lib/game/buildings'
 import { stats, BREAK_COOLDOWN_SECONDS } from '@/lib/game/engine'
 import BannerAd from './BannerAd'
-import RewardedAdButton from './RewardedAdButton'
 import InterstitialAd from './InterstitialAd'
 import StationPanel from './StationPanel'
 import StationsMap from './StationsMap'
-import type { StationId } from '@/lib/game/stations'
 import SitePicker from './SitePicker'
 import LoadingScreen from './LoadingScreen'
+import BonusTab from './BonusTab'
+import PlotsSheet, { plotName } from './PlotsSheet'
+import type { StationFocus } from '@/components/game3d/Scene'
 import { formatNumber } from './format'
 
 // three.js needs `window`/WebGL, so the scene only ever renders client-side.
@@ -24,7 +25,14 @@ type Pop = { id: number; text: string; x: number; y: number }
 export default function Game() {
   const game = useEngine()
   const [mapOpen, setMapOpen] = useState(false)
-  const [selected, setSelected] = useState<StationId | null>(null)
+  const [bonusOpen, setBonusOpen] = useState(false)
+  const [plotsOpen, setPlotsOpen] = useState(false)
+  const [selected, setSelected] = useState<StationFocus | null>(null)
+  // The plot nearest the middle of the screen: BREAK and the building card
+  // act on it. `flyTo` glides the camera to a plot when its nonce changes.
+  const [focusPlot, setFocusPlot] = useState(0)
+  const [flyTo, setFlyTo] = useState({ plot: 0, nonce: 0 })
+  const [picker, setPicker] = useState<{ plot: number; cleared: { name: string; bonus: number } | null } | null>(null)
   const [pops, setPops] = useState<Pop[]>([])
   // Bumped on every successful BREAK so the cooldown ring's CSS animation
   // restarts; `cooling` dims the button until the cooldown has passed.
@@ -49,15 +57,41 @@ export default function Game() {
   if (!game) return <LoadingScreen progress={null} leaving={false} />
   const { engine, snap } = game
 
-  const building = getBuilding(snap.buildingId)
-  const progress = 1 - snap.bricksLeft / Math.max(1, snap.bricksTotal)
+  const plot = snap.plots[focusPlot] ?? snap.plots[0]
+  const building = getBuilding(plot.buildingId)
+  const progress = 1 - plot.bricksLeft / Math.max(1, plot.bricksTotal)
   const levelStart = xpForLevel(snap.level)
   const levelEnd = xpForLevel(snap.level + 1)
   const levelProgress = (snap.xp - levelStart) / (levelEnd - levelStart)
-  const bonus = Math.max(snap.incomePerMinute * 2, 50)
+  const activePlots = snap.plots.filter((p) => p.phase === 'demolishing').length
+  const plotNeedsYou = snap.plots.some((p) => p.phase !== 'demolishing')
+
+  const goToPlot = (id: number) => {
+    setSelected(null)
+    setFlyTo((f) => ({ plot: id, nonce: f.nonce + 1 }))
+  }
+
+  // Tapping a plot's bubble: claim a cleared site (then pick its next job),
+  // pick a building for an empty one, or open the plots list to buy one.
+  const onPlotAction = (id: number) => {
+    const p = snap.plots[id]
+    if (!p) {
+      setPlotsOpen(true)
+      return
+    }
+    goToPlot(id)
+    if (p.phase === 'cleared') {
+      const name = getBuilding(p.buildingId).name
+      const bonus = engine.claimPlot(id)
+      engine.notify()
+      setPicker({ plot: id, cleared: { name, bonus } })
+    } else if (p.phase === 'empty') {
+      setPicker({ plot: id, cleared: null })
+    }
+  }
 
   const handleBreak = (e: React.PointerEvent<HTMLButtonElement>) => {
-    const broke = engine.breakTap()
+    const broke = engine.breakTap(plot.id)
     if (broke === 0) return
     setCooldownRun((n) => n + 1)
     setCooling(true)
@@ -76,15 +110,19 @@ export default function Game() {
       <div className="absolute inset-0">
         <Scene
           engine={engine}
-          workerCount={stats.workerCount(snap.upgrades)}
-          blueprint={building.blueprint}
-          upgrades={snap.upgrades}
-          scrap={snap.scrap}
+          snap={snap}
           focus={selected}
+          flyTo={flyTo}
+          onFocusPlot={setFocusPlot}
+          onPlotAction={onPlotAction}
           onLoadProgress={onLoadProgress}
-          onSelectStation={(id) => {
+          onOpenBonus={() => {
+            engine.holdBonusDrop(true)
+            setBonusOpen(true)
+          }}
+          onSelectStation={(id, plotId) => {
             setMapOpen(false)
-            setSelected(id)
+            setSelected({ id, plot: plotId })
           }}
         />
       </div>
@@ -99,7 +137,7 @@ export default function Game() {
         </span>
       ))}
 
-      <div className="pointer-events-none absolute inset-0 flex flex-col pt-[max(env(safe-area-inset-top),12px)]">
+      <div className="pointer-events-none absolute inset-0 z-10 flex flex-col pt-[max(env(safe-area-inset-top),12px)]">
         <div className="flex items-start justify-between gap-2 px-3">
           <div className="space-y-1.5">
             <div className="rounded-2xl bg-black/55 px-3 py-2 backdrop-blur-sm">
@@ -115,15 +153,68 @@ export default function Game() {
               </div>
             </div>
           </div>
-          <div className="min-w-[165px] rounded-2xl bg-white px-3 py-2 shadow-[0_3px_0_rgba(0,0,0,0.15)]">
-            <p className="font-display text-base leading-tight text-[#1d3a6e]">{building.name}</p>
-            <div className="mt-1.5 h-4 overflow-hidden rounded-full bg-[#1d3a6e]">
-              <div className="h-full bg-[#2d7ff9] transition-[width] duration-300" style={{ width: `${progress * 100}%` }} />
-            </div>
-            <p className="mt-1 text-center font-display text-xs text-[#1d3a6e]">
-              {formatNumber(snap.bricksLeft)} bricks left
-              {snap.rubbleLeft > 0 && ` · ${formatNumber(snap.rubbleLeft)} on ground`}
-            </p>
+          <div className="pointer-events-auto min-w-[165px] rounded-2xl bg-white px-3 py-2 shadow-[0_3px_0_rgba(0,0,0,0.15)]">
+            {snap.plots.length > 1 && (
+              <p className="font-display text-[10px] uppercase leading-none tracking-wider text-[#5b6f93]">{plotName(plot.id)}</p>
+            )}
+            {plot.phase === 'demolishing' ? (
+              <>
+                <p className="font-display text-base leading-tight text-[#1d3a6e]">{building.name}</p>
+                <div className="mt-1.5 h-4 overflow-hidden rounded-full bg-[#1d3a6e]">
+                  <div className="h-full bg-[#2d7ff9] transition-[width] duration-300" style={{ width: `${progress * 100}%` }} />
+                </div>
+                <p className="mt-1 text-center font-display text-xs text-[#1d3a6e]">
+                  {formatNumber(plot.bricksLeft)} bricks left
+                  {plot.rubbleLeft > 0 && ` · ${formatNumber(plot.rubbleLeft)} on ground`}
+                </p>
+              </>
+            ) : (
+              <button onClick={() => onPlotAction(plot.id)} className="block w-full text-left">
+                <p className="font-display text-base leading-tight text-[#1d3a6e]">
+                  {plot.phase === 'cleared' ? 'Site cleared!' : 'Empty plot'}
+                </p>
+                <p className="font-display text-xs text-[#e8701f]">
+                  {plot.phase === 'cleared' ? 'Tap to claim your bonus' : 'Tap to pick a building'}
+                </p>
+              </button>
+            )}
+            {/* Crew split: only matters once two plots are being demolished. */}
+            {activePlots > 1 && plot.phase === 'demolishing' && (
+              <div className="mt-1.5 flex items-center justify-between gap-1 border-t border-[#e3e8f0] pt-1.5">
+                <button
+                  onClick={() => {
+                    engine.adjustCrew(plot.id, -1)
+                    engine.notify()
+                  }}
+                  className="rounded-lg bg-[#eef2f8] p-1"
+                  aria-label="Move a worker away"
+                >
+                  <Minus className="h-3.5 w-3.5 text-[#1d3a6e]" />
+                </button>
+                <span className="font-display text-sm text-[#1d3a6e]">👷 {plot.crew}</span>
+                <button
+                  onClick={() => {
+                    engine.adjustCrew(plot.id, 1)
+                    engine.notify()
+                  }}
+                  className="rounded-lg bg-[#eef2f8] p-1"
+                  aria-label="Bring a worker here"
+                >
+                  <Plus className="h-3.5 w-3.5 text-[#1d3a6e]" />
+                </button>
+                {!snap.crewAuto && (
+                  <button
+                    onClick={() => {
+                      engine.setCrewAuto()
+                      engine.notify()
+                    }}
+                    className="rounded-lg bg-[#2d7ff9] px-1.5 py-0.5 font-display text-[10px] text-white"
+                  >
+                    AUTO
+                  </button>
+                )}
+              </div>
+            )}
           </div>
         </div>
 
@@ -156,7 +247,7 @@ export default function Game() {
 
           <button
             onPointerDown={handleBreak}
-            disabled={snap.phase !== 'demolishing' || snap.bricksLeft === 0}
+            disabled={plot.phase !== 'demolishing' || plot.bricksLeft === 0}
             className={`pointer-events-auto relative mb-1 flex h-24 w-24 flex-col items-center justify-center rounded-full border-4 border-white bg-[#ff6b1a] font-display text-white shadow-[0_6px_0_#c94e0a] transition-[filter] active:translate-y-1.5 active:shadow-none disabled:bg-[#b9c2cf] disabled:shadow-[0_6px_0_#97a1ae] ${cooling ? 'brightness-75' : ''}`}
           >
             <span className="text-2xl leading-none">BREAK!</span>
@@ -180,18 +271,13 @@ export default function Game() {
             )}
           </button>
 
-          <RewardedAdButton
-            onReward={() => {
-              engine.claimBonus(bonus)
-              engine.notify()
-            }}
-            className="pointer-events-auto flex flex-col items-center gap-1 disabled:opacity-70"
-          >
+          <button onClick={() => setPlotsOpen(true)} className="pointer-events-auto relative flex flex-col items-center gap-1">
             <span className="flex h-16 w-16 items-center justify-center rounded-full border-[3px] border-white bg-[#3fbf4a] text-white shadow-[0_4px_0_#2a8a33] active:translate-y-1 active:shadow-none">
-              <Play className="h-7 w-7 fill-white" />
+              <MapIcon className="h-7 w-7" />
             </span>
-            <span className="font-display text-xs text-white [text-shadow:0_1px_2px_rgba(0,0,0,0.6)]">+🧱{formatNumber(bonus)}</span>
-          </RewardedAdButton>
+            {plotNeedsYou && <span className="absolute right-0 top-0 h-4 w-4 rounded-full border-2 border-white bg-[#ff6b1a]" />}
+            <span className="font-display text-xs text-white [text-shadow:0_1px_2px_rgba(0,0,0,0.6)]">Plots</span>
+          </button>
         </div>
 
         <BannerAd />
@@ -202,13 +288,34 @@ export default function Game() {
           snap={snap}
           onPick={(id) => {
             setMapOpen(false)
-            setSelected(id)
+            // Tool rack and crew trailer live on the home lot; dumpsters and
+            // trucks are on every plot, so use the one you're looking at.
+            setSelected({ id, plot: id === 'tools' || id === 'crew' ? 0 : plot.id })
           }}
           onClose={() => setMapOpen(false)}
         />
       )}
-      {selected && <StationPanel engine={engine} snap={snap} id={selected} onClose={() => setSelected(null)} />}
-      {snap.phase === 'picking' && <SitePicker engine={engine} snap={snap} justCleared={building.name} />}
+      {selected && <StationPanel engine={engine} snap={snap} id={selected.id} onClose={() => setSelected(null)} />}
+      {plotsOpen && (
+        <PlotsSheet
+          engine={engine}
+          snap={snap}
+          onGo={(id) => {
+            setPlotsOpen(false)
+            goToPlot(id)
+          }}
+          onBought={(id) => {
+            setPlotsOpen(false)
+            goToPlot(id)
+            setPicker({ plot: id, cleared: null })
+          }}
+          onClose={() => setPlotsOpen(false)}
+        />
+      )}
+      {picker && (
+        <SitePicker engine={engine} snap={snap} plot={picker.plot} justCleared={picker.cleared} onClose={() => setPicker(null)} />
+      )}
+      <BonusTab engine={engine} snap={snap} open={bonusOpen && !!snap.bonusDrop} onOpenChange={setBonusOpen} />
       <InterstitialAd trigger={snap.sitesCleared} />
       {!loadingGone && <LoadingScreen progress={loadProgress} leaving={loaded} />}
     </div>

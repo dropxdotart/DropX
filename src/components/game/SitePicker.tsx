@@ -1,10 +1,11 @@
 'use client'
 
 import { useState } from 'react'
-import { Lock } from 'lucide-react'
+import { Lock, X } from 'lucide-react'
 import { BUILDINGS, brickCount } from '@/lib/game/buildings'
 import type { Engine, Snapshot } from '@/lib/game/engine'
 import { formatNumber } from './format'
+import { plotName } from './PlotsSheet'
 
 const ICONS: Record<string, string> = {
   shed: '🛖',
@@ -17,18 +18,47 @@ const ICONS: Record<string, string> = {
   station: '🛰️',
 }
 
-// Shown when a site is cleared: pick the next demolition job. A job needs
-// the player level to unlock AND its contract price to start.
-export default function SitePicker({ engine, snap, justCleared }: { engine: Engine; snap: Snapshot; justCleared: string }) {
+// Pick the next demolition job for an empty plot (opened right after you
+// claim a cleared site, or by tapping an empty plot). A job needs the
+// player level to unlock AND its contract price to start.
+export default function SitePicker({
+  engine,
+  snap,
+  plot,
+  justCleared,
+  onClose,
+}: {
+  engine: Engine
+  snap: Snapshot
+  plot: number
+  justCleared: { name: string; bonus: number } | null
+  onClose: () => void
+}) {
   const [error, setError] = useState<string | null>(null)
 
   return (
-    <div className="pointer-events-auto fixed inset-0 z-40 flex items-end justify-center bg-black/50">
-      <div className="max-h-[85dvh] w-full max-w-md overflow-y-auto rounded-t-3xl bg-white p-4 pb-[max(env(safe-area-inset-bottom),16px)]">
-        <p className="text-center font-display text-3xl text-[#1d3a6e]">Site cleared! 🎉</p>
-        <p className="mb-4 text-center text-sm text-[#5b6f93]">
-          {justCleared} is gone. Pick your next job:
-        </p>
+    <div className="pointer-events-auto fixed inset-0 z-40 flex items-end justify-center bg-black/50" onClick={onClose}>
+      <div
+        className="relative max-h-[85dvh] w-full max-w-md overflow-y-auto rounded-t-3xl bg-white p-4 pb-[max(env(safe-area-inset-bottom),16px)]"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <button onClick={onClose} className="absolute right-4 top-4 rounded-full bg-[#eef2f8] p-2" aria-label="Close">
+          <X className="h-5 w-5 text-[#1d3a6e]" />
+        </button>
+        {justCleared ? (
+          <>
+            <p className="text-center font-display text-3xl text-[#1d3a6e]">Site cleared! 🎉</p>
+            <p className="mb-4 text-center text-sm text-[#5b6f93]">
+              {justCleared.name} is gone — <span className="font-bold text-[#e8701f]">+🧱{formatNumber(justCleared.bonus)}</span>. Pick
+              the next job for {plotName(plot)}:
+            </p>
+          </>
+        ) : (
+          <>
+            <p className="text-center font-display text-3xl text-[#1d3a6e]">{plotName(plot)}</p>
+            <p className="mb-4 text-center text-sm text-[#5b6f93]">Pick a building to demolish:</p>
+          </>
+        )}
         {error && <p className="mb-2 rounded-xl bg-[#ffe3e3] p-2 text-center text-sm text-[#c23030]">{error}</p>}
         <div className="space-y-2">
           {BUILDINGS.map((b) => {
@@ -54,9 +84,10 @@ export default function SitePicker({ engine, snap, justCleared }: { engine: Engi
                 <button
                   disabled={locked || !affordable}
                   onClick={() => {
-                    const err = engine.startBuilding(b.id)
+                    const err = engine.startBuilding(plot, b.id)
                     setError(err)
                     engine.notify()
+                    if (!err) onClose()
                   }}
                   className="shrink-0 rounded-xl bg-[#ff6b1a] px-3 py-2 font-display text-sm text-white shadow-[0_3px_0_#c94e0a] active:translate-y-[3px] active:shadow-none disabled:bg-[#b9c2cf] disabled:shadow-[0_3px_0_#97a1ae]"
                 >
