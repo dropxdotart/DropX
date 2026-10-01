@@ -5,7 +5,7 @@ import dynamic from 'next/dynamic'
 import { ArrowBigUpDash, Map as MapIcon, Minus, Plus, X } from 'lucide-react'
 import { useEngine } from '@/lib/game/useEngine'
 import { getBuilding, xpForLevel } from '@/lib/game/buildings'
-import { stats, BREAK_COOLDOWN_SECONDS } from '@/lib/game/engine'
+import { BREAK_COOLDOWN_SECONDS } from '@/lib/game/engine'
 import BannerAd from './BannerAd'
 import InterstitialAd from './InterstitialAd'
 import StationPanel from './StationPanel'
@@ -251,7 +251,6 @@ export default function Game() {
             className={`pointer-events-auto relative mb-1 flex h-24 w-24 flex-col items-center justify-center rounded-full border-4 border-white bg-[#ff6b1a] font-display text-white shadow-[0_6px_0_#c94e0a] transition-[filter] active:translate-y-1.5 active:shadow-none disabled:bg-[#b9c2cf] disabled:shadow-[0_6px_0_#97a1ae] ${cooling ? 'brightness-75' : ''}`}
           >
             <span className="text-2xl leading-none">BREAK!</span>
-            <span className="text-xs opacity-90">×{stats.bricksPerTap(snap.upgrades)}</span>
             {cooling && (
               <svg key={cooldownRun} className="pointer-events-none absolute -inset-[7px] -rotate-90" viewBox="0 0 100 100">
                 <circle

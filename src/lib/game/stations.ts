@@ -1,10 +1,10 @@
-import { DUMPSTER, LOT_HALF, TRUCK_STOP, stats, type UpgradeKey, type Upgrades } from './engine'
+import { DUMPSTER, LOT_HALF, MILESTONES, TRUCK_STOP, stats, type UpgradeKey, type Upgrades } from './engine'
 
 // The tappable, upgradable things on the site. Each one opens its own
 // upgrade panel and changes its look at milestone levels.
 export type StationId = 'tools' | 'crew' | 'dumpster' | 'truck'
 
-export const MILESTONES = [5, 10, 25]
+export { MILESTONES }
 
 export type StationDef = {
   id: StationId
@@ -29,11 +29,6 @@ export const STATIONS: StationDef[] = [
     tierNames: ['Sledgehammers', 'Jackhammers', 'Loader', 'Excavator'],
     effects: (u) => [
       {
-        label: 'Bricks per BREAK',
-        now: `${stats.bricksPerTap(u)}`,
-        next: () => `${stats.bricksPerTap({ ...u, tools: u.tools + 1 })}`,
-      },
-      {
         label: 'Worker pull time',
         now: `${stats.pullSeconds(u).toFixed(2)}s`,
         next: () => `${stats.pullSeconds({ ...u, tools: u.tools + 1 }).toFixed(2)}s`,
@@ -53,6 +48,16 @@ export const STATIONS: StationDef[] = [
         label: 'Workers',
         now: `${stats.workerCount(u)}`,
         next: (k) => (k === 'workers' ? `${stats.workerCount(u) + 1}` : `${stats.workerCount(u)}`),
+      },
+      {
+        // Only moves at milestones (new trailer look), so `next` usually
+        // matches `now` and no arrow shows.
+        label: 'Carries',
+        now: `${stats.carry(u)} brick${stats.carry(u) > 1 ? 's' : ''}`,
+        next: (k) => {
+          const n = stats.carry({ ...u, [k]: u[k] + 1 })
+          return `${n} brick${n > 1 ? 's' : ''}`
+        },
       },
       {
         label: 'Walking speed',
@@ -81,20 +86,25 @@ export const STATIONS: StationDef[] = [
     id: 'truck',
     name: 'Truck',
     emoji: '🚛',
-    upgrades: ['truck'],
+    upgrades: ['truck', 'fleet'],
     position: { x: TRUCK_STOP.x, z: TRUCK_STOP.z },
-    level: (u) => 1 + u.truck,
+    level: (u) => 1 + u.truck + u.fleet,
     tierNames: ['Flatbed', 'Box Truck', 'Garbage Truck', 'Mega Hauler'],
     effects: (u) => [
       {
+        label: 'Trucks',
+        now: `${stats.truckCount(u)}`,
+        next: (k) => `${stats.truckCount(k === 'fleet' ? { ...u, fleet: u.fleet + 1 } : u)}`,
+      },
+      {
         label: 'Load per trip',
         now: `${stats.truckCargo(u)} bricks`,
-        next: () => `${stats.truckCargo({ ...u, truck: u.truck + 1 })} bricks`,
+        next: (k) => `${stats.truckCargo(k === 'truck' ? { ...u, truck: u.truck + 1 } : u)} bricks`,
       },
       {
         label: 'Round trip',
         now: `${stats.truckTripSeconds(u).toFixed(1)}s`,
-        next: () => `${stats.truckTripSeconds({ ...u, truck: u.truck + 1 }).toFixed(1)}s`,
+        next: (k) => `${stats.truckTripSeconds(k === 'truck' ? { ...u, truck: u.truck + 1 } : u).toFixed(1)}s`,
       },
     ],
   },

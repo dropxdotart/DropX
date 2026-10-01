@@ -190,7 +190,7 @@ const SPOTS: [number, number][] = [
 function FillerBlock({ bx, bz, seed }: { bx: number; bz: number; seed: number }) {
   // Blocks behind home read as downtown; further out it's suburbs and parks.
   const behind = bx <= 0 && bz <= 0
-  const kind = seeded(seed) < (behind ? 0.75 : 0.25) ? 'downtown' : seeded(seed + 1) < 0.8 ? 'suburb' : 'park'
+  const kind = behind && seeded(seed) < 0.75 ? 'downtown' : seeded(seed + 1) < 0.8 ? 'suburb' : 'park'
   const items = useMemo(() => {
     const out: { url: string; size: number; pos: [number, number, number]; rot: number }[] = []
     SPOTS.forEach(([sx, sz], n) => {

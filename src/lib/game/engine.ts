@@ -34,7 +34,7 @@ export const BONUS_SPOT = { x: 5.5, z: LOT_HALF + 0.7 }
 const TRAILER_DROP_AT = (TRAILER_FAR - BONUS_SPOT.x) / (TRAILER_FAR * 2)
 const nextBonusDelay = () => 180 + Math.random() * 120
 
-export type Upgrades = { tools: number; speed: number; workers: number; dumpster: number; truck: number }
+export type Upgrades = { tools: number; speed: number; workers: number; dumpster: number; truck: number; fleet: number }
 export type UpgradeKey = keyof Upgrades
 
 export const UPGRADE_INFO: Record<UpgradeKey, { label: string; base: number; growth: number }> = {
@@ -42,7 +42,8 @@ export const UPGRADE_INFO: Record<UpgradeKey, { label: string; base: number; gro
   speed: { label: 'Walking speed', base: 25, growth: 1.45 },
   workers: { label: 'Hire worker', base: 40, growth: 1.7 },
   dumpster: { label: 'Bigger dumpster', base: 30, growth: 1.5 },
-  truck: { label: 'Truck', base: 35, growth: 1.5 },
+  truck: { label: 'Bigger truck', base: 35, growth: 1.5 },
+  fleet: { label: 'Buy a truck', base: 300, growth: 2.6 },
 }
 
 export function upgradeCost(key: UpgradeKey, level: number): number {
@@ -50,14 +51,23 @@ export function upgradeCost(key: UpgradeKey, level: number): number {
   return Math.round(info.base * Math.pow(info.growth, level))
 }
 
+// Station looks change at these levels (see stations.ts); the crew
+// trailer's milestones also raise how many bricks a worker can carry.
+export const MILESTONES = [5, 10, 25]
+const milestonesReached = (level: number) => MILESTONES.filter((m) => level >= m).length
+
 export const stats = {
-  // Tools help everyone: more bricks per BREAK, and workers pull faster.
-  bricksPerTap: (u: Upgrades) => 1 + u.tools,
+  // BREAK is a fixed single brick per tap; tools make the workers faster.
+  bricksPerTap: () => 1,
+  // Bricks a worker carries per trip: +1 at each crew trailer milestone
+  // (Tent 1 → Portacabin 2 → Site Office 3 → Site HQ 4).
+  carry: (u: Upgrades) => 1 + milestonesReached(1 + u.workers + u.speed),
   pullSeconds: (u: Upgrades) => 0.6 / (1 + 0.15 * u.tools),
   walkSpeed: (u: Upgrades) => 2 * (1 + 0.15 * u.speed),
   workerCount: (u: Upgrades) => 1 + u.workers,
   dumpsterCapacity: (u: Upgrades) => 8 + 6 * u.dumpster,
   truckCargo: (u: Upgrades) => 8 + 6 * u.truck,
+  truckCount: (u: Upgrades) => 1 + u.fleet,
   truckTripSeconds: (u: Upgrades) => Math.max(3, 8 * Math.pow(0.9, u.truck)),
 }
 
@@ -74,12 +84,19 @@ export type Worker = {
   tz: number
   target: { kind: 'brick'; index: number } | { kind: 'rubble'; id: number } | null
   timer: number
+  // Colour of the top brick in their arms (null = empty-handed) and how
+  // many they're holding.
   carrying: BrickColor | null
+  held: number
 }
 
 export type Rubble = { id: number; x: number; z: number; color: BrickColor; claimed: boolean; readyAt: number }
 
 export type TruckState = 'away' | 'arriving' | 'loading' | 'leaving'
+
+// The shared fleet: a free truck heads for whichever plot's dumpster is
+// ready, one truck at each plot's stop at a time.
+export type Truck = { id: number; plot: number; state: TruckState; timer: number }
 
 export type EngineEvent =
   | { type: 'siteStarted' }
@@ -191,8 +208,6 @@ export class Site {
   rubble: Rubble[] = []
   private nextRubbleId = 1
   dumpsterLoad = 0
-  truckState: TruckState = 'away'
-  truckTimer = 0
   // Drained by this plot's Building renderer.
   events: EngineEvent[] = []
 
@@ -310,13 +325,14 @@ export class Engine {
   time = 0
   scrap = 0
   xp = 0
-  upgrades: Upgrades = { tools: 0, speed: 0, workers: 0, dumpster: 0, truck: 0 }
+  upgrades: Upgrades = { tools: 0, speed: 0, workers: 0, dumpster: 0, truck: 0, fleet: 0 }
   sitesCleared = 0
   offlineEarnings = 0
 
   // Owned plots, in unlock order (plots[i] sits on PLOT_SLOTS[i]).
   plots: Site[] = []
   workers: Worker[] = []
+  trucks: Truck[] = []
   // Manual crew split per plot, or null to split evenly (see desiredCrew).
   crewPlan: number[] | null = null
   private recentHauls: { t: number; value: number }[] = []
@@ -332,7 +348,19 @@ export class Engine {
 
   // ── Setup ─────────────────────────────────────────────────────────────
 
+  // The truck currently at (or driving to/from) a plot, if any.
+  truckAt(site: Site): Truck | null {
+    return this.trucks.find((t) => t.plot === site.id && t.state !== 'away') ?? null
+  }
+
+  private loadingAt(site: Site) {
+    return this.truckAt(site)?.state === 'loading'
+  }
+
   private syncWorkers() {
+    while (this.trucks.length < stats.truckCount(this.upgrades)) {
+      this.trucks.push({ id: this.trucks.length, plot: 0, state: 'away', timer: 0 })
+    }
     const want = stats.workerCount(this.upgrades)
     const start = this.plots.find((p) => p.phase === 'demolishing') ?? this.home
     while (this.workers.length < want) {
@@ -354,6 +382,7 @@ export class Engine {
       target: null,
       timer: 0,
       carrying: null,
+      held: 0,
     }
   }
 
@@ -418,7 +447,7 @@ export class Engine {
         buildingId: p.building.id,
         removed: encodeBits(p.removed),
         // Carried bricks go back on the ground on reload rather than vanishing.
-        rubble: p.rubble.length + this.workers.filter((w) => w.plot === p.id && w.carrying).length,
+        rubble: p.rubble.length + this.workers.reduce((n, w) => n + (w.plot === p.id ? w.held : 0), 0),
         dumpsterLoad: p.dumpsterLoad,
       })),
     }
@@ -442,9 +471,12 @@ export class Engine {
       const crew = this.workers.filter((w) => w.plot === site.id).length
       if (crew === 0) continue
       const avgWalk = LOT_HALF * 0.8
-      const workerTrip = (avgWalk * 2) / stats.walkSpeed(u) + stats.pullSeconds(u)
-      const workerRate = crew / workerTrip
-      const truckRate = Math.min(stats.truckCargo(u), stats.dumpsterCapacity(u)) / (stats.truckTripSeconds(u) + LOAD_SECONDS)
+      const carry = stats.carry(u)
+      const workerTrip = (avgWalk * 2) / stats.walkSpeed(u) + stats.pullSeconds(u) * carry
+      const workerRate = (crew * carry) / workerTrip
+      // The fleet is shared between every plot being demolished.
+      const share = Math.min(1, stats.truckCount(u) / this.plots.filter((p) => p.phase === 'demolishing').length)
+      const truckRate = (share * Math.min(stats.truckCargo(u), stats.dumpsterCapacity(u))) / (stats.truckTripSeconds(u) + LOAD_SECONDS)
       const available = site.bricksLeft + site.rubble.length + site.dumpsterLoad
       let hauled = Math.min(Math.floor(Math.min(workerRate, truckRate) * seconds), available)
       const total = hauled
@@ -486,7 +518,7 @@ export class Engine {
     if (!site || site.phase !== 'demolishing' || this.breakCooldownLeft() > 0) return 0
     this.lastBreakAt = performance.now()
     let broke = 0
-    for (let n = 0; n < stats.bricksPerTap(this.upgrades); n++) {
+    for (let n = 0; n < stats.bricksPerTap(); n++) {
       const i = site.pickTopBrick(null)
       if (i < 0) break
       const pos = site.brickWorld(i)
@@ -665,7 +697,7 @@ export class Engine {
   }
 
   private checkCleared(site: Site) {
-    if (site.phase === 'demolishing' && this.siteEmpty(site) && site.dumpsterLoad === 0 && site.truckState !== 'loading') {
+    if (site.phase === 'demolishing' && this.siteEmpty(site) && site.dumpsterLoad === 0 && !this.loadingAt(site)) {
       site.phase = 'cleared'
       this.save()
       this.markDirty()
@@ -754,6 +786,7 @@ export class Engine {
             const t = w.target
             if (t?.kind === 'brick') {
               w.carrying = site.bricks[t.index].color
+              w.held++
               site.removeBrick(t.index)
               site.events.push({ type: 'brickPulled', index: t.index, workerId: w.id })
               this.markDirty()
@@ -761,11 +794,17 @@ export class Engine {
               const idx = site.rubble.findIndex((r) => r.id === t.id)
               if (idx >= 0) {
                 w.carrying = site.rubble[idx].color
+                w.held++
                 site.rubble.splice(idx, 1)
                 site.events.push({ type: 'rubblePicked', id: t.id })
               }
             }
             w.target = null
+            // Room for more? Grab the next brick before the walk back.
+            if (w.held > 0 && w.held < stats.carry(u)) {
+              this.assignTarget(w, site)
+              if ((w.state as WorkerState) === 'toPick') break
+            }
             if (w.carrying) {
               w.state = 'toDumpster'
               // Drop-off spot behind the dumpster, clear of even the biggest
@@ -782,56 +821,70 @@ export class Engine {
           break
         case 'waiting':
           w.heading = Math.atan2(DUMPSTER.x - w.x, DUMPSTER.z - w.z)
-          if (site.dumpsterLoad < capacity && site.truckState !== 'loading') {
-            site.dumpsterLoad++
-            w.carrying = null
-            w.state = 'idle'
+          if (site.dumpsterLoad < capacity && !this.loadingAt(site)) {
+            const n = Math.min(w.held, capacity - site.dumpsterLoad)
+            site.dumpsterLoad += n
+            w.held -= n
+            if (w.held === 0) {
+              w.carrying = null
+              w.state = 'idle'
+            }
             this.markDirty()
           }
           break
       }
     }
 
-    // Each plot's truck: comes when its dumpster is full (or when the site's
-    // done and there's anything left in it), loads, and pays as it leaves.
+    // The fleet: a free truck heads for the readiest plot — a full
+    // truckload waiting, or a finished site with anything left in its
+    // dumpster — loads, and pays as it drives off.
     const trip = stats.truckTripSeconds(u)
-    for (const site of this.plots) {
-      switch (site.truckState) {
-        case 'away':
-          if (site.dumpsterLoad >= haulAt || (site.dumpsterLoad > 0 && this.siteEmpty(site))) {
-            site.truckState = 'arriving'
-            site.truckTimer = trip / 2
+    for (const truck of this.trucks) {
+      switch (truck.state) {
+        case 'away': {
+          let best: Site | null = null
+          for (const site of this.plots) {
+            if (this.truckAt(site)) continue
+            const ready = site.dumpsterLoad >= haulAt || (site.dumpsterLoad > 0 && this.siteEmpty(site))
+            if (ready && (!best || site.dumpsterLoad > best.dumpsterLoad)) best = site
+          }
+          if (best) {
+            truck.plot = best.id
+            truck.state = 'arriving'
+            truck.timer = trip / 2
             this.markDirty()
           }
           break
+        }
         case 'arriving':
-          site.truckTimer -= dt
-          if (site.truckTimer <= 0) {
-            site.truckState = 'loading'
-            site.truckTimer = LOAD_SECONDS
+          truck.timer -= dt
+          if (truck.timer <= 0) {
+            truck.state = 'loading'
+            truck.timer = LOAD_SECONDS
             this.markDirty()
           }
           break
         case 'loading':
-          site.truckTimer -= dt
-          if (site.truckTimer <= 0) {
+          truck.timer -= dt
+          if (truck.timer <= 0) {
+            const site = this.plots[truck.plot]
             const cargo = Math.min(site.dumpsterLoad, stats.truckCargo(u))
             site.dumpsterLoad -= cargo
             this.pay(site, cargo)
-            site.truckState = 'leaving'
-            site.truckTimer = trip / 2
+            truck.state = 'leaving'
+            truck.timer = trip / 2
           }
           break
         case 'leaving':
-          site.truckTimer -= dt
-          if (site.truckTimer <= 0) {
-            site.truckState = 'away'
+          truck.timer -= dt
+          if (truck.timer <= 0) {
+            truck.state = 'away'
             this.markDirty()
           }
           break
       }
-      this.checkCleared(site)
     }
+    for (const site of this.plots) this.checkCleared(site)
 
     this.tickBonus(dt)
     this.recentHauls = this.recentHauls.filter((h) => this.time - h.t < 60)
@@ -910,11 +963,11 @@ export class Engine {
     this.markDirty()
   }
 
-  truckProgress(site: Site): number {
+  truckProgress(truck: Truck): number {
     const half = stats.truckTripSeconds(this.upgrades) / 2
-    if (site.truckState === 'arriving') return 1 - site.truckTimer / half
-    if (site.truckState === 'leaving') return site.truckTimer / half
-    return site.truckState === 'loading' ? 1 : 0
+    if (truck.state === 'arriving') return 1 - truck.timer / half
+    if (truck.state === 'leaving') return truck.timer / half
+    return truck.state === 'loading' ? 1 : 0
   }
 
   // ── Subscription (HUD) ────────────────────────────────────────────────
@@ -961,7 +1014,7 @@ export class Engine {
           bricksLeft: p.bricksLeft,
           rubbleLeft: p.rubble.length,
           dumpsterLoad: p.dumpsterLoad,
-          truckState: p.truckState,
+          truckState: this.truckAt(p)?.state ?? 'away',
           crew: crew[p.id],
         })),
         crewAuto: this.crewPlan === null,
@@ -990,6 +1043,7 @@ function migrateLegacy(old: LegacySave): SaveData {
       workers: u.workers ?? 0,
       dumpster: u.dumpster ?? u.truck ?? 0,
       truck: u.truck ?? 0,
+      fleet: 0,
     },
     crewPlan: null,
     sitesCleared: old.sitesCleared ?? 0,

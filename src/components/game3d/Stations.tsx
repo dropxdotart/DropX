@@ -212,9 +212,10 @@ export function TruckStation({
   useFrame(() => {
     const g = group.current
     if (!g) return
-    const state = site.truckState
+    const truck = engine.truckAt(site)
+    const state = truck?.state ?? 'away'
     g.visible = state !== 'away'
-    const p = engine.truckProgress(site)
+    const p = truck ? engine.truckProgress(truck) : 0
     const x =
       state === 'arriving'
         ? THREE.MathUtils.lerp(-TRUCK_FAR, TRUCK_STOP.x, 1 - Math.pow(1 - p, 2))

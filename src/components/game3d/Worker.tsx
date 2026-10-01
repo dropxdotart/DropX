@@ -11,6 +11,7 @@ import { brickGeometry, brickMaterial } from './Building'
 
 export const WORKER_SCALE = 0.45
 const VARIANTS = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h']
+const MAX_STACK = 4
 
 const hatMaterial = new THREE.MeshStandardMaterial({ color: '#f2c230', roughness: 0.6 })
 const vestMaterial = new THREE.MeshStandardMaterial({ color: '#ff7a1a', roughness: 0.7 })
@@ -45,7 +46,7 @@ export default function Worker({ sim }: { sim: WorkerSim }) {
   const variant = VARIANTS[sim.id % VARIANTS.length]
   const { scene, animations } = useGLTF(`/models/characters/character-${variant}.glb`)
   const group = useRef<THREE.Group>(null)
-  const carried = useRef<THREE.Mesh>(null)
+  const carried = useRef<(THREE.Mesh | null)[]>([])
   const pose = useRef<Pose | null>(null)
 
   const character = useMemo(() => {
@@ -59,6 +60,7 @@ export default function Worker({ sim }: { sim: WorkerSim }) {
   )
 
   const { actions } = useAnimations(animations, group)
+  const carriedMaterial = useMemo(() => brickMaterial.clone(), [])
 
   const setPose = (next: Pose) => {
     if (pose.current === next) return
@@ -89,14 +91,12 @@ export default function Worker({ sim }: { sim: WorkerSim }) {
     if (sim.carrying) {
       for (const arm of arms) if (arm) arm.rotation.x = -Math.PI / 2.4
     }
-    const brick = carried.current
-    if (brick) {
-      brick.visible = sim.carrying !== null
-      if (sim.carrying) (brick.material as THREE.MeshStandardMaterial).color.set(BRICK_COLORS[sim.carrying])
-    }
+    if (sim.carrying) carriedMaterial.color.set(BRICK_COLORS[sim.carrying])
+    carried.current.forEach((brick, i) => {
+      if (brick) brick.visible = i < sim.held
+    })
   })
 
-  const carriedMaterial = useMemo(() => brickMaterial.clone(), [])
   // The group is scaled down to worker size; undo that so the carried brick
   // is the same size as the bricks in the building.
   const brickScale = 1 / WORKER_SCALE
@@ -104,15 +104,22 @@ export default function Worker({ sim }: { sim: WorkerSim }) {
   return (
     <group ref={group} scale={WORKER_SCALE}>
       <primitive object={character} />
-      <mesh
-        ref={carried}
-        geometry={brickGeometry}
-        material={carriedMaterial}
-        position={[0, 1.45, 0.85]}
-        scale={brickScale * 1.1}
-        visible={false}
-        castShadow
-      />
+      {/* A stack in their arms, one brick per brick held (see stats.carry). */}
+      {Array.from({ length: MAX_STACK }, (_, i) => (
+        <mesh
+          key={i}
+          ref={(el) => {
+            carried.current[i] = el
+          }}
+          geometry={brickGeometry}
+          material={carriedMaterial}
+          position={[0, 1.45 + i * 0.78, 0.85]}
+          rotation={[0, i * 0.25, 0]}
+          scale={brickScale * 1.1}
+          visible={false}
+          castShadow
+        />
+      ))}
     </group>
   )
 }
