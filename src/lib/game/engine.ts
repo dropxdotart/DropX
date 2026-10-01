@@ -21,6 +21,10 @@ const MAX_OFFLINE_SECONDS = 8 * 60 * 60
 const LOAD_SECONDS = 0.8
 const BREAK_FALL_SECONDS = 0.7
 export const BREAK_COOLDOWN_SECONDS = 0.5
+// Tapping rubble gives the whole crew a short speed burst. No cooldown:
+// every tap tops it back up to the full few seconds, so you can spam it.
+export const BOOST_SECONDS = 3
+const BOOST_FACTOR = 2
 
 // Bonus drop: every few minutes a trailer passes on the front road and
 // spills bricks on the sidewalk; watching an ad tips them straight into the
@@ -179,6 +183,8 @@ export type Snapshot = {
   offlineEarnings: number
   sitesCleared: number
   bonusDrop: { amount: number; secondsLeft: number } | null
+  // Seconds of crew boost left (0 = off).
+  boostLeft: number
 }
 
 type PlotSave = {
@@ -252,6 +258,9 @@ export class Site {
   halfZ = 0
 
   rubble: Rubble[] = []
+  // Worker ids lined up at the dumpster, front first. Only the front one
+  // tips their bricks in; the rest wait their turn.
+  queue: number[] = []
   private nextRubbleId = 1
   dumpsterLoad = 0
   // Drained by this plot's Building renderer.
@@ -347,6 +356,16 @@ export class Site {
     const r: Rubble = { id: this.nextRubbleId++, x, z, color, claimed: false, readyAt }
     this.rubble.push(r)
     return r
+  }
+
+  // The line at the dumpster's right-hand end (the side facing the camera,
+  // clear of even the compactor): front spot first, stretching toward the
+  // fence, then wrapping into rows nearer the building.
+  queueSpot(i: number) {
+    const perRow = 6
+    const row = Math.floor(i / perRow)
+    const col = i % perRow
+    return { x: DUMPSTER.x + 3.4 + col * 0.7, z: DUMPSTER.z - row * 0.75 }
   }
 
   // A preferred spot around the building for each worker (golden-angle
@@ -576,6 +595,22 @@ export class Engine {
   // ── Player actions ────────────────────────────────────────────────────
 
   private lastBreakAt = -Infinity
+  private boostUntil = -Infinity
+  private lastBoostSecond = -1
+
+  boostActive() {
+    return this.time < this.boostUntil
+  }
+
+  private boostMul() {
+    return this.boostActive() ? BOOST_FACTOR : 1
+  }
+
+  boost() {
+    this.boostUntil = this.time + BOOST_SECONDS
+    this.markDirty()
+  }
+
 
   // Enforced here rather than only in the button so auto-clickers or rapid
   // taps can't bypass it.
@@ -791,7 +826,7 @@ export class Engine {
     const dx = w.tx - w.x
     const dz = w.tz - w.z
     const dist = Math.hypot(dx, dz)
-    const step = stats.walkSpeed(this.upgrades) * dt
+    const step = stats.walkSpeed(this.upgrades) * this.boostMul() * dt
     if (dist <= step) {
       w.x = w.tx
       w.z = w.tz
@@ -852,7 +887,7 @@ export class Engine {
         case 'toPick':
           if (this.moveToward(w, dt)) {
             w.state = 'picking'
-            w.timer = stats.pullSeconds(u)
+            w.timer = stats.pullSeconds(u) / this.boostMul()
             const t = w.target
             if (t?.kind === 'brick') {
               const b = site.bricks[t.index]
@@ -889,34 +924,59 @@ export class Engine {
               w.state = 'toDumpster'
               // Drop-off spot behind the dumpster, clear of even the biggest
               // (compactor) version of it.
-              w.tx = DUMPSTER.x + ((w.id % 5) - 2) * 0.4
-              w.tz = DUMPSTER.z - 1.3
+              const tail = site.queueSpot(site.queue.length)
+              w.tx = tail.x
+              w.tz = tail.z
             } else {
               w.state = 'idle'
             }
           }
           break
-        case 'toDumpster':
-          if (this.moveToward(w, dt)) w.state = 'waiting'
+        case 'toDumpster': {
+          // Head for the back of the line (it may have moved since setting
+          // off) and join it on arrival.
+          const tail = site.queueSpot(site.queue.length)
+          w.tx = tail.x
+          w.tz = tail.z
+          if (this.moveToward(w, dt)) {
+            site.queue.push(w.id)
+            w.state = 'waiting'
+          }
           break
-        case 'waiting':
-          w.heading = Math.atan2(DUMPSTER.x - w.x, DUMPSTER.z - w.z)
-          if (site.dumpsterLoad < capacity && !this.loadingAt(site)) {
+        }
+        case 'waiting': {
+          const place = site.queue.indexOf(w.id)
+          const spot = site.queueSpot(Math.max(0, place))
+          w.tx = spot.x
+          w.tz = spot.z
+          // Shuffle up as the line moves, then face the front.
+          if (!this.moveToward(w, dt)) break
+          w.heading = -Math.PI / 2
+          if (place === 0 && site.dumpsterLoad < capacity && !this.loadingAt(site)) {
             const n = Math.min(w.held, capacity - site.dumpsterLoad)
             site.dumpsterLoad += n
             w.held -= n
             if (w.held === 0) {
               w.carrying = null
               w.state = 'idle'
+              site.queue.shift()
             }
             this.markDirty()
           }
           break
+        }
       }
     }
 
     this.tickTrucks(dt)
     for (const site of this.plots) this.checkCleared(site)
+
+    // Keep the boost pill's countdown ticking in the HUD.
+    const boostSecond = Math.ceil(Math.max(0, this.boostUntil - this.time))
+    if (boostSecond !== this.lastBoostSecond) {
+      this.lastBoostSecond = boostSecond
+      this.markDirty()
+    }
 
     this.tickBonus(dt)
     this.recentHauls = this.recentHauls.filter((h) => this.time - h.t < 60)
@@ -1172,6 +1232,7 @@ export class Engine {
         incomePerMinute: Math.round((earned / span) * 60),
         offlineEarnings: this.offlineEarnings,
         sitesCleared: this.sitesCleared,
+        boostLeft: Math.max(0, Math.ceil(this.boostUntil - this.time)),
         bonusDrop: this.bonusDrop
           ? { amount: this.bonusDrop.amount, secondsLeft: Math.ceil(this.bonusDrop.expiresAt - this.time) }
           : null,

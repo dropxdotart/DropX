@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { getAdByPlacement, type AdCreative } from '@/app/actions'
+import { trackAd } from '@/lib/adTracking'
 
 // Always-visible strip under the game controls — renders nothing if no
 // banner creative is active, rather than reserving empty space.
@@ -9,7 +10,10 @@ export default function BannerAd() {
   const [ad, setAd] = useState<AdCreative | null>(null)
 
   useEffect(() => {
-    getAdByPlacement('banner').then(setAd)
+    getAdByPlacement('banner').then((creative) => {
+      setAd(creative)
+      if (creative) trackAd(creative.id, 'view')
+    })
   }, [])
 
   if (!ad) return null
@@ -26,7 +30,13 @@ export default function BannerAd() {
     <div className="pointer-events-auto border-t border-black/10 bg-card">
       <div className="mx-auto max-w-sm h-14 relative">
         {ad.click_url ? (
-          <a href={ad.click_url} target="_blank" rel="noopener noreferrer" className="block w-full h-full">
+          <a
+            href={ad.click_url}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={() => trackAd(ad.id, 'click')}
+            className="block w-full h-full"
+          >
             {media}
           </a>
         ) : (

@@ -44,6 +44,7 @@ export default function BonusTab({
           <p className="mt-1 text-sm text-white/85">Watch an ad and the crew tips them straight into your dumpster — even if it&apos;s full.</p>
           <p className="mt-2 text-center font-display text-3xl">+{formatNumber(drop.amount)} 🧱</p>
           <RewardedAdButton
+            rewardBricks={drop.amount}
             onReward={() => {
               engine.claimBonusDrop()
               engine.notify()

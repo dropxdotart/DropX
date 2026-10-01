@@ -11,7 +11,7 @@ import { BLOCK, MAP_BLOCKS, PLOT_SLOTS, YARD_BLOCK } from '@/lib/game/plots'
 import { STATIONS, fleetAffordable, getStation, tierFor, truckLevel, type StationId } from '@/lib/game/stations'
 import { formatNumber } from '@/components/game/format'
 import Building from './Building'
-import Worker from './Worker'
+import Worker, { vestMaterial } from './Worker'
 import World from './World'
 import BonusDrop from './BonusDrop'
 import { BrickYard, CrewStation, DumpsterStation, Fleet, ToolStation, TruckDepot } from './Stations'
@@ -32,6 +32,19 @@ export type StationFocus = { id: StationId; plot: number; truck?: number }
 // its frame callback runs before anything that draws engine state.
 function EngineTicker({ engine }: { engine: Engine }) {
   useFrame((_, delta) => engine.tick(delta))
+  return null
+}
+
+// Crew boost: every worker's hi-vis vest pulses yellow while it's on.
+function BoostGlow({ engine }: { engine: Engine }) {
+  useFrame(({ clock }) => {
+    if (engine.boostActive()) {
+      vestMaterial.emissive.set('#ffd23c')
+      vestMaterial.emissiveIntensity = 0.6 + Math.sin(clock.getElapsedTime() * 10) * 0.3
+    } else {
+      vestMaterial.emissiveIntensity = 0
+    }
+  })
   return null
 }
 
@@ -191,6 +204,8 @@ export default function Scene({
   flyTo,
   onSelectStation,
   onSelectTruck,
+  onBreakTap,
+  onRubbleTap,
   onFocusPlot,
   onPlotAction,
   onLoadProgress,
@@ -203,6 +218,8 @@ export default function Scene({
   flyTo: { plot: number; nonce: number }
   onSelectStation: (id: StationId, plot: number) => void
   onSelectTruck: (truck: number) => void
+  onBreakTap: (plot: number, x: number, y: number) => void
+  onRubbleTap: (x: number, y: number) => void
   onFocusPlot: (plot: number) => void
   onPlotAction: (plot: number) => void
   onLoadProgress: (progress: number) => void
@@ -273,6 +290,7 @@ export default function Scene({
       <LoadReporter onProgress={onLoadProgress} />
       <Canvas shadows dpr={[1, 2]} gl={{ antialias: true }} style={{ touchAction: 'none' }}>
         <EngineTicker engine={engine} />
+        <BoostGlow engine={engine} />
         <color attach="background" args={['#9fd4ef']} />
         <OrthographicCamera makeDefault near={0.1} far={400} zoom={20} position={[40, 38, 40]} />
         <CameraRig engine={engine} center={center} zoomRef={zoomRef} focus={focus} snap={snap} onFocusPlot={onFocusPlot} />
@@ -297,7 +315,7 @@ export default function Scene({
             const select = (id: StationId) => onSelectStation(id, site.id)
             return (
               <group key={site.id} position={[slot.x, 0, slot.z]}>
-                <Building engine={engine} site={site} />
+                <Building engine={engine} site={site} onBreakTap={onBreakTap} onRubbleTap={onRubbleTap} />
                 <DumpsterStation engine={engine} site={site} {...station.dumpster} onSelect={select} />
                 <TruckDepot affordable={station.truck.affordable} onSelect={select} />
                 {site.id === 0 && (

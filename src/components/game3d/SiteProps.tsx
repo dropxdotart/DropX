@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useTexture } from '@react-three/drei'
 import * as THREE from 'three'
 import { getAdByPlacement, type AdCreative } from '@/app/actions'
+import { trackAd } from '@/lib/adTracking'
 
 export const LOGO_URL = '/rubble-icon-512.png'
 
@@ -53,7 +54,10 @@ export function Billboard({ position, rotationY }: { position: [number, number, 
   const fallback = useFallbackPoster()
 
   useEffect(() => {
-    getAdByPlacement('billboard').then(setAd)
+    getAdByPlacement('billboard').then((creative) => {
+      setAd(creative)
+      if (creative) trackAd(creative.id, 'view')
+    })
   }, [])
 
   // Video creatives become a VideoTexture straight away; images load async.
@@ -112,6 +116,7 @@ export function Billboard({ position, rotationY }: { position: [number, number, 
         onClick={(e) => {
           if (!ad?.click_url) return
           e.stopPropagation()
+          trackAd(ad.id, 'click')
           window.open(ad.click_url, '_blank', 'noopener,noreferrer')
         }}
       >

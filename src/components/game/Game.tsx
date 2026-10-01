@@ -91,19 +91,31 @@ export default function Game() {
     }
   }
 
-  const handleBreak = (e: React.PointerEvent<HTMLButtonElement>) => {
-    const broke = engine.breakTap(plot.id)
+  const pop = (text: string, x: number, y: number) => {
+    const id = Date.now() + Math.random()
+    setPops((prev) => [...prev.slice(-8), { id, text, x, y }])
+    setTimeout(() => setPops((prev) => prev.filter((p) => p.id !== id)), 800)
+  }
+
+  // BREAK button and tapping a building both land here (shared cooldown).
+  const doBreak = (plotId: number, x: number, y: number) => {
+    const broke = engine.breakTap(plotId)
     if (broke === 0) return
     setCooldownRun((n) => n + 1)
     setCooling(true)
     setTimeout(() => setCooling(false), BREAK_COOLDOWN_SECONDS * 1000)
-    const id = Date.now() + Math.random()
+    pop('CRACK!', x + (Math.random() - 0.5) * 40, y)
+  }
+
+  const handleBreak = (e: React.PointerEvent<HTMLButtonElement>) => {
     const rect = e.currentTarget.getBoundingClientRect()
-    setPops((prev) => [
-      ...prev.slice(-8),
-      { id, text: broke > 1 ? `CRACK ×${broke}!` : 'CRACK!', x: rect.left + rect.width / 2 + (Math.random() - 0.5) * 60, y: rect.top },
-    ])
-    setTimeout(() => setPops((prev) => prev.filter((p) => p.id !== id)), 800)
+    doBreak(plot.id, rect.left + rect.width / 2 + (Math.random() - 0.5) * 20, rect.top)
+  }
+
+  const handleRubbleTap = (x: number, y: number) => {
+    engine.boost()
+    engine.notify()
+    pop('⚡ BOOST!', x, y - 20)
   }
 
   return (
@@ -126,6 +138,8 @@ export default function Game() {
             // The depot sign opens the fleet, following truck 1.
             setSelected(id === 'truck' ? { id, plot: plotId, truck: 0 } : { id, plot: plotId })
           }}
+          onBreakTap={doBreak}
+          onRubbleTap={handleRubbleTap}
           onSelectTruck={(truck) => {
             setMapOpen(false)
             setSelected({ id: 'truck', plot: plot.id, truck })
@@ -158,6 +172,16 @@ export default function Game() {
                 <div className="h-full bg-[#ffc93c]" style={{ width: `${Math.min(100, levelProgress * 100)}%` }} />
               </div>
             </div>
+            {/* Crew boost: tap rubble on the ground to trigger it. */}
+            {snap.boostLeft > 0 ? (
+              <div className="inline-flex items-center gap-1 rounded-full bg-[#ffd23c] px-2.5 py-1 font-display text-xs text-[#5a3d00] shadow-[0_2px_0_#c99a00]">
+                ⚡ Crew boost · {snap.boostLeft}s
+              </div>
+            ) : (
+              <div className="inline-flex items-center gap-1 rounded-full bg-black/55 px-2.5 py-1 font-display text-xs text-[#ffd23c]">
+                ⚡ Tap rubble to boost
+              </div>
+            )}
           </div>
           <div className="pointer-events-auto min-w-[165px] rounded-2xl bg-white px-3 py-2 shadow-[0_3px_0_rgba(0,0,0,0.15)]">
             {snap.plots.length > 1 && (

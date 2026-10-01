@@ -1,144 +1,225 @@
 'use client'
 
-import { useRef, useState, useTransition } from 'react'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Select } from '@/components/ui/select'
-import { createClient } from '@supabase/supabase-js'
-import { Loader2, Upload, Trash2, Minimize2 } from 'lucide-react'
+import { useEffect, useState, useSyncExternalStore } from 'react'
+import { ChevronDown, Eye, LayoutGrid, List, X } from 'lucide-react'
 import { toast } from 'sonner'
-import { createAdUpload, saveAd, toggleAdActive, deleteAd, removeAdFile, restoreAd, type AdPlacement } from './actions'
+import {
+  deleteMedia,
+  getAdSettings,
+  getDailyViews,
+  getStats,
+  removeAdFile,
+  restoreMedia,
+  setUnlockSeconds,
+  type AdPlacement,
+  type AdStats,
+  type Media,
+} from './actions'
+import { isLive } from './AdInsights'
+import MediaDetails, { type DeleteFailure } from './MediaDetails'
+import UploadCard from './UploadCard'
+import { PLACEMENTS, placementInfo, type Preview } from './placements'
 
-// Images over this are slow to load in the game; offer to shrink them.
-const MAX_IMAGE_BYTES = 1024 * 1024
-const MAX_IMAGE_SIDE = 1920
-
-function formatBytes(n: number) {
-  return n >= 1024 * 1024 ? `${(n / 1024 / 1024).toFixed(1)} MB` : `${Math.round(n / 1024)} KB`
-}
-
-// Re-encodes an image as JPEG, keeping its shape: caps the long side, then
-// steps quality (and if needed size) down until it fits under maxBytes.
-async function shrinkImage(file: File, maxBytes: number): Promise<File> {
-  const bitmap = await createImageBitmap(file)
-  let scale = Math.min(1, MAX_IMAGE_SIDE / Math.max(bitmap.width, bitmap.height))
-  let quality = 0.85
-  let best: Blob | null = null
-  for (let i = 0; i < 10; i++) {
-    const canvas = document.createElement('canvas')
-    canvas.width = Math.round(bitmap.width * scale)
-    canvas.height = Math.round(bitmap.height * scale)
-    const ctx = canvas.getContext('2d')
-    if (!ctx) break
-    ctx.fillStyle = '#ffffff' // JPEG has no transparency
-    ctx.fillRect(0, 0, canvas.width, canvas.height)
-    ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height)
-    const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/jpeg', quality))
-    if (blob) best = blob
-    if (blob && blob.size <= maxBytes) break
-    if (quality > 0.6) quality -= 0.1
-    else scale *= 0.8
-  }
-  bitmap.close()
-  if (!best) throw new Error("Couldn't shrink this image")
-  const name = file.name.replace(/\.[^.]+$/, '') + '.jpg'
-  return new File([best], name, { type: 'image/jpeg' })
-}
-
-async function imageSize(file: File): Promise<{ w: number; h: number } | null> {
-  try {
-    const bitmap = await createImageBitmap(file)
-    const size = { w: bitmap.width, h: bitmap.height }
-    bitmap.close()
-    return size
-  } catch {
-    return null
-  }
-}
-
-type Ad = {
-  id: string
-  kind: 'image' | 'video'
-  placement: AdPlacement
-  media_url: string
-  click_url: string | null
-  active: boolean
-  created_at: string
-}
-
-// `size` is the recommended media size for how each ad is shown in game.
-const PLACEMENTS: { value: AdPlacement; label: string; hint: string; size: string }[] = [
-  { value: 'rewarded', label: 'Rewarded video', hint: 'Watch-to-claim ads (bonus truck drop)', size: '1280 × 720 (16:9)' },
-  { value: 'interstitial', label: 'Interstitial', hint: 'Full-screen, shown when a site is cleared', size: '1280 × 720 (16:9)' },
-  { value: 'banner', label: 'Banner', hint: 'Persistent strip at the bottom of the screen', size: '1200 × 175 (wide strip)' },
-  { value: 'billboard', label: 'Billboard', hint: 'On the 3D billboards behind the home lot', size: '1280 × 720 (16:9)' },
+type Range = 'today' | 'week' | 'all'
+const RANGES: { value: Range; label: string }[] = [
+  { value: 'today', label: 'Today' },
+  { value: 'week', label: '7 days' },
+  { value: 'all', label: 'All time' },
 ]
 
-export default function AdManager({ initialAds }: { initialAds: Ad[] }) {
-  const [ads, setAds] = useState(initialAds)
-  const [placement, setPlacement] = useState<AdPlacement>('rewarded')
-  const [clickUrl, setClickUrl] = useState('')
-  const [file, setFile] = useState<File | null>(null)
-  const [dims, setDims] = useState<{ w: number; h: number } | null>(null)
-  const [shrinking, setShrinking] = useState(false)
-  const [uploading, setUploading] = useState(false)
-  const [busyId, setBusyId] = useState<string | null>(null)
-  // Ads whose delete failed part-way: shown red with Delete / Recover.
+// Start of the range in the admin's own time zone.
+function rangeStart(range: Range): string {
+  if (range === 'all') return new Date(0).toISOString()
+  const d = new Date()
+  d.setHours(0, 0, 0, 0)
+  if (range === 'week') d.setDate(d.getDate() - 6)
+  return d.toISOString()
+}
+
+type Filter = 'all' | AdPlacement | 'none'
+type View = 'list' | 'grid'
+const VIEW_KEY = 'rubble-admin-ads-view'
+const VIEW_EVENT = 'rubble-admin-ads-view'
+
+// The list/grid choice is remembered per browser. Read through a store so
+// the server render (always list) and the browser agree on first paint.
+function readView(): View {
+  try {
+    return localStorage.getItem(VIEW_KEY) === 'grid' ? 'grid' : 'list'
+  } catch {
+    return 'list'
+  }
+}
+
+function subscribeView(onChange: () => void) {
+  window.addEventListener(VIEW_EVENT, onChange)
+  return () => window.removeEventListener(VIEW_EVENT, onChange)
+}
+
+// Live as a type = the upload AND that type are both on and in schedule.
+function liveTypes(m: Media): AdPlacement[] {
+  if (!isLive(m)) return []
+  return m.ads.filter(isLive).map((a) => a.placement)
+}
+
+// Full-screen look at an ad's image or video (plays with sound controls).
+function PreviewModal({ preview, onClose }: { preview: Preview; onClose: () => void }) {
+  return (
+    <div className="fixed inset-0 z-[60] flex flex-col items-center justify-center bg-black/90 p-4" onClick={onClose}>
+      <button
+        type="button"
+        onClick={onClose}
+        className="absolute right-4 top-[max(env(safe-area-inset-top),16px)] flex h-10 w-10 items-center justify-center rounded-full bg-white/15 text-white"
+        aria-label="Close preview"
+      >
+        <X className="h-5 w-5" />
+      </button>
+      <div className="w-full max-w-2xl" onClick={(e) => e.stopPropagation()}>
+        {preview.kind === 'image' ? (
+          // eslint-disable-next-line @next/next/no-img-element -- external Storage / local blob URL
+          <img src={preview.url} alt="Ad preview" className="max-h-[80dvh] w-full rounded-xl object-contain" />
+        ) : (
+          <video src={preview.url} className="max-h-[80dvh] w-full rounded-xl bg-black" controls autoPlay playsInline />
+        )}
+      </div>
+    </div>
+  )
+}
+
+// How long each ad type must play before it can be closed.
+function TimingSettings() {
+  const [values, setValues] = useState<Record<string, number> | null>(null)
+  const [saving, setSaving] = useState<string | null>(null)
+
+  useEffect(() => {
+    getAdSettings()
+      .then(setValues)
+      .catch(() => setValues({}))
+  }, [])
+
+  const rows: { placement: 'interstitial' | 'rewarded'; label: string; hint: string; fallback: number }[] = [
+    { placement: 'interstitial', label: 'Interstitial skippable after', hint: 'or when a shorter video ends', fallback: 10 },
+    { placement: 'rewarded', label: 'Rewarded unlocks reward after', hint: "can't be closed before; or when a shorter video ends", fallback: 15 },
+  ]
+
+  return (
+    <div className="rounded-2xl border border-border bg-card p-4 space-y-3">
+      <p className="text-sm font-medium">Ad timing</p>
+      {rows.map((r) => (
+        <div key={r.placement} className="flex items-center justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-sm">{r.label}</p>
+            <p className="text-xs text-muted-foreground">{r.hint}</p>
+          </div>
+          <div className="flex shrink-0 items-center gap-1.5">
+            <input
+              type="number"
+              min={0}
+              max={120}
+              disabled={!values || saving === r.placement}
+              value={values?.[r.placement] ?? r.fallback}
+              onChange={(e) => setValues((v) => ({ ...(v ?? {}), [r.placement]: Number(e.target.value) }))}
+              onBlur={async (e) => {
+                setSaving(r.placement)
+                const result = await setUnlockSeconds(r.placement, Number(e.target.value)).catch(() => ({
+                  ok: false as const,
+                  message: "Couldn't save",
+                }))
+                setSaving(null)
+                if (result.ok) toast.success('Saved')
+                else toast.error(result.message)
+              }}
+              className="w-16 rounded-md border border-border bg-background px-2 py-1 text-right text-sm tabular-nums"
+            />
+            <span className="text-xs text-muted-foreground">sec</span>
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function Thumb({ media, className, onPreview }: { media: Media; className: string; onPreview: (p: Preview) => void }) {
+  return (
+    <button
+      type="button"
+      onClick={() => onPreview({ kind: media.kind, url: media.media_url })}
+      className={`relative overflow-hidden bg-secondary ${className}`}
+      aria-label="Preview"
+    >
+      {media.kind === 'image' ? (
+        // eslint-disable-next-line @next/next/no-img-element -- external Storage URL
+        <img src={media.media_url} alt="" className="h-full w-full object-cover" />
+      ) : (
+        // `#t=0.1` + preload makes iOS Safari draw the first frame.
+        <video src={`${media.media_url}#t=0.1`} className="h-full w-full object-cover" muted playsInline preload="metadata" />
+      )}
+      <span className="absolute inset-x-0 bottom-0 flex items-center justify-center gap-0.5 bg-black/55 py-0.5 text-[9px] font-medium text-white">
+        <Eye className="h-2.5 w-2.5" /> Preview
+      </span>
+    </button>
+  )
+}
+
+// One chip per ad type the upload is assigned to; green when it's live.
+function TypeChips({ media, short = false }: { media: Media; short?: boolean }) {
+  const live = liveTypes(media)
+  if (!media.ads.length) return <span className="text-[11px] text-muted-foreground">Not used yet</span>
+  return (
+    <div className="flex flex-wrap gap-1">
+      {media.ads.map((a) => {
+        const on = live.includes(a.placement)
+        const info = placementInfo(a.placement)
+        return (
+          <span
+            key={a.id}
+            className={`rounded-full px-1.5 py-0.5 text-[10px] font-medium ${on ? 'bg-emerald-100 text-emerald-800' : 'bg-secondary text-muted-foreground'}`}
+          >
+            {short ? info.short : info.label}
+          </span>
+        )
+      })}
+    </div>
+  )
+}
+
+export default function AdManager({ initialMedia }: { initialMedia: Media[] }) {
+  const [media, setMedia] = useState(initialMedia)
+  const [preview, setPreview] = useState<Preview | null>(null)
+  const [range, setRange] = useState<Range>('week')
+  const [stats, setStats] = useState<{ byAd: Record<string, AdStats>; byMedia: Record<string, AdStats> }>({ byAd: {}, byMedia: {} })
+  const [daily, setDaily] = useState<Record<string, Record<string, number>>>({})
+  const view = useSyncExternalStore(subscribeView, readView, () => 'list' as View)
+  const [filter, setFilter] = useState<Filter>('all')
+  const [expanded, setExpanded] = useState<string | null>(null)
+  const [sheet, setSheet] = useState<string | null>(null)
+  // Uploads whose delete failed part-way: shown red with Delete / Recover.
   // stage 'row' = nothing was deleted; 'file' = the row is gone but the
-  // file is still in Storage (so Recover can put the row back).
-  const [failed, setFailed] = useState<Record<string, { stage: 'row' | 'file'; message: string }>>({})
-  const [, startTransition] = useTransition()
-  const fileRef = useRef<HTMLInputElement>(null)
+  // file is still in Storage (so Recover can put it back).
+  const [failed, setFailed] = useState<Record<string, DeleteFailure>>({})
 
-  const pickFile = async (picked: File | null) => {
-    setFile(picked)
-    setDims(picked?.type.startsWith('image/') ? await imageSize(picked) : null)
-  }
-
-  const handleShrink = async () => {
-    if (!file) return
-    setShrinking(true)
+  const chooseView = (v: View) => {
     try {
-      const small = await shrinkImage(file, MAX_IMAGE_BYTES)
-      await pickFile(small)
-      toast.success(`Shrunk to ${formatBytes(small.size)}`)
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Couldn't shrink this image")
-    } finally {
-      setShrinking(false)
+      localStorage.setItem(VIEW_KEY, v)
+    } catch {
+      // storage unavailable — the choice just won't be remembered
     }
+    window.dispatchEvent(new Event(VIEW_EVENT))
   }
 
-  const handleUpload = async () => {
-    if (!file || uploading) return
-    setUploading(true)
-    try {
-      const { path, token } = await createAdUpload(file.name)
-      const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!)
-      const { error } = await supabase.storage.from('ads').uploadToSignedUrl(path, token, file, { contentType: file.type })
-      if (error) throw new Error(error.message)
-      await saveAd({ path, kind: file.type.startsWith('video/') ? 'video' : 'image', placement, clickUrl })
-      toast.success('Ad added')
-      window.location.reload()
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Something went wrong')
-      setUploading(false)
-    }
-  }
+  useEffect(() => {
+    getStats(rangeStart(range))
+      .then(setStats)
+      .catch(() => toast.error("Couldn't load stats"))
+  }, [range])
 
-  const handleToggle = (id: string, active: boolean) => {
-    setBusyId(id)
-    startTransition(async () => {
-      try {
-        await toggleAdActive(id, active)
-        setAds((prev) => prev.map((a) => (a.id === id ? { ...a, active } : a)))
-      } catch (err) {
-        toast.error(err instanceof Error ? err.message : 'Something went wrong')
-      } finally {
-        setBusyId(null)
-      }
-    })
-  }
+  useEffect(() => {
+    getDailyViews(Intl.DateTimeFormat().resolvedOptions().timeZone)
+      .then(setDaily)
+      .catch(() => {})
+  }, [])
+
+  const update = (next: Media) => setMedia((prev) => prev.map((m) => (m.id === next.id ? next : m)))
 
   const clearFailed = (id: string) =>
     setFailed((prev) => {
@@ -147,191 +228,209 @@ export default function AdManager({ initialAds }: { initialAds: Ad[] }) {
       return next
     })
 
-  const handleDelete = (ad: Ad, confirmFirst = true) => {
-    if (confirmFirst && !confirm('Delete this ad?')) return
-    const prior = failed[ad.id]
-    setBusyId(ad.id)
-    startTransition(async () => {
-      try {
-        const result = prior?.stage === 'file' ? await removeAdFile(ad.media_url) : await deleteAd(ad.id, ad.media_url)
-        if (result.ok) {
-          setAds((prev) => prev.filter((a) => a.id !== ad.id))
-          clearFailed(ad.id)
-        } else {
-          setFailed((prev) => ({ ...prev, [ad.id]: { stage: result.stage, message: result.message } }))
-        }
-      } catch {
-        setFailed((prev) => ({ ...prev, [ad.id]: { stage: prior?.stage ?? 'row', message: 'Network error' } }))
-      } finally {
-        setBusyId(null)
+  const handleDelete = async (m: Media, confirmFirst: boolean) => {
+    if (confirmFirst && !confirm('Delete this upload? It stops showing everywhere and its stats are removed.')) return
+    const prior = failed[m.id]
+    try {
+      const result = prior?.stage === 'file' ? await removeAdFile(m.media_url) : await deleteMedia(m.id, m.media_url)
+      if (result.ok) {
+        setMedia((prev) => prev.filter((x) => x.id !== m.id))
+        clearFailed(m.id)
+        setSheet(null)
+        toast.success('Deleted')
+      } else {
+        setFailed((prev) => ({ ...prev, [m.id]: { stage: result.stage, message: result.message } }))
       }
-    })
+    } catch {
+      setFailed((prev) => ({ ...prev, [m.id]: { stage: prior?.stage ?? 'row', message: 'Network error' } }))
+    }
   }
 
-  const handleRecover = (ad: Ad) => {
-    const f = failed[ad.id]
-    if (f?.stage !== 'file') {
-      // Nothing was deleted; just put it back to normal.
-      clearFailed(ad.id)
+  const handleRecover = async (m: Media) => {
+    if (failed[m.id]?.stage !== 'file') {
+      clearFailed(m.id)
       return
     }
-    setBusyId(ad.id)
-    startTransition(async () => {
-      try {
-        const result = await restoreAd(ad)
-        if (result.ok) clearFailed(ad.id)
-        else toast.error(result.message ?? "Couldn't recover the ad")
-      } catch {
-        toast.error("Couldn't recover the ad")
-      } finally {
-        setBusyId(null)
-      }
-    })
+    const result = await restoreMedia(m).catch(() => ({ ok: false as const, message: "Couldn't recover it" }))
+    if (result.ok) clearFailed(m.id)
+    else toast.error(result.message)
   }
+
+  const shown = media.filter((m) =>
+    filter === 'all' ? true : filter === 'none' ? m.ads.length === 0 : m.ads.some((a) => a.placement === filter)
+  )
+  const filters: { value: Filter; label: string }[] = [
+    { value: 'all', label: `All (${media.length})` },
+    ...PLACEMENTS.map((p) => ({ value: p.value as Filter, label: p.label })),
+    { value: 'none', label: 'Not used' },
+  ]
+  const sheetMedia = media.find((m) => m.id === sheet)
+
+  const details = (m: Media) => (
+    <MediaDetails
+      key={m.id}
+      media={m}
+      byAd={stats.byAd}
+      byMedia={stats.byMedia}
+      daily={daily}
+      failure={failed[m.id]}
+      onChange={update}
+      onDelete={(confirmFirst) => handleDelete(m, confirmFirst)}
+      onRecover={() => handleRecover(m)}
+    />
+  )
 
   return (
     <div className="w-full max-w-lg space-y-6">
+      {preview && (
+        <PreviewModal
+          preview={preview}
+          onClose={() => {
+            if (preview.url.startsWith('blob:')) URL.revokeObjectURL(preview.url)
+            setPreview(null)
+          }}
+        />
+      )}
+
       <h1 className="text-lg font-semibold">Ads admin</h1>
 
-      <div className="rounded-2xl border border-border bg-card p-4 space-y-3">
-        <p className="text-sm font-medium">Add an ad</p>
+      <UploadCard onPreview={setPreview} />
+      <TimingSettings />
 
-        <Select value={placement} onChange={(e) => setPlacement(e.target.value as AdPlacement)}>
-          {PLACEMENTS.map((p) => (
-            <option key={p.value} value={p.value}>
-              {p.label} — {p.size}
-            </option>
+      <div className="space-y-3">
+        <div className="flex items-center justify-between gap-2">
+          <p className="text-sm font-medium">Library</p>
+          <div className="flex items-center gap-2">
+            <div className="flex rounded-full bg-secondary p-0.5">
+              {RANGES.map((r) => (
+                <button
+                  key={r.value}
+                  type="button"
+                  onClick={() => setRange(r.value)}
+                  className={`rounded-full px-2.5 py-1 text-xs font-medium ${range === r.value ? 'bg-card shadow-sm' : 'text-muted-foreground'}`}
+                >
+                  {r.label}
+                </button>
+              ))}
+            </div>
+            <div className="flex rounded-full bg-secondary p-0.5">
+              {(['list', 'grid'] as View[]).map((v) => (
+                <button
+                  key={v}
+                  type="button"
+                  onClick={() => chooseView(v)}
+                  aria-label={v === 'list' ? 'List view' : 'Grid view'}
+                  aria-pressed={view === v}
+                  className={`rounded-full p-1.5 ${view === v ? 'bg-card shadow-sm' : 'text-muted-foreground'}`}
+                >
+                  {v === 'list' ? <List className="h-3.5 w-3.5" /> : <LayoutGrid className="h-3.5 w-3.5" />}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <div className="flex gap-1.5 overflow-x-auto pb-1">
+          {filters.map((f) => (
+            <button
+              key={f.value}
+              type="button"
+              onClick={() => setFilter(f.value)}
+              className={`shrink-0 rounded-full px-3 py-1 text-xs font-medium ${
+                filter === f.value ? 'bg-foreground text-background' : 'bg-secondary text-muted-foreground'
+              }`}
+            >
+              {f.label}
+            </button>
           ))}
-        </Select>
-        <p className="text-xs text-muted-foreground">
-          Best size: <span className="font-medium text-foreground">{PLACEMENTS.find((p) => p.value === placement)?.size}</span>
-        </p>
+        </div>
 
-        <input
-          ref={fileRef}
-          type="file"
-          accept="image/*,video/mp4,video/webm"
-          className="hidden"
-          onChange={(e) => pickFile(e.target.files?.[0] ?? null)}
-        />
-        <Button type="button" variant="secondary" onClick={() => fileRef.current?.click()} disabled={uploading} className="w-full">
-          <Upload className="w-4 h-4 mr-2" />
-          {file?.name ?? 'Choose image or video'}
-        </Button>
-        {file && (
-          <p className="text-xs text-muted-foreground">
-            {dims ? `${dims.w} × ${dims.h} · ` : ''}
-            {formatBytes(file.size)}
-          </p>
-        )}
-        {file?.type.startsWith('image/') && file.size > MAX_IMAGE_BYTES && (
-          <div className="flex items-center justify-between gap-3 rounded-xl bg-[#fff4d6] p-3">
-            <p className="text-xs text-[#7a5a00]">
-              This image is {formatBytes(file.size)} — over the {formatBytes(MAX_IMAGE_BYTES)} limit, so it&apos;d load slowly in game.
-            </p>
-            <Button type="button" variant="secondary" onClick={handleShrink} disabled={shrinking || uploading} className="shrink-0">
-              {shrinking ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Minimize2 className="w-4 h-4 mr-2" />}
-              Shrink to correct size
-            </Button>
+        {shown.length === 0 && <p className="py-6 text-center text-sm text-muted-foreground">Nothing here yet.</p>}
+
+        {view === 'list' ? (
+          <div className="space-y-2">
+            {shown.map((m) => {
+              const open = expanded === m.id
+              const live = liveTypes(m)
+              return (
+                <div key={m.id} className={`rounded-xl border ${failed[m.id] ? 'border-red-400 bg-red-50' : 'border-border bg-card'}`}>
+                  <div className="flex items-center gap-3 p-3">
+                    <Thumb media={m} className="h-16 w-16 shrink-0 rounded-lg" onPreview={setPreview} />
+                    <div className="min-w-0 flex-1 space-y-1">
+                      <p className="font-mono text-xs uppercase text-muted-foreground">
+                        {m.kind} · {live.length ? <span className="text-emerald-700">live</span> : 'not live'}
+                      </p>
+                      <TypeChips media={m} />
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setExpanded(open ? null : m.id)}
+                      aria-expanded={open}
+                      aria-label="Stats and settings"
+                      className="rounded-full bg-secondary p-2"
+                    >
+                      <ChevronDown className={`h-4 w-4 transition-transform ${open ? 'rotate-180' : ''}`} />
+                    </button>
+                  </div>
+                  {(open || failed[m.id]) && <div className="border-t border-border p-3">{details(m)}</div>}
+                </div>
+              )
+            })}
+          </div>
+        ) : (
+          <div className="grid grid-cols-3 gap-2">
+            {shown.map((m) => {
+              const live = liveTypes(m).length > 0
+              return (
+                <button
+                  key={m.id}
+                  type="button"
+                  onClick={() => setSheet(m.id)}
+                  className={`relative aspect-square overflow-hidden rounded-xl bg-secondary ${failed[m.id] ? 'ring-2 ring-red-500' : ''}`}
+                >
+                  {m.kind === 'image' ? (
+                    // eslint-disable-next-line @next/next/no-img-element -- external Storage URL
+                    <img src={m.media_url} alt="" className="h-full w-full object-cover" />
+                  ) : (
+                    <video src={`${m.media_url}#t=0.1`} className="h-full w-full object-cover" muted playsInline preload="metadata" />
+                  )}
+                  <span
+                    className={`absolute left-1.5 top-1.5 h-2.5 w-2.5 rounded-full border border-white ${live ? 'bg-emerald-500' : 'bg-zinc-400'}`}
+                    title={live ? 'Live' : 'Not live'}
+                  />
+                  {m.kind === 'video' && (
+                    <span className="absolute right-1.5 top-1.5 rounded bg-black/60 px-1 text-[9px] font-medium text-white">VIDEO</span>
+                  )}
+                  <div className="absolute inset-x-1 bottom-1">
+                    <TypeChips media={m} short />
+                  </div>
+                </button>
+              )
+            })}
           </div>
         )}
-        <Input
-          value={clickUrl}
-          onChange={(e) => setClickUrl(e.target.value)}
-          placeholder="Click-through link (optional)"
-          disabled={uploading}
-        />
-        <Button onClick={handleUpload} disabled={uploading || shrinking || !file} className="w-full">
-          {uploading && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-          Upload
-        </Button>
       </div>
 
-      {PLACEMENTS.map((p) => {
-        const adsForPlacement = ads.filter((a) => a.placement === p.value)
-        return (
-          <div key={p.value} className="space-y-2">
-            <div>
-              <p className="text-sm font-bold">
-                {p.label} <span className="font-normal text-muted-foreground">· {p.size}</span>
-              </p>
-              <p className="text-xs text-muted-foreground">{p.hint}</p>
-            </div>
-            {adsForPlacement.length === 0 && (
-              <p className="text-sm text-muted-foreground py-2">No ads yet.</p>
-            )}
-            {adsForPlacement.map((ad) => (
-              <div
-                key={ad.id}
-                className={`rounded-xl border p-3 ${failed[ad.id] ? 'border-red-400 bg-red-50' : 'border-border bg-card'}`}
-              >
-                <div className="flex items-center gap-3">
-                  <div className="w-16 h-16 rounded-lg overflow-hidden bg-secondary shrink-0">
-                    {ad.kind === 'image' ? (
-                      // eslint-disable-next-line @next/next/no-img-element -- external Storage URL
-                      <img src={ad.media_url} alt="" className="w-full h-full object-cover" />
-                    ) : (
-                      <video src={ad.media_url} className="w-full h-full object-cover" muted />
-                    )}
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <p className="text-xs text-muted-foreground uppercase font-mono">{ad.kind}</p>
-                    {ad.click_url && <p className="text-xs text-muted-foreground truncate">{ad.click_url}</p>}
-                  </div>
-                  {!failed[ad.id] && (
-                    <>
-                      <button
-                        type="button"
-                        disabled={busyId === ad.id}
-                        onClick={() => handleToggle(ad.id, !ad.active)}
-                        className="text-xs font-medium px-2.5 py-1 rounded-full border border-border disabled:opacity-50"
-                      >
-                        {ad.active ? 'Active' : 'Hidden'}
-                      </button>
-                      <button
-                        type="button"
-                        disabled={busyId === ad.id}
-                        onClick={() => handleDelete(ad)}
-                        className="text-destructive p-2 disabled:opacity-50"
-                      >
-                        {busyId === ad.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
-                      </button>
-                    </>
-                  )}
-                </div>
-                {failed[ad.id] && (
-                  <div className="mt-3 space-y-2">
-                    <p className="text-xs font-medium text-red-700">
-                      {failed[ad.id].stage === 'row'
-                        ? "Couldn't delete this ad — it's still live."
-                        : 'Removed from the game, but its file couldn\'t be deleted.'}{' '}
-                      <span className="font-normal opacity-80">({failed[ad.id].message})</span>
-                    </p>
-                    <div className="flex gap-2">
-                      <button
-                        type="button"
-                        disabled={busyId === ad.id}
-                        onClick={() => handleDelete(ad, false)}
-                        className="flex-1 rounded-full bg-red-600 px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50"
-                      >
-                        {busyId === ad.id ? 'Working…' : 'Delete'}
-                      </button>
-                      <button
-                        type="button"
-                        disabled={busyId === ad.id}
-                        onClick={() => handleRecover(ad)}
-                        className="flex-1 rounded-full border border-red-300 bg-white px-3 py-1.5 text-xs font-medium text-red-700 disabled:opacity-50"
-                      >
-                        Recover
-                      </button>
-                    </div>
-                  </div>
-                )}
+      {sheetMedia && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40" onClick={() => setSheet(null)}>
+          <div
+            className="max-h-[88dvh] w-full max-w-lg overflow-y-auto rounded-t-3xl bg-background p-4 pb-[max(env(safe-area-inset-bottom),16px)]"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="mb-3 flex items-start gap-3">
+              <Thumb media={sheetMedia} className="h-24 w-40 shrink-0 rounded-xl" onPreview={setPreview} />
+              <div className="min-w-0 flex-1 space-y-1">
+                <p className="font-mono text-xs uppercase text-muted-foreground">{sheetMedia.kind}</p>
+                <TypeChips media={sheetMedia} />
               </div>
-            ))}
+              <button type="button" onClick={() => setSheet(null)} className="rounded-full bg-secondary p-2" aria-label="Close">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            {details(sheetMedia)}
           </div>
-        )
-      })}
+        </div>
+      )}
     </div>
   )
 }

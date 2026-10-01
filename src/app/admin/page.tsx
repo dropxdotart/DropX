@@ -1,4 +1,4 @@
-import { cookies } from 'next/headers'
+import { isAdminSession } from './auth'
 import Link from 'next/link'
 import PasswordGate from './PasswordGate'
 
@@ -7,8 +7,7 @@ const TOOLS = [
 ]
 
 export default async function AdminIndexPage() {
-  const store = await cookies()
-  const authed = store.get('admin_session')?.value === 'true'
+  const authed = await isAdminSession()
 
   if (!authed) return <PasswordGate title="Admin" />
 

@@ -14,7 +14,8 @@ const VARIANTS = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h']
 const MAX_STACK = 4
 
 const hatMaterial = new THREE.MeshStandardMaterial({ color: '#f2c230', roughness: 0.6 })
-const vestMaterial = new THREE.MeshStandardMaterial({ color: '#ff7a1a', roughness: 0.7 })
+// Shared by every worker; glows while the crew boost is on (see BoostGlow).
+export const vestMaterial = new THREE.MeshStandardMaterial({ color: '#ff7a1a', roughness: 0.7 })
 
 function addGear(character: THREE.Object3D) {
   // Kenney blocky characters are rigid parts (no skinning): the head is a
@@ -85,7 +86,9 @@ export default function Worker({ sim }: { sim: WorkerSim }) {
     g.position.set(sim.x, 0.04, sim.z)
     g.rotation.y = THREE.MathUtils.lerp(g.rotation.y, sim.heading, 0.3)
 
-    const moving = sim.state === 'toPick' || sim.state === 'toDumpster'
+    // Waiting in line still walks when shuffling up a spot.
+    const shuffling = sim.state === 'waiting' && Math.hypot(sim.tx - sim.x, sim.tz - sim.z) > 0.02
+    const moving = sim.state === 'toPick' || sim.state === 'toDumpster' || shuffling
     setPose(moving ? 'walk' : sim.state === 'picking' ? 'interact-right' : 'idle')
 
     if (sim.carrying) {
