@@ -7,14 +7,14 @@ import * as THREE from 'three'
 import { getBlueprintSize } from '@/lib/game/blueprints'
 import { getBuilding } from '@/lib/game/buildings'
 import { BRICK, LOT_HALF, upgradeCost, type Engine, type Snapshot } from '@/lib/game/engine'
-import { BLOCK, MAP_BLOCKS, PLOT_SLOTS } from '@/lib/game/plots'
-import { STATIONS, getStation, tierFor, type StationId } from '@/lib/game/stations'
+import { BLOCK, MAP_BLOCKS, PLOT_SLOTS, YARD_BLOCK } from '@/lib/game/plots'
+import { STATIONS, fleetAffordable, getStation, tierFor, truckLevel, type StationId } from '@/lib/game/stations'
 import { formatNumber } from '@/components/game/format'
 import Building from './Building'
 import Worker from './Worker'
 import World from './World'
 import BonusDrop from './BonusDrop'
-import { CrewStation, DumpsterStation, ToolStation, TruckStation } from './Stations'
+import { BrickYard, CrewStation, DumpsterStation, Fleet, ToolStation, TruckDepot } from './Stations'
 import { pointer } from './drag'
 
 const MAX_VISIBLE_WORKERS = 24
@@ -25,7 +25,8 @@ const GROUND_FORWARD = new THREE.Vector3(-1, 0, -1).normalize()
 const PAN_LIMIT = MAP_BLOCKS * BLOCK
 const DRAG_THRESHOLD = 8
 
-export type StationFocus = { id: StationId; plot: number }
+// `truck` set = one specific truck (the camera follows it as it drives).
+export type StationFocus = { id: StationId; plot: number; truck?: number }
 
 // Advances the simulation once per frame. Mounted first inside the canvas so
 // its frame callback runs before anything that draws engine state.
@@ -39,12 +40,14 @@ function EngineTicker({ engine }: { engine: Engine }) {
 // it with a close-up. Reports whichever owned plot is nearest the middle of
 // the screen, so the HUD and BREAK follow what you're looking at.
 function CameraRig({
+  engine,
   center,
   zoomRef,
   focus,
   snap,
   onFocusPlot,
 }: {
+  engine: Engine
   center: React.RefObject<THREE.Vector3>
   zoomRef: React.RefObject<number>
   focus: StationFocus | null
@@ -68,10 +71,13 @@ function CameraRig({
   const target = useMemo(() => new THREE.Vector3(), [])
 
   useFrame((_, delta) => {
-    if (focus) {
-      const slot = PLOT_SLOTS[focus.plot]
+    const followed = focus?.truck !== undefined ? engine.trucks[focus.truck] : null
+    if (followed) {
+      target.set(followed.x, -1.5, followed.z)
+    } else if (focus) {
+      const base = focus.id === 'yard' ? YARD_BLOCK : PLOT_SLOTS[focus.plot]
       const p = getStation(focus.id).position
-      target.set(slot.x + p.x, -1.5, slot.z + p.z)
+      target.set(base.x + p.x, -1.5, base.z + p.z)
     } else {
       target.copy(center.current)
     }
@@ -184,6 +190,7 @@ export default function Scene({
   focus,
   flyTo,
   onSelectStation,
+  onSelectTruck,
   onFocusPlot,
   onPlotAction,
   onLoadProgress,
@@ -195,6 +202,7 @@ export default function Scene({
   // Bump `nonce` to glide the camera over to a plot.
   flyTo: { plot: number; nonce: number }
   onSelectStation: (id: StationId, plot: number) => void
+  onSelectTruck: (truck: number) => void
   onFocusPlot: (plot: number) => void
   onPlotAction: (plot: number) => void
   onLoadProgress: (progress: number) => void
@@ -218,6 +226,7 @@ export default function Scene({
       },
     ])
   ) as Record<StationId, { tier: number; affordable: boolean }>
+  station.truck.affordable = fleetAffordable(snap)
 
   let shown = 0
   const visibleWorkers = engine.workers.filter(() => shown++ < MAX_VISIBLE_WORKERS)
@@ -266,7 +275,7 @@ export default function Scene({
         <EngineTicker engine={engine} />
         <color attach="background" args={['#9fd4ef']} />
         <OrthographicCamera makeDefault near={0.1} far={400} zoom={20} position={[40, 38, 40]} />
-        <CameraRig center={center} zoomRef={zoomRef} focus={focus} snap={snap} onFocusPlot={onFocusPlot} />
+        <CameraRig engine={engine} center={center} zoomRef={zoomRef} focus={focus} snap={snap} onFocusPlot={onFocusPlot} />
 
         <hemisphereLight args={['#e8f4ff', '#6f8f4a', 0.9]} />
         <directionalLight
@@ -290,7 +299,7 @@ export default function Scene({
               <group key={site.id} position={[slot.x, 0, slot.z]}>
                 <Building engine={engine} site={site} />
                 <DumpsterStation engine={engine} site={site} {...station.dumpster} onSelect={select} />
-                <TruckStation engine={engine} site={site} {...station.truck} onSelect={select} />
+                <TruckDepot affordable={station.truck.affordable} onSelect={select} />
                 {site.id === 0 && (
                   <>
                     <CrewStation {...station.crew} onSelect={select} />
@@ -306,6 +315,10 @@ export default function Scene({
               </group>
             )
           })}
+          <group position={[YARD_BLOCK.x, 0, YARD_BLOCK.z]}>
+            <BrickYard {...station.yard} onSelect={(id) => onSelectStation(id, 0)} />
+          </group>
+          <Fleet engine={engine} tiers={snap.trucks.map((t) => tierFor(truckLevel(t)))} onSelect={onSelectTruck} />
           <PlotLabels snap={snap} onPlotAction={onPlotAction} />
           <SceneReady onReady={() => onLoadProgress(100)} />
         </Suspense>

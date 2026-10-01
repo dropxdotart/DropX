@@ -27,6 +27,11 @@ export function plotSlot(id: number): PlotSlot {
   return PLOT_SLOTS[id]
 }
 
-export function isPlotBlock(x: number, z: number) {
-  return PLOT_SLOTS.some((p) => p.x === x && p.z === z)
+// The Brick Yard, where trucks unload and you get paid. Sits on the block
+// just behind home so trucks are seen driving there.
+export const YARD_BLOCK = { x: 0, z: -BLOCK }
+
+// Blocks that aren't filler neighbourhood: plots and the yard.
+export function isReservedBlock(x: number, z: number) {
+  return PLOT_SLOTS.some((p) => p.x === x && p.z === z) || (x === YARD_BLOCK.x && z === YARD_BLOCK.z)
 }

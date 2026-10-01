@@ -9,6 +9,7 @@ import { BREAK_COOLDOWN_SECONDS } from '@/lib/game/engine'
 import BannerAd from './BannerAd'
 import InterstitialAd from './InterstitialAd'
 import StationPanel from './StationPanel'
+import TruckPanel from './TruckPanel'
 import StationsMap from './StationsMap'
 import SitePicker from './SitePicker'
 import LoadingScreen from './LoadingScreen'
@@ -122,7 +123,12 @@ export default function Game() {
           }}
           onSelectStation={(id, plotId) => {
             setMapOpen(false)
-            setSelected({ id, plot: plotId })
+            // The depot sign opens the fleet, following truck 1.
+            setSelected(id === 'truck' ? { id, plot: plotId, truck: 0 } : { id, plot: plotId })
+          }}
+          onSelectTruck={(truck) => {
+            setMapOpen(false)
+            setSelected({ id: 'truck', plot: plot.id, truck })
           }}
         />
       </div>
@@ -289,12 +295,23 @@ export default function Game() {
             setMapOpen(false)
             // Tool rack and crew trailer live on the home lot; dumpsters and
             // trucks are on every plot, so use the one you're looking at.
-            setSelected({ id, plot: id === 'tools' || id === 'crew' ? 0 : plot.id })
+            if (id === 'truck') setSelected({ id, plot: plot.id, truck: 0 })
+            else setSelected({ id, plot: id === 'tools' || id === 'crew' || id === 'yard' ? 0 : plot.id })
           }}
           onClose={() => setMapOpen(false)}
         />
       )}
-      {selected && <StationPanel engine={engine} snap={snap} id={selected.id} onClose={() => setSelected(null)} />}
+      {selected?.id === 'truck' ? (
+        <TruckPanel
+          engine={engine}
+          snap={snap}
+          truck={selected.truck ?? 0}
+          onPickTruck={(truck) => setSelected({ ...selected, truck })}
+          onClose={() => setSelected(null)}
+        />
+      ) : (
+        selected && <StationPanel engine={engine} snap={snap} id={selected.id} onClose={() => setSelected(null)} />
+      )}
       {plotsOpen && (
         <PlotsSheet
           engine={engine}

@@ -183,7 +183,7 @@ export function DumpsterStation({
   )
 }
 
-// ── Truck ────────────────────────────────────────────────────────────────
+// ── Trucks ───────────────────────────────────────────────────────────────
 
 const TRUCK_TIERS = [
   { url: '/models/vehicles/truck-flat.glb', size: 1.5, half: 0.78, logo: 0.6 },
@@ -191,68 +191,158 @@ const TRUCK_TIERS = [
   { url: '/models/vehicles/garbage-truck.glb', size: 1.9, half: 0.87, logo: 0.8 },
   { url: '/models/vehicles/garbage-truck.glb', size: 2.45, half: 1.11, logo: 1.05 },
 ]
-const TRUCK_FAR = 34
 
-export function TruckStation({
+// One truck of the fleet, in world space, driven by the engine each frame.
+// Tapping it opens that truck's own upgrades.
+function FleetTruck({
   engine,
-  site,
+  id,
   tier,
-  affordable,
   onSelect,
 }: {
   engine: Engine
-  site: Site
+  id: number
   tier: number
-  affordable: boolean
-  onSelect: (id: StationId) => void
+  onSelect: (truck: number) => void
 }) {
   const group = useRef<THREE.Group>(null)
   const look = TRUCK_TIERS[tier]
 
   useFrame(() => {
     const g = group.current
-    if (!g) return
-    const truck = engine.truckAt(site)
-    const state = truck?.state ?? 'away'
-    g.visible = state !== 'away'
-    const p = truck ? engine.truckProgress(truck) : 0
-    const x =
-      state === 'arriving'
-        ? THREE.MathUtils.lerp(-TRUCK_FAR, TRUCK_STOP.x, 1 - Math.pow(1 - p, 2))
-        : state === 'leaving'
-          ? THREE.MathUtils.lerp(TRUCK_FAR, TRUCK_STOP.x, p * p)
-          : TRUCK_STOP.x
-    g.position.set(x, 0.02, TRUCK_STOP.z)
+    const t = engine.trucks[id]
+    if (!g || !t) return
+    g.position.set(t.x, 0.02, t.z)
+    // Ease the turn so corners don't snap.
+    let d = t.heading - g.rotation.y
+    d = Math.atan2(Math.sin(d), Math.cos(d))
+    g.rotation.y += d * 0.25
   })
 
   const select = (e: ThreeEvent<MouseEvent>) => {
     e.stopPropagation()
     if (pointer.dragged) return
-    onSelect('truck')
+    onSelect(id)
   }
 
   return (
+    <group ref={group} onClick={select}>
+      {/* Models face +z; logos on both sides. */}
+      <Prop url={look.url} size={look.size} />
+      <Logo size={look.logo} position={[look.half, look.size * 0.55, -0.3]} rotationY={Math.PI / 2} />
+      <Logo size={look.logo} position={[-look.half, look.size * 0.55, -0.3]} rotationY={-Math.PI / 2} />
+    </group>
+  )
+}
+
+export function Fleet({
+  engine,
+  tiers,
+  onSelect,
+}: {
+  engine: Engine
+  tiers: number[]
+  onSelect: (truck: number) => void
+}) {
+  return (
     <>
-      <group ref={group} visible={false} onClick={select}>
-        <Prop url={look.url} size={look.size} rotationY={Math.PI / 2} />
-        <Logo size={look.logo} position={[-0.3, look.size * 0.55, look.half]} />
-        <Logo size={look.logo} position={[-0.3, look.size * 0.55, -look.half]} rotationY={Math.PI} />
-      </group>
-      {/* The truck is usually off driving, so a depot sign at the stop is
-          always there to tap. */}
-      <Hotspot
-        id="truck"
-        position={[TRUCK_STOP.x + 2.6, 0, TRUCK_STOP.z + 1.7]}
-        hitSize={[1.2, 2.2, 0.8]}
-        arrowHeight={2.4}
-        affordable={affordable}
-        onSelect={onSelect}
-      >
-        <Box size={[0.12, 1.6, 0.12]} position={[0, 0.8, 0]} color="#5b6470" />
-        <Box size={[1.0, 0.7, 0.08]} position={[0, 1.6, 0]} color="#1d3a6e" />
-        <Logo size={0.55} position={[0, 1.6, 0.05]} />
-      </Hotspot>
+      {tiers.map((tier, id) => (
+        <FleetTruck key={id} engine={engine} id={id} tier={tier} onSelect={onSelect} />
+      ))}
     </>
+  )
+}
+
+// The pickup sign at each plot's truck stop — always there to tap, since
+// the trucks are usually off driving.
+export function TruckDepot({
+  affordable,
+  onSelect,
+}: {
+  affordable: boolean
+  onSelect: (id: StationId) => void
+}) {
+  return (
+    <Hotspot
+      id="truck"
+      position={[TRUCK_STOP.x + 2.6, 0, TRUCK_STOP.z + 1.7]}
+      hitSize={[1.2, 2.2, 0.8]}
+      arrowHeight={2.4}
+      affordable={affordable}
+      onSelect={onSelect}
+    >
+      <Box size={[0.12, 1.6, 0.12]} position={[0, 0.8, 0]} color="#5b6470" />
+      <Box size={[1.0, 0.7, 0.08]} position={[0, 1.6, 0]} color="#1d3a6e" />
+      <Logo size={0.55} position={[0, 1.6, 0.05]} />
+    </Hotspot>
+  )
+}
+
+// ── Brick Yard ───────────────────────────────────────────────────────────
+
+// Where trucks unload and you get paid. Grows from a scrap heap into a
+// recycling plant at milestones. Local to YARD_BLOCK; the unload bay faces
+// the front road (+z).
+function YardLook({ tier }: { tier: number }) {
+  const piles = [
+    [-5.5, 4],
+    [-4, 5.2],
+    [5.5, 5],
+  ]
+  return (
+    <group>
+      {/* Concrete yard */}
+      <Box size={[16, 0.06, 16]} position={[0, 0.02, 0]} color={tier >= 2 ? '#b7bcc4' : '#c8ab7e'} />
+      {piles.map(([x, z], i) => (
+        <mesh key={i} position={[x, 0.45, z]} castShadow>
+          <coneGeometry args={[1.2, 0.9 + tier * 0.3, 7]} />
+          <meshStandardMaterial color="#b4553c" roughness={0.95} />
+        </mesh>
+      ))}
+      {tier === 0 ? (
+        <>
+          {/* Scrap heap: a shed and a weigh station */}
+          <Box size={[5, 2.4, 3.5]} position={[1, 1.2, -2]} color="#8d6e4c" />
+          <Box size={[5.4, 0.25, 3.9]} position={[1, 2.5, -2]} color="#5a5f6b" />
+        </>
+      ) : (
+        <>
+          {/* Plant hall */}
+          <Box size={[8, 3 + tier, 5]} position={[1, (3 + tier) / 2, -2.5]} color={tier >= 3 ? '#e8edf3' : '#cfd5dd'} />
+          <Box size={[8.4, 0.3, 5.4]} position={[1, 3 + tier + 0.15, -2.5]} color="#ff6b1a" />
+          <Box size={[3, 2.2, 0.15]} position={[1, 1.1, 0.05]} color="#3a3a3e" />
+          <Logo size={1.6} position={[-1.9, 2 + tier * 0.5, 0.05]} />
+          {tier >= 2 && (
+            <>
+              {/* Chimney + conveyor */}
+              <Box size={[0.9, 6 + tier, 0.9]} position={[4, (6 + tier) / 2, -4]} color="#7d8794" />
+              <Box size={[0.9, 0.3, 0.9]} position={[4, 6 + tier, -4]} color="#e23f3f" />
+              <Box size={[1, 0.25, 5]} position={[-4.5, 1.6, 0]} color="#3a3a3e" rotation={[0.35, 0, 0]} />
+            </>
+          )}
+        </>
+      )}
+      {/* Unload bay sign by the road */}
+      <Box size={[0.15, 2, 0.15]} position={[3.5, 1, 6.6]} color="#5b6470" />
+      <Box size={[2.4, 0.8, 0.1]} position={[3.5, 2.1, 6.6]} color="#1d3a6e" />
+      <Logo size={0.6} position={[2.7, 2.1, 6.66]} />
+    </group>
+  )
+}
+
+export function BrickYard({
+  tier,
+  affordable,
+  onSelect,
+}: {
+  tier: number
+  affordable: boolean
+  onSelect: (id: StationId) => void
+}) {
+  return (
+    <Hotspot id="yard" position={[0, 0, 0]} hitSize={[11, 5, 9]} arrowHeight={5 + tier} affordable={affordable} onSelect={onSelect}>
+      <YardLook tier={tier} />
+    </Hotspot>
   )
 }
 

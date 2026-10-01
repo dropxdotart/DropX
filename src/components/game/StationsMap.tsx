@@ -2,7 +2,7 @@
 
 import { ChevronRight, X } from 'lucide-react'
 import { upgradeCost, type Snapshot } from '@/lib/game/engine'
-import { STATIONS, tierFor, type StationId } from '@/lib/game/stations'
+import { STATIONS, fleetAffordable, tierFor, type StationId } from '@/lib/game/stations'
 
 // The Upgrades button's overview: every upgradable thing on the site.
 // Picking one closes this and flies the camera over to it with its panel.
@@ -30,7 +30,13 @@ export default function StationsMap({
         <div className="space-y-2">
           {STATIONS.map((s) => {
             const level = s.level(snap.upgrades)
-            const ready = s.upgrades.some((k) => snap.scrap >= upgradeCost(k, snap.upgrades[k]))
+            const ready =
+              s.id === 'truck' ? fleetAffordable(snap) : s.upgrades.some((k) => snap.scrap >= upgradeCost(k, snap.upgrades[k]))
+            // Trucks each have their own level, so show the fleet size.
+            const subtitle =
+              s.id === 'truck'
+                ? `${snap.trucks.length} truck${snap.trucks.length > 1 ? 's' : ''}`
+                : `Lv ${level} · ${s.tierNames[tierFor(level)]}`
             return (
               <button
                 key={s.id}
@@ -40,9 +46,7 @@ export default function StationsMap({
                 <span className="flex h-12 w-12 items-center justify-center rounded-xl bg-white text-2xl">{s.emoji}</span>
                 <span className="min-w-0 flex-1">
                   <span className="block font-display text-base leading-tight text-[#1d3a6e]">{s.name}</span>
-                  <span className="block text-xs text-[#5b6f93]">
-                    Lv {level} · {s.tierNames[tierFor(level)]}
-                  </span>
+                  <span className="block text-xs text-[#5b6f93]">{subtitle}</span>
                 </span>
                 {ready && (
                   <span className="rounded-full bg-[#3fbf4a] px-2 py-0.5 font-display text-xs text-white">Upgrade!</span>

@@ -5,7 +5,8 @@ import { useFrame } from '@react-three/fiber'
 import { useGLTF } from '@react-three/drei'
 import * as THREE from 'three'
 import { LOT_HALF, ROAD_Z } from '@/lib/game/engine'
-import { BLOCK, MAP_BLOCKS, PLOT_SLOTS, isPlotBlock } from '@/lib/game/plots'
+import { BLOCK, MAP_BLOCKS, PLOT_SLOTS, isReservedBlock } from '@/lib/game/plots'
+import { ROAD_LINES } from '@/lib/game/roads'
 import Prop from './Prop'
 import { Billboard } from './SiteProps'
 
@@ -15,9 +16,6 @@ import { Billboard } from './SiteProps'
 
 const ROAD_WIDTH = 3
 const EXTENT = (MAP_BLOCKS + 0.5) * BLOCK
-// Road centre lines: one just past each block's front/right edge.
-const ROAD_LINES: number[] = []
-for (let k = -MAP_BLOCKS - 1; k <= MAP_BLOCKS; k++) ROAD_LINES.push(ROAD_Z + k * BLOCK)
 
 // Deterministic pseudo-random so the city looks the same each load.
 function seeded(i: number) {
@@ -300,7 +298,7 @@ export default function World({ ownedPlots }: { ownedPlots: number }) {
       for (let j = -MAP_BLOCKS; j <= MAP_BLOCKS; j++) {
         const x = i * BLOCK
         const z = j * BLOCK
-        if (!isPlotBlock(x, z)) out.push({ x, z, seed: (i + 10) * 31 + (j + 10) })
+        if (!isReservedBlock(x, z)) out.push({ x, z, seed: (i + 10) * 31 + (j + 10) })
       }
     }
     return out
@@ -321,9 +319,10 @@ export default function World({ ownedPlots }: { ownedPlots: number }) {
         </group>
       ))}
 
-      {/* Ad billboards just behind the home lot, angled toward the camera. */}
-      <Billboard position={[-2, 0, -LOT_HALF - 2.6]} rotationY={Math.PI / 8} />
-      <Billboard position={[-LOT_HALF - 2.6, 0, -1]} rotationY={Math.PI / 2 - Math.PI / 8} />
+      {/* Ad billboards across the roads behind the home lot, angled toward
+          the camera. */}
+      <Billboard position={[-6, 0, -ROAD_Z - 2.2]} rotationY={Math.PI / 8} />
+      <Billboard position={[-ROAD_Z - 2.2, 0, -1]} rotationY={Math.PI / 2 - Math.PI / 8} />
 
       {blocks.map((b) => (
         <FillerBlock key={`${b.x},${b.z}`} bx={b.x} bz={b.z} seed={b.seed} />
