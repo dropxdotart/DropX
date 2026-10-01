@@ -3,9 +3,7 @@ import Link from 'next/link'
 import PasswordGate from './PasswordGate'
 
 const TOOLS = [
-  { href: '/admin/ads', label: 'Ads', description: 'Upload and manage house ad creative' },
-  { href: '/admin/words', label: 'Banned words', description: 'Nicknames players can’t use' },
-  { href: '/admin/games', label: 'Games', description: 'What shows up when hosting, and pricing' },
+  { href: '/admin/ads', label: 'Ads', description: 'Upload and manage rewarded/interstitial/banner creative' },
 ]
 
 export default async function AdminIndexPage() {

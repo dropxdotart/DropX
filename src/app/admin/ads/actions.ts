@@ -4,12 +4,16 @@ import { revalidatePath } from 'next/cache'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { requireAdminSession } from '../auth'
 
+export type AdPlacement = 'rewarded' | 'interstitial' | 'banner'
+
 export async function uploadAd(formData: FormData): Promise<void> {
   await requireAdminSession()
 
   const file = formData.get('file')
   const clickUrl = (formData.get('clickUrl') as string | null)?.trim() || null
+  const placement = formData.get('placement') as AdPlacement
   if (!(file instanceof File) || file.size === 0) throw new Error('No file provided')
+  if (!['rewarded', 'interstitial', 'banner'].includes(placement)) throw new Error('Invalid placement')
 
   const kind = file.type.startsWith('video/') ? 'video' : 'image'
   const admin = createAdminClient()
@@ -21,7 +25,7 @@ export async function uploadAd(formData: FormData): Promise<void> {
 
   const { data: { publicUrl } } = admin.storage.from('ads').getPublicUrl(path)
 
-  const { error } = await admin.from('ads').insert({ kind, media_url: publicUrl, click_url: clickUrl })
+  const { error } = await admin.from('ads').insert({ kind, placement, media_url: publicUrl, click_url: clickUrl })
   if (error) throw new Error(error.message)
 
   revalidatePath('/admin/ads')

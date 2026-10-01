@@ -3,21 +3,30 @@
 import { useRef, useState, useTransition } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Select } from '@/components/ui/select'
 import { Loader2, Upload, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
-import { uploadAd, toggleAdActive, deleteAd } from './actions'
+import { uploadAd, toggleAdActive, deleteAd, type AdPlacement } from './actions'
 
 type Ad = {
   id: string
   kind: 'image' | 'video'
+  placement: AdPlacement
   media_url: string
   click_url: string | null
   active: boolean
   created_at: string
 }
 
+const PLACEMENTS: { value: AdPlacement; label: string; hint: string }[] = [
+  { value: 'rewarded', label: 'Rewarded video', hint: 'Opt-in "watch for a bonus" button' },
+  { value: 'interstitial', label: 'Interstitial', hint: 'Full-screen, shown after demolishing a structure' },
+  { value: 'banner', label: 'Banner', hint: 'Persistent strip at the bottom of the screen' },
+]
+
 export default function AdManager({ initialAds }: { initialAds: Ad[] }) {
   const [ads, setAds] = useState(initialAds)
+  const [placement, setPlacement] = useState<AdPlacement>('rewarded')
   const [clickUrl, setClickUrl] = useState('')
   const [fileName, setFileName] = useState<string | null>(null)
   const [uploading, setUploading] = useState(false)
@@ -32,6 +41,7 @@ export default function AdManager({ initialAds }: { initialAds: Ad[] }) {
     const formData = new FormData()
     formData.set('file', file)
     formData.set('clickUrl', clickUrl)
+    formData.set('placement', placement)
     startTransition(async () => {
       try {
         await uploadAd(formData)
@@ -83,6 +93,15 @@ export default function AdManager({ initialAds }: { initialAds: Ad[] }) {
 
       <div className="rounded-2xl border border-border bg-card p-4 space-y-3">
         <p className="text-sm font-medium">Add an ad</p>
+
+        <Select value={placement} onChange={(e) => setPlacement(e.target.value as AdPlacement)}>
+          {PLACEMENTS.map((p) => (
+            <option key={p.value} value={p.value}>
+              {p.label}
+            </option>
+          ))}
+        </Select>
+
         <input
           ref={fileRef}
           type="file"
@@ -106,41 +125,52 @@ export default function AdManager({ initialAds }: { initialAds: Ad[] }) {
         </Button>
       </div>
 
-      <div className="space-y-2">
-        {ads.length === 0 && <p className="text-sm text-muted-foreground text-center py-8">No ads yet.</p>}
-        {ads.map((ad) => (
-          <div key={ad.id} className="flex items-center gap-3 rounded-xl border border-border bg-card p-3">
-            <div className="w-16 h-16 rounded-lg overflow-hidden bg-secondary shrink-0">
-              {ad.kind === 'image' ? (
-                // eslint-disable-next-line @next/next/no-img-element -- external Storage URL
-                <img src={ad.media_url} alt="" className="w-full h-full object-cover" />
-              ) : (
-                <video src={ad.media_url} className="w-full h-full object-cover" muted />
-              )}
+      {PLACEMENTS.map((p) => {
+        const adsForPlacement = ads.filter((a) => a.placement === p.value)
+        return (
+          <div key={p.value} className="space-y-2">
+            <div>
+              <p className="text-sm font-bold">{p.label}</p>
+              <p className="text-xs text-muted-foreground">{p.hint}</p>
             </div>
-            <div className="min-w-0 flex-1">
-              <p className="text-xs text-muted-foreground uppercase font-mono">{ad.kind}</p>
-              {ad.click_url && <p className="text-xs text-muted-foreground truncate">{ad.click_url}</p>}
-            </div>
-            <button
-              type="button"
-              disabled={busyId === ad.id}
-              onClick={() => handleToggle(ad.id, !ad.active)}
-              className="text-xs font-medium px-2.5 py-1 rounded-full border border-border disabled:opacity-50"
-            >
-              {ad.active ? 'Active' : 'Hidden'}
-            </button>
-            <button
-              type="button"
-              disabled={busyId === ad.id}
-              onClick={() => handleDelete(ad.id, ad.media_url)}
-              className="text-destructive p-2 disabled:opacity-50"
-            >
-              {busyId === ad.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
-            </button>
+            {adsForPlacement.length === 0 && (
+              <p className="text-sm text-muted-foreground py-2">No ads yet.</p>
+            )}
+            {adsForPlacement.map((ad) => (
+              <div key={ad.id} className="flex items-center gap-3 rounded-xl border border-border bg-card p-3">
+                <div className="w-16 h-16 rounded-lg overflow-hidden bg-secondary shrink-0">
+                  {ad.kind === 'image' ? (
+                    // eslint-disable-next-line @next/next/no-img-element -- external Storage URL
+                    <img src={ad.media_url} alt="" className="w-full h-full object-cover" />
+                  ) : (
+                    <video src={ad.media_url} className="w-full h-full object-cover" muted />
+                  )}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-xs text-muted-foreground uppercase font-mono">{ad.kind}</p>
+                  {ad.click_url && <p className="text-xs text-muted-foreground truncate">{ad.click_url}</p>}
+                </div>
+                <button
+                  type="button"
+                  disabled={busyId === ad.id}
+                  onClick={() => handleToggle(ad.id, !ad.active)}
+                  className="text-xs font-medium px-2.5 py-1 rounded-full border border-border disabled:opacity-50"
+                >
+                  {ad.active ? 'Active' : 'Hidden'}
+                </button>
+                <button
+                  type="button"
+                  disabled={busyId === ad.id}
+                  onClick={() => handleDelete(ad.id, ad.media_url)}
+                  className="text-destructive p-2 disabled:opacity-50"
+                >
+                  {busyId === ad.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                </button>
+              </div>
+            ))}
           </div>
-        ))}
-      </div>
+        )
+      })}
     </div>
   )
 }

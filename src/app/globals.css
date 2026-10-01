@@ -48,57 +48,48 @@
   --radius-4xl: calc(var(--radius) * 2.6);
 }
 
-/* FleX — "Candy Arcade" brand: warm cream ground, hot-pink primary, a
-   supporting cast of yellow/teal/violet doing the "fun" work everywhere
-   else (avatar rings, round badges, chart colors). Chunky, pressable,
-   outlined — the opposite of the old "Quiet Tech" restraint. Single light
-   theme (no dark mode toggle), same reasoning as before: one deliberate
-   look rather than two half-maintained ones. */
+/* Rubble — demolition-site brand: light concrete ground, safety-orange
+   primary, hazard-yellow secondary. Same chunky/pressable button system as
+   the earlier "Candy Arcade" direction (it tested well), just re-themed —
+   industrial-fun instead of pink-arcade-fun. Single light theme. */
 :root,
 .dark {
-  --background: #fffbf2;
-  --foreground: #24232b;
-  --card: #ffffff;
-  --card-foreground: #24232b;
-  --popover: #ffffff;
-  --popover-foreground: #24232b;
-  --primary: #ff3e7f;
+  --background: #f3f1ea;
+  --foreground: #2b2a28;
+  --card: #fffdf9;
+  --card-foreground: #2b2a28;
+  --popover: #fffdf9;
+  --popover-foreground: #2b2a28;
+  --primary: #ff6b1a;
   --primary-foreground: #ffffff;
-  --primary-shadow: #c22b5d;
-  --secondary: #ffd23f;
-  --secondary-foreground: #4a3600;
+  --primary-shadow: #c94e0a;
+  --secondary: #ffc93c;
+  --secondary-foreground: #3a2900;
   --secondary-shadow: #d9a400;
-  --muted: #f5efdf;
-  --muted-foreground: #8b8371;
-  --accent: #ffedf3;
-  --accent-foreground: #24232b;
-  --destructive: #e23f52;
-  --border: #ece4d2;
-  --input: #ece4d2;
-  --ring: #ff3e7f80;
-  --chart-1: #ff3e7f;
-  --chart-2: #ffd23f;
-  --chart-3: #00d9c0;
-  --chart-4: #7b5cff;
-  --chart-5: #ff7a45;
+  --muted: #eae6da;
+  --muted-foreground: #8c8577;
+  --accent: #ffede0;
+  --accent-foreground: #2b2a28;
+  --destructive: #e23f3f;
+  --border: #e0dbcb;
+  --input: #e0dbcb;
+  --ring: #ff6b1a80;
+  --chart-1: #ff6b1a;
+  --chart-2: #ffc93c;
+  --chart-3: #6b7280;
+  --chart-4: #4a7fb5;
+  --chart-5: #b5452f;
   --radius: 1.05rem;
-  --sidebar: #fffbf2;
-  --sidebar-foreground: #24232b;
-  --sidebar-primary: #ff3e7f;
+  --sidebar: #f3f1ea;
+  --sidebar-foreground: #2b2a28;
+  --sidebar-primary: #ff6b1a;
   --sidebar-primary-foreground: #ffffff;
-  --sidebar-accent: #ffedf3;
-  --sidebar-accent-foreground: #24232b;
-  --sidebar-border: #ece4d2;
-  --sidebar-ring: #ff3e7f80;
+  --sidebar-accent: #ffede0;
+  --sidebar-accent-foreground: #2b2a28;
+  --sidebar-border: #e0dbcb;
+  --sidebar-ring: #ff6b1a80;
 
-  /* Round-robin accents for anything that wants variety instead of one
-     repeated hue — player avatar rings, round-type badges, etc. */
-  --fun-pink: #ff3e7f;
-  --fun-yellow: #ffd23f;
-  --fun-teal: #00d9c0;
-  --fun-violet: #7b5cff;
-
-  --positive: #1ed6a6;
+  --positive: #1ed67a;
 }
 
 @layer base {
@@ -120,5 +111,16 @@
 
   .gradient-text {
     color: var(--primary);
+  }
+}
+
+@keyframes float-up {
+  0% {
+    opacity: 1;
+    transform: translate(-50%, -50%);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -150%);
   }
 }
