@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { getStructure } from './structures'
 
-const STORAGE_KEY = 'rubble-save-v1'
+const STORAGE_KEY = 'rubble-save-v3'
 const TAP_UPGRADE_BASE_COST = 25
 const IDLE_UPGRADE_BASE_COST = 50
 const UPGRADE_COST_GROWTH = 1.15
@@ -49,6 +49,21 @@ function loadSave(): { save: SaveData; offlineEarnings: number } {
   }
 }
 
+// Every damage point is also a point of scrap; finishing a structure adds
+// its completion bonus and swaps in the next one at full health.
+function applyDamage(s: SaveData, amount: number): SaveData {
+  const health = s.health - amount
+  if (health > 0) return { ...s, scrap: s.scrap + amount, health }
+
+  const nextIndex = s.structureIndex + 1
+  return {
+    ...s,
+    scrap: s.scrap + amount + getStructure(s.structureIndex).reward,
+    structureIndex: nextIndex,
+    health: getStructure(nextIndex).maxHealth,
+  }
+}
+
 export function tapUpgradeCost(bought: number): number {
   return Math.round(TAP_UPGRADE_BASE_COST * Math.pow(UPGRADE_COST_GROWTH, bought))
 }
@@ -75,12 +90,14 @@ export function useGameState() {
     setLoaded(true)
   }, [])
 
-  // Idle income ticks once a second while the tab is open; the bigger
-  // lump-sum catch-up for time spent away happens once at load (above).
+  // The crew actually swings at the building once a second while the tab is
+  // open (each member = 1 damage), so idle progress is visible brick by
+  // brick. Time spent away is credited as scrap only, at load (above) —
+  // there's no building on screen to show it happening against.
   useEffect(() => {
     if (!loaded) return
     const id = setInterval(() => {
-      setSave((s) => (s.idleRate > 0 ? { ...s, scrap: s.scrap + s.idleRate } : s))
+      setSave((s) => (s.idleRate > 0 ? applyDamage(s, s.idleRate) : s))
     }, 1000)
     return () => clearInterval(id)
   }, [loaded])
@@ -103,23 +120,8 @@ export function useGameState() {
   }, [])
 
   const tap = () => {
-    setSave((s) => {
-      const structure = getStructure(s.structureIndex)
-      const health = s.health - s.tapPower
-      setLastHit(Date.now())
-
-      if (health <= 0) {
-        const nextIndex = s.structureIndex + 1
-        return {
-          ...s,
-          scrap: s.scrap + s.tapPower + structure.reward,
-          structureIndex: nextIndex,
-          health: getStructure(nextIndex).maxHealth,
-        }
-      }
-
-      return { ...s, scrap: s.scrap + s.tapPower, health }
-    })
+    setLastHit(Date.now())
+    setSave((s) => applyDamage(s, s.tapPower))
   }
 
   const buyTapUpgrade = () => {

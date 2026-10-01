@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import { getAdByPlacement, type AdCreative } from '@/app/actions'
 
-// Always-visible slot at the bottom of the screen — renders nothing if no
+// Always-visible strip under the game controls — renders nothing if no
 // banner creative is active, rather than reserving empty space.
 export default function BannerAd() {
   const [ad, setAd] = useState<AdCreative | null>(null)
@@ -23,7 +23,7 @@ export default function BannerAd() {
     )
 
   return (
-    <div className="fixed bottom-0 inset-x-0 z-30 border-t border-border bg-card">
+    <div className="pointer-events-auto border-t border-black/10 bg-card">
       <div className="mx-auto max-w-sm h-14 relative">
         {ad.click_url ? (
           <a href={ad.click_url} target="_blank" rel="noopener noreferrer" className="block w-full h-full">

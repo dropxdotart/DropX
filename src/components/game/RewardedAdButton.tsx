@@ -1,13 +1,20 @@
 'use client'
 
-import { useState } from 'react'
-import { Button } from '@/components/ui/button'
-import { Loader2, Gift } from 'lucide-react'
+import { useState, type ReactNode } from 'react'
+import { Loader2 } from 'lucide-react'
 import { getAdByPlacement, type AdCreative } from '@/app/actions'
 
 const WATCH_SECONDS = 5
 
-export default function RewardedAdButton({ bonusLabel, onReward }: { bonusLabel: string; onReward: () => void }) {
+export default function RewardedAdButton({
+  onReward,
+  className,
+  children,
+}: {
+  onReward: () => void
+  className?: string
+  children: ReactNode
+}) {
   const [state, setState] = useState<'idle' | 'loading' | 'playing' | 'claim'>('idle')
   const [ad, setAd] = useState<AdCreative | null>(null)
   const [secondsLeft, setSecondsLeft] = useState(WATCH_SECONDS)
@@ -38,18 +45,12 @@ export default function RewardedAdButton({ bonusLabel, onReward }: { bonusLabel:
 
   return (
     <>
-      <Button
-        variant="secondary"
-        className="w-full h-11 rounded-xl"
-        onClick={start}
-        disabled={state !== 'idle'}
-      >
-        {state === 'loading' ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Gift className="w-4 h-4 mr-2" />}
-        {bonusLabel}
-      </Button>
+      <button className={className} onClick={start} disabled={state !== 'idle'}>
+        {state === 'loading' ? <Loader2 className="w-6 h-6 animate-spin" /> : children}
+      </button>
 
       {(state === 'playing' || state === 'claim') && (
-        <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-black/90 p-6">
+        <div className="pointer-events-auto fixed inset-0 z-50 flex flex-col items-center justify-center bg-black/90 p-6">
           <div className="w-full max-w-xs aspect-video rounded-xl overflow-hidden bg-secondary flex items-center justify-center">
             {ad ? (
               ad.kind === 'image' ? (
@@ -66,9 +67,12 @@ export default function RewardedAdButton({ bonusLabel, onReward }: { bonusLabel:
           {state === 'playing' ? (
             <p className="mt-4 text-sm text-white/70 font-mono">{secondsLeft}s</p>
           ) : (
-            <Button className="mt-4 h-11 rounded-xl px-8" onClick={claim}>
+            <button
+              onClick={claim}
+              className="mt-4 h-12 rounded-2xl px-8 bg-[#3fbf4a] text-white font-display text-xl shadow-[0_4px_0_#2a8a33] active:translate-y-1 active:shadow-none"
+            >
               Claim reward
-            </Button>
+            </button>
           )}
         </div>
       )}
