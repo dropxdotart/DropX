@@ -52,15 +52,45 @@ export async function toggleAdActive(id: string, active: boolean): Promise<void>
   revalidatePath('/admin/ads')
 }
 
-export async function deleteAd(id: string, mediaUrl: string): Promise<void> {
+export type DeleteResult = { ok: true } | { ok: false; stage: 'row' | 'file'; message: string }
+
+// Removes the ad's row, then its file. Returns (rather than throws) a
+// failure so the admin can see what went wrong: production hides thrown
+// server-action messages. If the row went but the file didn't, the file is
+// still there, so the ad can be recovered with restoreAd.
+export async function deleteAd(id: string, mediaUrl: string): Promise<DeleteResult> {
   await requireAdminSession()
   const admin = createAdminClient()
 
   const { error } = await admin.from('ads').delete().eq('id', id)
-  if (error) throw new Error(error.message)
-
-  const path = mediaUrl.split('/ads/').pop()
-  if (path) await admin.storage.from('ads').remove([path])
-
+  if (error) return { ok: false, stage: 'row', message: error.message }
   revalidatePath('/admin/ads')
+
+  return removeAdFile(mediaUrl)
+}
+
+// Retry for a delete that removed the row but not the file.
+export async function removeAdFile(mediaUrl: string): Promise<DeleteResult> {
+  await requireAdminSession()
+  const path = mediaUrl.split('/ads/').pop()
+  if (!path) return { ok: true }
+  const { error } = await createAdminClient().storage.from('ads').remove([path])
+  if (error) return { ok: false, stage: 'file', message: error.message }
+  return { ok: true }
+}
+
+// Undo a half-finished delete: puts the ad's row back as it was.
+export async function restoreAd(ad: {
+  id: string
+  kind: 'image' | 'video'
+  placement: AdPlacement
+  media_url: string
+  click_url: string | null
+  active: boolean
+}): Promise<{ ok: boolean; message?: string }> {
+  await requireAdminSession()
+  const { error } = await createAdminClient().from('ads').upsert(ad)
+  if (error) return { ok: false, message: error.message }
+  revalidatePath('/admin/ads')
+  return { ok: true }
 }

@@ -7,7 +7,7 @@ import { Select } from '@/components/ui/select'
 import { createClient } from '@supabase/supabase-js'
 import { Loader2, Upload, Trash2, Minimize2 } from 'lucide-react'
 import { toast } from 'sonner'
-import { createAdUpload, saveAd, toggleAdActive, deleteAd, type AdPlacement } from './actions'
+import { createAdUpload, saveAd, toggleAdActive, deleteAd, removeAdFile, restoreAd, type AdPlacement } from './actions'
 
 // Images over this are slow to load in the game; offer to shrink them.
 const MAX_IMAGE_BYTES = 1024 * 1024
@@ -83,6 +83,10 @@ export default function AdManager({ initialAds }: { initialAds: Ad[] }) {
   const [shrinking, setShrinking] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [busyId, setBusyId] = useState<string | null>(null)
+  // Ads whose delete failed part-way: shown red with Delete / Recover.
+  // stage 'row' = nothing was deleted; 'file' = the row is gone but the
+  // file is still in Storage (so Recover can put the row back).
+  const [failed, setFailed] = useState<Record<string, { stage: 'row' | 'file'; message: string }>>({})
   const [, startTransition] = useTransition()
   const fileRef = useRef<HTMLInputElement>(null)
 
@@ -136,15 +140,49 @@ export default function AdManager({ initialAds }: { initialAds: Ad[] }) {
     })
   }
 
-  const handleDelete = (id: string, mediaUrl: string) => {
-    if (!confirm('Delete this ad?')) return
-    setBusyId(id)
+  const clearFailed = (id: string) =>
+    setFailed((prev) => {
+      const next = { ...prev }
+      delete next[id]
+      return next
+    })
+
+  const handleDelete = (ad: Ad, confirmFirst = true) => {
+    if (confirmFirst && !confirm('Delete this ad?')) return
+    const prior = failed[ad.id]
+    setBusyId(ad.id)
     startTransition(async () => {
       try {
-        await deleteAd(id, mediaUrl)
-        setAds((prev) => prev.filter((a) => a.id !== id))
-      } catch (err) {
-        toast.error(err instanceof Error ? err.message : 'Something went wrong')
+        const result = prior?.stage === 'file' ? await removeAdFile(ad.media_url) : await deleteAd(ad.id, ad.media_url)
+        if (result.ok) {
+          setAds((prev) => prev.filter((a) => a.id !== ad.id))
+          clearFailed(ad.id)
+        } else {
+          setFailed((prev) => ({ ...prev, [ad.id]: { stage: result.stage, message: result.message } }))
+        }
+      } catch {
+        setFailed((prev) => ({ ...prev, [ad.id]: { stage: prior?.stage ?? 'row', message: 'Network error' } }))
+      } finally {
+        setBusyId(null)
+      }
+    })
+  }
+
+  const handleRecover = (ad: Ad) => {
+    const f = failed[ad.id]
+    if (f?.stage !== 'file') {
+      // Nothing was deleted; just put it back to normal.
+      clearFailed(ad.id)
+      return
+    }
+    setBusyId(ad.id)
+    startTransition(async () => {
+      try {
+        const result = await restoreAd(ad)
+        if (result.ok) clearFailed(ad.id)
+        else toast.error(result.message ?? "Couldn't recover the ad")
+      } catch {
+        toast.error("Couldn't recover the ad")
       } finally {
         setBusyId(null)
       }
@@ -223,35 +261,72 @@ export default function AdManager({ initialAds }: { initialAds: Ad[] }) {
               <p className="text-sm text-muted-foreground py-2">No ads yet.</p>
             )}
             {adsForPlacement.map((ad) => (
-              <div key={ad.id} className="flex items-center gap-3 rounded-xl border border-border bg-card p-3">
-                <div className="w-16 h-16 rounded-lg overflow-hidden bg-secondary shrink-0">
-                  {ad.kind === 'image' ? (
-                    // eslint-disable-next-line @next/next/no-img-element -- external Storage URL
-                    <img src={ad.media_url} alt="" className="w-full h-full object-cover" />
-                  ) : (
-                    <video src={ad.media_url} className="w-full h-full object-cover" muted />
+              <div
+                key={ad.id}
+                className={`rounded-xl border p-3 ${failed[ad.id] ? 'border-red-400 bg-red-50' : 'border-border bg-card'}`}
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-16 h-16 rounded-lg overflow-hidden bg-secondary shrink-0">
+                    {ad.kind === 'image' ? (
+                      // eslint-disable-next-line @next/next/no-img-element -- external Storage URL
+                      <img src={ad.media_url} alt="" className="w-full h-full object-cover" />
+                    ) : (
+                      <video src={ad.media_url} className="w-full h-full object-cover" muted />
+                    )}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-xs text-muted-foreground uppercase font-mono">{ad.kind}</p>
+                    {ad.click_url && <p className="text-xs text-muted-foreground truncate">{ad.click_url}</p>}
+                  </div>
+                  {!failed[ad.id] && (
+                    <>
+                      <button
+                        type="button"
+                        disabled={busyId === ad.id}
+                        onClick={() => handleToggle(ad.id, !ad.active)}
+                        className="text-xs font-medium px-2.5 py-1 rounded-full border border-border disabled:opacity-50"
+                      >
+                        {ad.active ? 'Active' : 'Hidden'}
+                      </button>
+                      <button
+                        type="button"
+                        disabled={busyId === ad.id}
+                        onClick={() => handleDelete(ad)}
+                        className="text-destructive p-2 disabled:opacity-50"
+                      >
+                        {busyId === ad.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                      </button>
+                    </>
                   )}
                 </div>
-                <div className="min-w-0 flex-1">
-                  <p className="text-xs text-muted-foreground uppercase font-mono">{ad.kind}</p>
-                  {ad.click_url && <p className="text-xs text-muted-foreground truncate">{ad.click_url}</p>}
-                </div>
-                <button
-                  type="button"
-                  disabled={busyId === ad.id}
-                  onClick={() => handleToggle(ad.id, !ad.active)}
-                  className="text-xs font-medium px-2.5 py-1 rounded-full border border-border disabled:opacity-50"
-                >
-                  {ad.active ? 'Active' : 'Hidden'}
-                </button>
-                <button
-                  type="button"
-                  disabled={busyId === ad.id}
-                  onClick={() => handleDelete(ad.id, ad.media_url)}
-                  className="text-destructive p-2 disabled:opacity-50"
-                >
-                  {busyId === ad.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
-                </button>
+                {failed[ad.id] && (
+                  <div className="mt-3 space-y-2">
+                    <p className="text-xs font-medium text-red-700">
+                      {failed[ad.id].stage === 'row'
+                        ? "Couldn't delete this ad — it's still live."
+                        : 'Removed from the game, but its file couldn\'t be deleted.'}{' '}
+                      <span className="font-normal opacity-80">({failed[ad.id].message})</span>
+                    </p>
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        disabled={busyId === ad.id}
+                        onClick={() => handleDelete(ad, false)}
+                        className="flex-1 rounded-full bg-red-600 px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50"
+                      >
+                        {busyId === ad.id ? 'Working…' : 'Delete'}
+                      </button>
+                      <button
+                        type="button"
+                        disabled={busyId === ad.id}
+                        onClick={() => handleRecover(ad)}
+                        className="flex-1 rounded-full border border-red-300 bg-white px-3 py-1.5 text-xs font-medium text-red-700 disabled:opacity-50"
+                      >
+                        Recover
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             ))}
           </div>
