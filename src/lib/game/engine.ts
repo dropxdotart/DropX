@@ -17,15 +17,29 @@ const SAVE_KEY = 'rubble-save-v4'
 const MAX_OFFLINE_SECONDS = 8 * 60 * 60
 const LOAD_SECONDS = 0.8
 const BREAK_FALL_SECONDS = 0.7
+export const BREAK_COOLDOWN_SECONDS = 0.5
 
-export type Upgrades = { hammer: number; speed: number; workers: number; truck: number }
+// Bonus drop: every few minutes a trailer passes on the front road and
+// spills bricks on the sidewalk; watching an ad tips them straight into the
+// dumpster (ignoring its limit), otherwise they're swept away.
+export const BONUS_LIFETIME_SECONDS = 30
+export const TRAILER_SECONDS = 7
+export const TRAILER_FAR = 34
+export const BONUS_SPOT = { x: 5.5, z: LOT_HALF + 0.7 }
+const TRAILER_DROP_AT = (TRAILER_FAR - BONUS_SPOT.x) / (TRAILER_FAR * 2)
+// Off until the HUD tab and scene pile are wired up.
+export const BONUS_DROPS_ENABLED = false
+const nextBonusDelay = () => 180 + Math.random() * 120
+
+export type Upgrades = { tools: number; speed: number; workers: number; dumpster: number; truck: number }
 export type UpgradeKey = keyof Upgrades
 
 export const UPGRADE_INFO: Record<UpgradeKey, { label: string; base: number; growth: number }> = {
-  hammer: { label: 'Hammer', base: 15, growth: 1.5 },
-  speed: { label: 'Worker speed', base: 25, growth: 1.45 },
+  tools: { label: 'Better tools', base: 15, growth: 1.5 },
+  speed: { label: 'Walking speed', base: 25, growth: 1.45 },
   workers: { label: 'Hire worker', base: 40, growth: 1.7 },
-  truck: { label: 'Truck', base: 30, growth: 1.5 },
+  dumpster: { label: 'Bigger dumpster', base: 30, growth: 1.5 },
+  truck: { label: 'Truck', base: 35, growth: 1.5 },
 }
 
 export function upgradeCost(key: UpgradeKey, level: number): number {
@@ -34,11 +48,13 @@ export function upgradeCost(key: UpgradeKey, level: number): number {
 }
 
 export const stats = {
-  bricksPerTap: (u: Upgrades) => 1 + u.hammer,
+  // Tools help everyone: more bricks per BREAK, and workers pull faster.
+  bricksPerTap: (u: Upgrades) => 1 + u.tools,
+  pullSeconds: (u: Upgrades) => 0.6 / (1 + 0.15 * u.tools),
   walkSpeed: (u: Upgrades) => 2 * (1 + 0.15 * u.speed),
-  pullSeconds: (u: Upgrades) => 0.6 / (1 + 0.15 * u.speed),
   workerCount: (u: Upgrades) => 1 + u.workers,
-  truckCapacity: (u: Upgrades) => 8 + 6 * u.truck,
+  dumpsterCapacity: (u: Upgrades) => 8 + 6 * u.dumpster,
+  truckCargo: (u: Upgrades) => 8 + 6 * u.truck,
   truckTripSeconds: (u: Upgrades) => Math.max(3, 8 * Math.pow(0.9, u.truck)),
 }
 
@@ -79,12 +95,13 @@ export type Snapshot = {
   bricksLeft: number
   rubbleLeft: number
   dumpsterLoad: number
-  truckCapacity: number
+  dumpsterCapacity: number
   truckState: TruckState
   phase: 'demolishing' | 'picking'
   incomePerMinute: number
   offlineEarnings: number
   sitesCleared: number
+  bonusDrop: { amount: number; secondsLeft: number } | null
 }
 
 type SaveData = {
@@ -125,7 +142,7 @@ export class Engine {
   time = 0
   scrap = 0
   xp = 0
-  upgrades: Upgrades = { hammer: 0, speed: 0, workers: 0, truck: 0 }
+  upgrades: Upgrades = { tools: 0, speed: 0, workers: 0, dumpster: 0, truck: 0 }
   sitesCleared = 0
   phase: 'demolishing' | 'picking' = 'demolishing'
   offlineEarnings = 0
@@ -227,7 +244,16 @@ export class Engine {
 
     this.scrap = save.scrap
     this.xp = save.xp
-    this.upgrades = { ...this.upgrades, ...save.upgrades }
+    // Older saves had one "hammer" key and a truck that also sized the
+    // dumpster; carry both over into the per-station upgrades.
+    const legacy = save.upgrades as Partial<Upgrades> & { hammer?: number }
+    this.upgrades = {
+      tools: legacy.tools ?? legacy.hammer ?? 0,
+      speed: legacy.speed ?? 0,
+      workers: legacy.workers ?? 0,
+      dumpster: legacy.dumpster ?? legacy.truck ?? 0,
+      truck: legacy.truck ?? 0,
+    }
     this.sitesCleared = save.sitesCleared ?? 0
     this.phase = save.phase
     this.dumpsterLoad = save.dumpsterLoad
@@ -270,7 +296,7 @@ export class Engine {
     const avgWalk = LOT_HALF * 0.8
     const workerTrip = (avgWalk * 2) / stats.walkSpeed(u) + stats.pullSeconds(u)
     const workerRate = stats.workerCount(u) / workerTrip
-    const truckRate = stats.truckCapacity(u) / (stats.truckTripSeconds(u) + LOAD_SECONDS)
+    const truckRate = Math.min(stats.truckCargo(u), stats.dumpsterCapacity(u)) / (stats.truckTripSeconds(u) + LOAD_SECONDS)
     const available = this.bricksLeft + this.rubble.length + this.dumpsterLoad
     let hauled = Math.min(Math.floor(Math.min(workerRate, truckRate) * seconds), available)
     const total = hauled
@@ -350,8 +376,17 @@ export class Engine {
 
   // ── Player actions ────────────────────────────────────────────────────
 
+  private lastBreakAt = -Infinity
+
+  // Enforced here rather than only in the button so auto-clickers or rapid
+  // taps can't bypass it.
+  breakCooldownLeft(): number {
+    return Math.max(0, BREAK_COOLDOWN_SECONDS - (performance.now() - this.lastBreakAt) / 1000)
+  }
+
   breakTap() {
-    if (this.phase !== 'demolishing') return 0
+    if (this.phase !== 'demolishing' || this.breakCooldownLeft() > 0) return 0
+    this.lastBreakAt = performance.now()
     let broke = 0
     for (let n = 0; n < stats.bricksPerTap(this.upgrades); n++) {
       const i = this.pickTopBrick(null)
@@ -497,7 +532,10 @@ export class Engine {
     dt = Math.min(dt, 0.1)
     this.time += dt
     const u = this.upgrades
-    const capacity = stats.truckCapacity(u)
+    const capacity = stats.dumpsterCapacity(u)
+    // The truck heads over once the dumpster holds a full truckload (or is
+    // full, if the dumpster is the smaller of the two).
+    const haulAt = Math.min(capacity, stats.truckCargo(u))
 
     for (const w of this.workers) {
       switch (w.state) {
@@ -534,8 +572,10 @@ export class Engine {
             w.target = null
             if (w.carrying) {
               w.state = 'toDumpster'
-              w.tx = DUMPSTER.x + ((w.id % 5) - 2) * 0.35
-              w.tz = DUMPSTER.z - 0.7
+              // Drop-off spot behind the dumpster, clear of even the biggest
+              // (compactor) version of it.
+              w.tx = DUMPSTER.x + ((w.id % 5) - 2) * 0.4
+              w.tz = DUMPSTER.z - 1.3
             } else {
               w.state = 'idle'
             }
@@ -561,7 +601,7 @@ export class Engine {
     const trip = stats.truckTripSeconds(u)
     switch (this.truckState) {
       case 'away':
-        if (this.dumpsterLoad >= capacity || (this.dumpsterLoad > 0 && this.siteEmpty())) {
+        if (this.dumpsterLoad >= haulAt || (this.dumpsterLoad > 0 && this.siteEmpty())) {
           this.truckState = 'arriving'
           this.truckTimer = trip / 2
           this.markDirty()
@@ -578,8 +618,8 @@ export class Engine {
       case 'loading':
         this.truckTimer -= dt
         if (this.truckTimer <= 0) {
-          const cargo = this.dumpsterLoad
-          this.dumpsterLoad = 0
+          const cargo = Math.min(this.dumpsterLoad, stats.truckCargo(u))
+          this.dumpsterLoad -= cargo
           this.pay(cargo)
           this.truckState = 'leaving'
           this.truckTimer = trip / 2
@@ -594,10 +634,73 @@ export class Engine {
         break
     }
 
+    this.tickBonus()
     this.checkCleared()
     this.recentHauls = this.recentHauls.filter((h) => this.time - h.t < 60)
 
     if (this.dirty && this.time - this.lastFlush > 0.12) this.flush()
+  }
+
+  // ── Bonus drop ────────────────────────────────────────────────────────
+
+  bonusDrop: { amount: number; droppedAt: number; expiresAt: number } | null = null
+  lastBonusClaim: { at: number; amount: number } | null = null
+  private trailerStart = -1
+  private trailerDropped = false
+  private nextBonusAt = nextBonusDelay()
+  private lastBonusSecond = -1
+
+  // -1 when no trailer is passing, otherwise 0→1 across the screen.
+  trailerProgress(): number {
+    return this.trailerStart < 0 ? -1 : Math.min(1, (this.time - this.trailerStart) / TRAILER_SECONDS)
+  }
+
+  private tickBonus() {
+    if (BONUS_DROPS_ENABLED && this.trailerStart < 0 && !this.bonusDrop && this.phase === 'demolishing' && this.time >= this.nextBonusAt) {
+      this.startTrailer()
+    }
+    if (this.trailerStart >= 0) {
+      const p = this.trailerProgress()
+      if (!this.trailerDropped && p >= TRAILER_DROP_AT) {
+        this.trailerDropped = true
+        this.bonusDrop = {
+          amount: stats.truckCargo(this.upgrades) * 2,
+          droppedAt: this.time,
+          expiresAt: this.time + BONUS_LIFETIME_SECONDS,
+        }
+        this.markDirty()
+      }
+      if (p >= 1) {
+        this.trailerStart = -1
+        this.nextBonusAt = this.time + nextBonusDelay()
+      }
+    }
+    if (this.bonusDrop) {
+      if (this.time >= this.bonusDrop.expiresAt) {
+        this.bonusDrop = null
+        this.markDirty()
+      } else {
+        const second = Math.ceil(this.bonusDrop.expiresAt - this.time)
+        if (second !== this.lastBonusSecond) {
+          this.lastBonusSecond = second
+          this.markDirty()
+        }
+      }
+    }
+  }
+
+  // Also callable from the console in dev to test without waiting minutes.
+  startTrailer() {
+    this.trailerStart = this.time
+    this.trailerDropped = false
+  }
+
+  claimBonusDrop() {
+    if (!this.bonusDrop) return
+    this.dumpsterLoad += this.bonusDrop.amount
+    this.lastBonusClaim = { at: this.time, amount: this.bonusDrop.amount }
+    this.bonusDrop = null
+    this.markDirty()
   }
 
   truckProgress(): number {
@@ -646,12 +749,15 @@ export class Engine {
         bricksLeft: this.bricksLeft,
         rubbleLeft: this.rubble.length,
         dumpsterLoad: this.dumpsterLoad,
-        truckCapacity: stats.truckCapacity(this.upgrades),
+        dumpsterCapacity: stats.dumpsterCapacity(this.upgrades),
         truckState: this.truckState,
         phase: this.phase,
         incomePerMinute: Math.round((earned / span) * 60),
         offlineEarnings: this.offlineEarnings,
         sitesCleared: this.sitesCleared,
+        bonusDrop: this.bonusDrop
+          ? { amount: this.bonusDrop.amount, secondsLeft: Math.ceil(this.bonusDrop.expiresAt - this.time) }
+          : null,
       }
     }
     return this.snapshot

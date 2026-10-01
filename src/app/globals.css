@@ -125,3 +125,67 @@
     transform: translate(-50%, -150%);
   }
 }
+
+/* BREAK! cooldown: the ring draws itself back to full as the cooldown runs. */
+@keyframes cooldown-ring {
+  from {
+    stroke-dashoffset: 100;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+/* Loading screen: bricks drop in and stack into the R, then the tile
+   breathes while the 3D models finish loading. */
+@keyframes brick-drop {
+  0% {
+    opacity: 0;
+    transform: translateY(-60px) rotate(-8deg);
+  }
+  70% {
+    opacity: 1;
+    transform: translateY(2px) rotate(0);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.loading-brick {
+  opacity: 0;
+  animation: brick-drop 0.35s ease-in both;
+}
+@keyframes tile-breathe {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.04);
+  }
+}
+.loading-tile {
+  animation: tile-breathe 1.6s ease-in-out 2s infinite;
+}
+@keyframes loading-sweep {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(300%);
+  }
+}
+.loading-sweep {
+  animation: loading-sweep 1.2s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .loading-brick {
+    animation: none;
+    opacity: 1;
+  }
+  .loading-tile,
+  .loading-sweep {
+    animation: none;
+  }
+}

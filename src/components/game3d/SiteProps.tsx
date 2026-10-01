@@ -1,16 +1,13 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useState } from 'react'
-import { useFrame } from '@react-three/fiber'
-import { Html, useTexture } from '@react-three/drei'
+import { useEffect, useMemo, useState } from 'react'
+import { useTexture } from '@react-three/drei'
 import * as THREE from 'three'
 import { getAdByPlacement, type AdCreative } from '@/app/actions'
-import { DUMPSTER, TRUCK_STOP, stats, type Engine } from '@/lib/game/engine'
-import Prop from './Prop'
 
-const LOGO_URL = '/rubble-icon-512.png'
+export const LOGO_URL = '/rubble-icon-512.png'
 
-function Logo({ size, position, rotationY = 0 }: { size: number; position: [number, number, number]; rotationY?: number }) {
+export function Logo({ size, position, rotationY = 0 }: { size: number; position: [number, number, number]; rotationY?: number }) {
   const texture = useTexture(LOGO_URL)
   texture.colorSpace = THREE.SRGBColorSpace
   return (
@@ -18,73 +15,6 @@ function Logo({ size, position, rotationY = 0 }: { size: number; position: [numb
       <planeGeometry args={[size, size]} />
       <meshStandardMaterial map={texture} transparent roughness={0.6} />
     </mesh>
-  )
-}
-
-export function Dumpster({ engine }: { engine: Engine }) {
-  const fill = useRef<THREE.Mesh>(null)
-  const label = useRef<HTMLDivElement>(null)
-
-  useFrame(() => {
-    const cap = stats.truckCapacity(engine.upgrades)
-    const ratio = Math.min(1, engine.dumpsterLoad / cap)
-    if (fill.current) {
-      fill.current.visible = ratio > 0
-      fill.current.scale.y = Math.max(0.01, ratio)
-      fill.current.position.y = 0.25 + (0.75 * ratio) / 2
-    }
-    if (label.current) {
-      const full = engine.dumpsterLoad >= cap
-      label.current.textContent = full ? 'FULL' : `${engine.dumpsterLoad}/${cap}`
-      label.current.style.background = full ? '#e23f3f' : 'rgba(0,0,0,0.6)'
-    }
-  })
-
-  return (
-    <group position={[DUMPSTER.x, 0, DUMPSTER.z]}>
-      <Prop url="/models/roads/dumpster.glb" size={1.7} fit="width" />
-      <mesh ref={fill} position={[0, 0.5, 0]}>
-        <boxGeometry args={[1.35, 0.75, 1.15]} />
-        <meshStandardMaterial color="#b4553c" roughness={0.9} />
-      </mesh>
-      <Logo size={0.55} position={[0, 0.5, 0.72]} />
-      <Html position={[0, 1.6, 0]} center zIndexRange={[5, 0]}>
-        <div
-          ref={label}
-          className="pointer-events-none whitespace-nowrap rounded-full px-2 py-0.5 font-display text-xs text-white"
-        />
-      </Html>
-    </group>
-  )
-}
-
-const TRUCK_FAR = 34
-
-export function Truck({ engine }: { engine: Engine }) {
-  const group = useRef<THREE.Group>(null)
-
-  useFrame(() => {
-    const g = group.current
-    if (!g) return
-    const state = engine.truckState
-    g.visible = state !== 'away'
-    const p = engine.truckProgress()
-    const x =
-      state === 'arriving'
-        ? THREE.MathUtils.lerp(-TRUCK_FAR, TRUCK_STOP.x, 1 - Math.pow(1 - p, 2))
-        : state === 'leaving'
-          ? THREE.MathUtils.lerp(TRUCK_FAR, TRUCK_STOP.x, p * p)
-          : TRUCK_STOP.x
-    g.position.set(x, 0.02, TRUCK_STOP.z)
-  })
-
-  return (
-    <group ref={group} visible={false}>
-      <Prop url="/models/vehicles/garbage-truck.glb" size={1.9} rotationY={Math.PI / 2} />
-      {/* Logo on the side facing the camera (and the far side). */}
-      <Logo size={0.8} position={[-0.3, 1.05, 0.87]} />
-      <Logo size={0.8} position={[-0.3, 1.05, -0.87]} rotationY={Math.PI} />
-    </group>
   )
 }
 

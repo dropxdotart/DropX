@@ -1,6 +1,9 @@
 'use client'
 
+import { useRef } from 'react'
+import { useFrame } from '@react-three/fiber'
 import { useGLTF } from '@react-three/drei'
+import * as THREE from 'three'
 import { LOT_HALF, ROAD_Z } from '@/lib/game/engine'
 import Prop from './Prop'
 import { Billboard } from './SiteProps'
@@ -31,6 +34,53 @@ for (let t = -LOT_HALF + 1; t <= LOT_HALF - 1; t += 2) {
   // Leave an entrance gap on the front side for trucks.
   if (Math.abs(t) > 2.5) FENCE_SEGMENTS.push({ pos: [t, 0, LOT_HALF], rot: Math.PI / 2 })
   FENCE_SEGMENTS.push({ pos: [LOT_HALF, 0, t], rot: 0 })
+}
+
+// Background cars looping along the two roads. The truck owns the near lane
+// of the front road (heading +x), so front-road traffic uses the far lane.
+const TRAFFIC_LIMIT = 36
+const CARS: { url: string; lane: 'front' | 'sideIn' | 'sideOut'; offset: number; speed: number }[] = [
+  { url: '/models/vehicles/taxi.glb', lane: 'front', offset: 0, speed: 5 },
+  { url: '/models/vehicles/van.glb', lane: 'front', offset: 38, speed: 4.2 },
+  { url: '/models/vehicles/sedan.glb', lane: 'sideIn', offset: 10, speed: 5.5 },
+  { url: '/models/vehicles/suv.glb', lane: 'sideIn', offset: 46, speed: 4.6 },
+  { url: '/models/vehicles/sedan.glb', lane: 'sideOut', offset: 25, speed: 5 },
+  { url: '/models/vehicles/taxi.glb', lane: 'sideOut', offset: 60, speed: 4.4 },
+]
+
+function Traffic() {
+  const refs = useRef<(THREE.Group | null)[]>([])
+
+  useFrame(({ clock }) => {
+    const t = clock.getElapsedTime()
+    CARS.forEach((car, i) => {
+      const g = refs.current[i]
+      if (!g) return
+      const span = TRAFFIC_LIMIT * 2
+      const d = ((t * car.speed + car.offset) % span) - TRAFFIC_LIMIT
+      if (car.lane === 'front') g.position.set(-d, 0.02, ROAD_OFFSET + 0.65)
+      else if (car.lane === 'sideIn') g.position.set(ROAD_OFFSET - 0.65, 0.02, d)
+      else g.position.set(ROAD_OFFSET + 0.65, 0.02, -d)
+    })
+  })
+
+  // Models face +z: front-road cars head -x, side-road lanes head ±z.
+  const headings = { front: -Math.PI / 2, sideIn: 0, sideOut: Math.PI }
+
+  return (
+    <>
+      {CARS.map((car, i) => (
+        <group
+          key={i}
+          ref={(el) => {
+            refs.current[i] = el
+          }}
+        >
+          <Prop url={car.url} size={1.45} rotationY={headings[car.lane]} />
+        </group>
+      ))}
+    </>
+  )
 }
 
 export default function World() {
@@ -73,7 +123,6 @@ export default function World() {
       <Prop url="/models/roads/construction-light.glb" size={1.3} position={[2.8, 0, LOT_HALF + 0.6]} />
       <Prop url="/models/roads/construction-cone.glb" size={0.5} position={[-1.6, 0, LOT_HALF + 1]} />
       <Prop url="/models/roads/construction-cone.glb" size={0.5} position={[1.6, 0, LOT_HALF + 1]} />
-      <Prop url="/models/vehicles/tractor-shovel.glb" size={1.6} position={[LOT_HALF - 1.4, 0, -LOT_HALF + 1.6]} rotationY={-Math.PI / 4} />
 
       {/* Ad billboards just behind the lot, angled toward the camera. */}
       <Billboard position={[-2, 0, -LOT_HALF - 2.6]} rotationY={Math.PI / 8} />
@@ -84,13 +133,15 @@ export default function World() {
       <Prop url="/models/commercial/building-a.glb" size={7} position={[-17, 0, -7]} rotationY={Math.PI / 2} />
       <Prop url="/models/commercial/building-c.glb" size={5} position={[-17, 0, 3]} rotationY={Math.PI / 2} />
       <Prop url="/models/commercial/building-e.glb" size={5} position={[-7, 0, -17]} />
-      <Prop url="/models/suburban/building-type-c.glb" size={4} position={[4, 0, -16]} />
-      <Prop url="/models/suburban/building-type-f.glb" size={4.5} position={[-16, 0, 11]} rotationY={Math.PI / 2} />
-      <Prop url="/models/suburban/building-type-a.glb" size={3.5} position={[11, 0, -16]} />
+      <Prop url="/models/suburban/building-type-c.glb" size={4} position={[3, 0, -16]} />
 
-      {/* Parked cars along the front road */}
-      <Prop url="/models/vehicles/taxi.glb" size={1.5} position={[-6, 0, ROAD_OFFSET + 0.7]} rotationY={Math.PI / 2} />
-      <Prop url="/models/vehicles/sedan.glb" size={1.5} position={[ROAD_OFFSET - 0.7, 0, -9]} />
+      {/* Houses across the two roads — kept clear of the 3-unit road bands. */}
+      <Prop url="/models/suburban/building-type-f.glb" size={4.5} position={[-12, 0, ROAD_OFFSET + 5.5]} rotationY={Math.PI} />
+      <Prop url="/models/suburban/building-type-a.glb" size={3.5} position={[-4, 0, ROAD_OFFSET + 5]} rotationY={Math.PI} />
+      <Prop url="/models/suburban/building-type-a.glb" size={3.5} position={[ROAD_OFFSET + 5, 0, -12]} rotationY={-Math.PI / 2} />
+      <Prop url="/models/suburban/building-type-c.glb" size={4} position={[ROAD_OFFSET + 5.5, 0, -3]} rotationY={-Math.PI / 2} />
+
+      <Traffic />
 
       {TREES.map(([x, z, h], i) => (
         <Prop
