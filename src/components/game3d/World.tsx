@@ -104,7 +104,8 @@ function Roads() {
 // edges are a stone quay.
 const LAND_EDGE = EXTENT + 2.7
 const BEACH_WIDTH = 6
-const UMBRELLAS = [-44, -31, -19, -6, 8, 21, 33, 47]
+// None right behind the Brick Yard: it grows back onto a pier there.
+const UMBRELLAS = [-44, -31, -19, 19, 33, 47]
 
 function Shoreline() {
   const buoys = useRef<THREE.Group>(null)

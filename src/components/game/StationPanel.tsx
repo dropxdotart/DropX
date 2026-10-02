@@ -1,7 +1,7 @@
 'use client'
 
 import { X } from 'lucide-react'
-import { upgradeCost, UPGRADE_INFO, type Engine, type Snapshot } from '@/lib/game/engine'
+import { upgradeCost, upgradeLock, UPGRADE_INFO, type Engine, type Snapshot } from '@/lib/game/engine'
 import { getStation, nextMilestone, tierFor, type StationId } from '@/lib/game/stations'
 import { formatNumber } from './format'
 
@@ -57,13 +57,20 @@ export default function StationPanel({
         <div className="mt-3 space-y-2">
           {station.upgrades.map((key) => {
             const cost = upgradeCost(key, u[key])
-            const affordable = snap.scrap >= cost
+            const lock = upgradeLock(key, u, snap.level)
+            const affordable = snap.scrap >= cost && !lock
             return (
               <div key={key} className="rounded-2xl bg-[#eef2f8] p-3">
                 <div className="flex items-center justify-between gap-3">
                   <div className="min-w-0">
                     <p className="font-display text-base leading-tight text-[#1d3a6e]">{UPGRADE_INFO[key].label}</p>
-                    {station.effects(u).map((e) => {
+                    {(() => {
+                      // Only what this upgrade changes (all of them if none
+                      // move, e.g. at max or between milestones).
+                      const all = station.effects(u)
+                      const moving = all.filter((e) => e.next(key) !== e.now)
+                      return moving.length ? moving : all
+                    })().map((e) => {
                       const next = e.next(key)
                       return (
                         <p key={e.label} className="text-xs leading-tight text-[#5b6f93]">
@@ -81,7 +88,7 @@ export default function StationPanel({
                     }}
                     className="shrink-0 rounded-xl bg-[#3fbf4a] px-3 py-2 font-display text-sm text-white shadow-[0_3px_0_#2a8a33] active:translate-y-[3px] active:shadow-none disabled:bg-[#b9c2cf] disabled:shadow-[0_3px_0_#97a1ae]"
                   >
-                    🧱 {formatNumber(cost)}
+                    {lock ? `🔒 ${lock}` : `🧱 ${formatNumber(cost)}`}
                   </button>
                 </div>
               </div>

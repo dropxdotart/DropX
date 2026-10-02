@@ -2,13 +2,20 @@
 
 import { createAdminClient } from '@/lib/supabase/admin'
 import { usernameProblem } from '@/lib/usernames'
+import type { LiveEventKind } from '@/lib/liveEvents'
 
 // The game's link to its player record (see migration 008). Players never
 // sign in: the device's random player id is the key, and only the game on
 // that device knows it. Everything runs with the service role here.
 
-export type RewardKind = 'bricks' | 'set_bricks' | 'set_level' | 'boost' | 'upgrade' | 'reset'
-export type Grant = { kind: RewardKind; amount: number; upgrade: string | null; message: string | null; source: string }
+export type RewardKind = 'bricks' | 'set_bricks' | 'set_level' | 'boost' | 'upgrade' | 'reset' | 'restore'
+export type Grant = { kind: RewardKind; amount: number; upgrade: string | null; message: string | null; source: string; data?: unknown }
+export type LiveInfo = {
+  events: { id: string; kind: LiveEventKind; value: number; startsAt: string; endsAt: string }[]
+  broadcasts: { id: string; title: string; body: string | null; style: 'popup' | 'banner'; endsAt: string }[]
+}
+// A ban the game must show (until = ISO end, or null when permanent).
+export type Ban = { until: string | null; reason: string }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 // No 0/O or 1/I/L, so IDs read out loud without mix-ups.
@@ -58,8 +65,9 @@ export async function syncPlayer(
   save: unknown,
   session?: SessionInfo,
   activity: ActivityIn[] = []
-): Promise<{ shortId: string | null; username: string | null; grants: Grant[] }> {
-  if (!UUID.test(id)) return { shortId: null, username: null, grants: [] }
+): Promise<{ shortId: string | null; username: string | null; grants: Grant[]; ban: Ban | null; live: LiveInfo; tuning: unknown }> {
+  const noLive: LiveInfo = { events: [], broadcasts: [] }
+  if (!UUID.test(id)) return { shortId: null, username: null, grants: [], ban: null, live: noLive, tuning: null }
   const shortId = await ensurePlayer(id)
   const admin = createAdminClient()
   const num = (n: number) => (Number.isFinite(n) ? n : 0)
@@ -103,13 +111,44 @@ export async function syncPlayer(
     .update({ applied_at: new Date().toISOString() })
     .eq('player_id', id)
     .is('applied_at', null)
-    .select('kind, amount, upgrade, message, source, created_at')
+    .select('kind, amount, upgrade, message, source, data, created_at')
   const grants = (data ?? [])
     .sort((a, b) => a.created_at.localeCompare(b.created_at))
-    .map(({ kind, amount, upgrade, message, source }) => ({ kind, amount, upgrade, message, source }))
+    .map(({ kind, amount, upgrade, message, source, data }) => ({ kind, amount, upgrade, message, source, ...(data ? { data } : {}) }))
+  // Gifts to everyone: each live one is claimed once per player (the
+  // claim's primary key makes a second claim a no-op).
+  const nowIso = new Date().toISOString()
+  const [{ data: liveGifts }, { data: liveEvents }, { data: broadcasts }, { data: tuningRow }] = await Promise.all([
+    admin.from('global_gifts').select('id, kind, amount, upgrade, message').eq('active', true).lte('starts_at', nowIso).gt('ends_at', nowIso),
+    admin.from('live_events').select('id, kind, value, starts_at, ends_at').eq('active', true).lte('starts_at', nowIso).gt('ends_at', nowIso),
+    admin.from('broadcasts').select('id, title, body, style, ends_at').eq('active', true).lte('starts_at', nowIso).gt('ends_at', nowIso),
+    admin.from('game_settings').select('value').eq('key', 'tuning').maybeSingle(),
+  ])
+  if (liveGifts?.length) {
+    const { data: claimed } = await admin
+      .from('global_gift_claims')
+      .upsert(
+        liveGifts.map((g) => ({ gift_id: g.id, player_id: id })),
+        { onConflict: 'gift_id,player_id', ignoreDuplicates: true }
+      )
+      .select('gift_id')
+    for (const c of claimed ?? []) {
+      const g = liveGifts.find((x) => x.id === c.gift_id)
+      if (!g) continue
+      const grant: Grant = { kind: g.kind, amount: g.amount, upgrade: g.upgrade, message: g.message, source: 'gift_all' }
+      grants.push(grant)
+      await admin.from('player_grants').insert({ player_id: id, ...grant, applied_at: nowIso })
+    }
+  }
+  const live: LiveInfo = {
+    events: (liveEvents ?? []).map((e) => ({ id: e.id, kind: e.kind as LiveEventKind, value: e.value, startsAt: e.starts_at, endsAt: e.ends_at })),
+    broadcasts: (broadcasts ?? []).map((b) => ({ id: b.id, title: b.title, body: b.body, style: b.style as 'popup' | 'banner', endsAt: b.ends_at })),
+  }
   // The current name (an admin may have changed or cleared it).
-  const { data: me } = await admin.from('players').select('username').eq('id', id).maybeSingle()
-  return { shortId, username: me?.username ?? null, grants }
+  const { data: me } = await admin.from('players').select('username, ban_until, ban_permanent, ban_reason').eq('id', id).maybeSingle()
+  const banned = me && (me.ban_permanent || (me.ban_until && new Date(me.ban_until).getTime() > Date.now()))
+  const ban = banned ? { until: me.ban_permanent ? null : me.ban_until, reason: me.ban_reason ?? '' } : null
+  return { shortId, username: me?.username ?? null, grants, ban, live, tuning: tuningRow?.value ?? null }
 }
 
 // Sets this player's username: 3–16 letters/numbers/_, no banned words,

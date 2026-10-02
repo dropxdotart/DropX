@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { ChevronRight, Lock, X } from 'lucide-react'
 import { getBuilding } from '@/lib/game/buildings'
-import type { Engine, PlotSnap, Snapshot } from '@/lib/game/engine'
+import { buildPrice, type Engine, type PlotSnap, type Snapshot } from '@/lib/game/engine'
 import { PLOT_SLOTS } from '@/lib/game/plots'
 import { formatNumber } from './format'
 
@@ -87,7 +87,7 @@ export default function PlotsSheet({
                 </div>
                 {next && (
                   <button
-                    disabled={locked || snap.scrap < slot.cost}
+                    disabled={locked || snap.scrap < buildPrice(slot.cost)}
                     onClick={() => {
                       const err = engine.buyPlot()
                       setError(err)
@@ -96,7 +96,7 @@ export default function PlotsSheet({
                     }}
                     className="shrink-0 rounded-xl bg-[#3fbf4a] px-3 py-2 font-display text-sm text-white shadow-[0_3px_0_#2a8a33] active:translate-y-[3px] active:shadow-none disabled:bg-[#b9c2cf] disabled:shadow-[0_3px_0_#97a1ae]"
                   >
-                    🧱 {formatNumber(slot.cost)}
+                    🧱 {formatNumber(buildPrice(slot.cost))}
                   </button>
                 )}
               </div>

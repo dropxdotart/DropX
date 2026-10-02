@@ -6,6 +6,7 @@ import {
   TRUCK_UPGRADE_INFO,
   truckUpgradeCost,
   upgradeCost,
+  upgradeLock,
   type Engine,
   type Snapshot,
   type TruckSnap,
@@ -41,12 +42,14 @@ export default function TruckPanel({
   snap,
   truck,
   onPickTruck,
+  onOpenYard,
   onClose,
 }: {
   engine: Engine
   snap: Snapshot
   truck: number
   onPickTruck: (truck: number) => void
+  onOpenYard: () => void
   onClose: () => void
 }) {
   const t = snap.trucks[truck] ?? snap.trucks[0]
@@ -67,6 +70,7 @@ export default function TruckPanel({
     },
   ]
   const fleetCost = upgradeCost('fleet', snap.upgrades.fleet)
+  const yardFull = upgradeLock('fleet', snap.upgrades, snap.level) !== null
 
   return (
     <div className="pointer-events-auto fixed inset-x-0 bottom-0 z-40 flex justify-center">
@@ -137,23 +141,40 @@ export default function TruckPanel({
               />
             </div>
           ))}
-          <div className="flex items-center justify-between gap-3 rounded-2xl border-2 border-dashed border-[#c9d3e3] p-3">
-            <div className="min-w-0">
-              <p className="font-display text-base leading-tight text-[#1d3a6e]">Buy a truck</p>
-              <p className="text-xs leading-tight text-[#5b6f93]">
-                Trucks: {snap.trucks.length} <span className="font-bold text-[#2a9a3a]">→ {snap.trucks.length + 1}</span> · starts as a
-                Flatbed
-              </p>
+          {yardFull ? (
+            <div className="flex items-center justify-between gap-3 rounded-2xl border-2 border-dashed border-[#c9d3e3] p-3">
+              <div className="min-w-0">
+                <p className="font-display text-base leading-tight text-[#1d3a6e]">Yard full</p>
+                <p className="text-xs leading-tight text-[#5b6f93]">
+                  {snap.trucks.length} of {stats.yardCapacity(snap.upgrades)} bays used · expand the Brick Yard to park more trucks
+                </p>
+              </div>
+              <button
+                onClick={onOpenYard}
+                className="shrink-0 rounded-xl bg-[#2d7ff9] px-3 py-2 font-display text-sm text-white shadow-[0_3px_0_#1d5fc4] active:translate-y-[3px] active:shadow-none"
+              >
+                🏭 Yard
+              </button>
             </div>
-            <BuyButton
-              cost={fleetCost}
-              scrap={snap.scrap}
-              onBuy={() => {
-                if (engine.buyUpgrade('fleet')) onPickTruck(snap.trucks.length)
-                engine.notify()
-              }}
-            />
-          </div>
+          ) : (
+            <div className="flex items-center justify-between gap-3 rounded-2xl border-2 border-dashed border-[#c9d3e3] p-3">
+              <div className="min-w-0">
+                <p className="font-display text-base leading-tight text-[#1d3a6e]">Buy a truck</p>
+                <p className="text-xs leading-tight text-[#5b6f93]">
+                  Trucks: {snap.trucks.length} <span className="font-bold text-[#2a9a3a]">→ {snap.trucks.length + 1}</span> · starts as a
+                  Flatbed
+                </p>
+              </div>
+              <BuyButton
+                cost={fleetCost}
+                scrap={snap.scrap}
+                onBuy={() => {
+                  if (engine.buyUpgrade('fleet')) onPickTruck(snap.trucks.length)
+                  engine.notify()
+                }}
+              />
+            </div>
+          )}
         </div>
       </div>
     </div>

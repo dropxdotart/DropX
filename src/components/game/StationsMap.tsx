@@ -1,8 +1,8 @@
 'use client'
 
 import { ChevronRight, X } from 'lucide-react'
-import { upgradeCost, type Snapshot } from '@/lib/game/engine'
-import { STATIONS, dumpstersAffordable, fleetAffordable, tierFor, type StationId } from '@/lib/game/stations'
+import { type Snapshot } from '@/lib/game/engine'
+import { STATIONS, dumpstersAffordable, fleetAffordable, upgradeReady, tierFor, type StationId } from '@/lib/game/stations'
 
 // The Upgrades button's overview: every upgradable thing on the site.
 // Picking one closes this and flies the camera over to it with its panel.
@@ -39,7 +39,7 @@ export default function StationsMap({
                 ? fleetAffordable(snap)
                 : s.id === 'dumpster'
                   ? dumpstersAffordable(here, snap.scrap)
-                  : s.upgrades.some((k) => snap.scrap >= upgradeCost(k, snap.upgrades[k]))
+                  : s.upgrades.some((k) => upgradeReady(k, snap))
             // Trucks each have their own level, so show the fleet size.
             const subtitle =
               s.id === 'truck'

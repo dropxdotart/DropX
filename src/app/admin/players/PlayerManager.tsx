@@ -1,7 +1,8 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { ChevronDown, Loader2, Search } from 'lucide-react'
+import Link from 'next/link'
+import { ChevronDown, Eye, Loader2, Search } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -9,6 +10,7 @@ import { Select } from '@/components/ui/select'
 import { rewardText, UPGRADE_OPTIONS } from '@/lib/rewards'
 import { fmtDuration } from '../format'
 import { getPlayerActivity, type ActivityItem } from '../statsActions'
+import { banPlayer, listBackups, restoreBackup, unbanPlayer, type BackupRow } from './actions'
 import { adminSetUsername, cancelGrant, listGrants, listPlayers, resetPlayer, sendGrant, type GrantRow, type PlayerRow } from './actions'
 
 function fmt(n: number) {
@@ -72,17 +74,170 @@ function PlayerActivity({ playerId }: { playerId: string }) {
   )
 }
 
+function isBanned(p: PlayerRow) {
+  return p.ban_permanent || (!!p.ban_until && new Date(p.ban_until).getTime() > Date.now())
+}
+
+function when(iso: string) {
+  return new Date(iso).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
+}
+
+const BAN_LENGTHS: { label: string; hours: number | null }[] = [
+  { label: '1 hour', hours: 1 },
+  { label: '1 day', hours: 24 },
+  { label: '7 days', hours: 24 * 7 },
+  { label: '30 days', hours: 24 * 30 },
+  { label: 'Custom', hours: -1 },
+  { label: 'Permanent', hours: null },
+]
+
+// Ban (with a required reason the player sees) or lift a ban.
+function BanPanel({ player, onChange }: { player: PlayerRow; onChange: (p: Partial<PlayerRow>) => void }) {
+  const [reason, setReason] = useState('')
+  const [length, setLength] = useState<number | null>(24)
+  const [custom, setCustom] = useState('')
+  const [busy, setBusy] = useState(false)
+  const banned = isBanned(player)
+
+  const ban = async () => {
+    const until = length === null ? null : length === -1 ? (custom ? new Date(custom).toISOString() : '') : new Date(Date.now() + length * 3600e3).toISOString()
+    if (until === '') {
+      toast.error('Pick when the ban ends')
+      return
+    }
+    setBusy(true)
+    const r = await banPlayer(player.id, reason, until).catch(() => ({ ok: false as const, message: 'Something went wrong' }))
+    setBusy(false)
+    if (!r.ok) {
+      toast.error(r.message)
+      return
+    }
+    toast.success('Banned — they see it on their next sync')
+    setReason('')
+    onChange({ ban_until: until, ban_permanent: until === null, ban_reason: reason.trim() })
+  }
+
+  const unban = async () => {
+    setBusy(true)
+    const r = await unbanPlayer(player.id).catch(() => ({ ok: false as const, message: 'Something went wrong' }))
+    setBusy(false)
+    if (!r.ok) {
+      toast.error(r.message)
+      return
+    }
+    toast.success('Unbanned')
+    onChange({ ban_until: null, ban_permanent: false, ban_reason: null })
+  }
+
+  if (banned)
+    return (
+      <div className="space-y-1.5 rounded-lg border border-red-200 bg-red-50/60 p-2.5">
+        <p className="text-xs font-semibold uppercase tracking-wide text-red-700">Banned</p>
+        <div className="flex items-center justify-between gap-2">
+          <p className="min-w-0 text-xs text-red-800">
+            {player.ban_permanent ? 'Permanently' : `Until ${when(player.ban_until!)}`}
+            {player.ban_reason ? ` · “${player.ban_reason}”` : ''}
+          </p>
+          <Button variant="secondary" disabled={busy} className="shrink-0" onClick={unban}>
+            Unban
+          </Button>
+        </div>
+      </div>
+    )
+
+  return (
+    <div className="space-y-1.5">
+      <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Ban</p>
+      <div className="flex flex-wrap gap-1.5">
+        {BAN_LENGTHS.map((l) => (
+          <button
+            key={l.label}
+            type="button"
+            onClick={() => setLength(l.hours)}
+            className={`rounded-full px-3 py-1 text-xs font-medium ${length === l.hours ? 'bg-red-600 text-white' : 'bg-secondary'}`}
+          >
+            {l.label}
+          </button>
+        ))}
+      </div>
+      {length === -1 && <Input type="datetime-local" value={custom} onChange={(e) => setCustom(e.target.value)} className="min-w-0" />}
+      <div className="flex gap-2">
+        <Input value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Reason (the player sees this)" maxLength={200} />
+        <Button variant="secondary" className="shrink-0 text-red-700" disabled={busy || !reason.trim()} onClick={ban}>
+          Ban
+        </Button>
+      </div>
+    </div>
+  )
+}
+
+// Saves taken right before each admin change; restoring one undoes it.
+function BackupsPanel({ playerId, refreshKey, onRestored }: { playerId: string; refreshKey: number; onRestored: () => void }) {
+  const [rows, setRows] = useState<BackupRow[] | null>(null)
+  const [busy, setBusy] = useState(false)
+  useEffect(() => {
+    let live = true
+    listBackups(playerId)
+      .then((r) => live && setRows(r))
+      .catch(() => live && setRows([]))
+    return () => {
+      live = false
+    }
+  }, [playerId, refreshKey])
+  return (
+    <div className="space-y-1.5">
+      <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Backups</p>
+      <p className="text-xs text-muted-foreground">Taken right before every change you make here. Restoring one puts that save back on their next sync.</p>
+      {rows === null && <p className="text-xs text-muted-foreground">Loading…</p>}
+      {rows?.length === 0 && <p className="text-xs text-muted-foreground">None yet.</p>}
+      {rows?.map((b) => (
+        <div key={b.id} className="flex items-center justify-between gap-2 text-xs">
+          <span className="min-w-0 truncate">
+            {when(b.created_at)} · {b.reason.replace(/^Before: /, 'before ')}
+            <span className="text-muted-foreground">
+              {' '}
+              · Lv {b.level} · 🧱 {fmt(b.scrap)}
+            </span>
+          </span>
+          <button
+            type="button"
+            disabled={busy}
+            className="shrink-0 rounded-full bg-secondary px-2 py-0.5 font-medium disabled:opacity-50"
+            onClick={async () => {
+              if (!confirm(`Restore the save from ${when(b.created_at)}? Their current progress is backed up first.`)) return
+              setBusy(true)
+              const r = await restoreBackup(b.id).catch(() => ({ ok: false as const, message: 'Something went wrong' }))
+              setBusy(false)
+              if (!r.ok) {
+                toast.error(r.message)
+                return
+              }
+              toast.success('Restored — their game switches on its next sync')
+              onRestored()
+            }}
+          >
+            Restore
+          </button>
+        </div>
+      ))}
+    </div>
+  )
+}
+
 // One player's panel: set their balance, send a gift, and see what's
 // been sent (pending gifts can be cancelled before they're delivered).
 function PlayerDetail({
   player,
   onRenamed,
   onReset,
+  onPatch,
 }: {
   player: PlayerRow
   onRenamed: (name: string | null) => void
   onReset: () => void
+  onPatch: (patch: Partial<PlayerRow>) => void
 }) {
+  const [backupKey, setBackupKey] = useState(0)
   const [grants, setGrants] = useState<GrantRow[] | null>(null)
   const [name, setName] = useState(player.username ?? '')
   const [renaming, setRenaming] = useState(false)
@@ -107,12 +262,17 @@ function PlayerDetail({
   const [message, setMessage] = useState('')
   const [busy, setBusy] = useState(false)
 
-  const load = () =>
+  // Gifts and backups change together (a backup is taken before each gift).
+  const fetchGrants = () =>
     listGrants(player.id)
       .then(setGrants)
       .catch(() => setGrants([]))
+  const load = () => {
+    setBackupKey((k) => k + 1)
+    return fetchGrants()
+  }
   useEffect(() => {
-    load()
+    fetchGrants()
     // eslint-disable-next-line react-hooks/exhaustive-deps -- once per player panel
   }, [player.id])
 
@@ -131,6 +291,12 @@ function PlayerDetail({
 
   return (
     <div className="space-y-4">
+      <Link
+        href={`/admin/players/${player.id}/watch`}
+        className="flex items-center justify-center gap-1.5 rounded-xl bg-[#1d3a6e] py-2 text-sm font-medium text-white"
+      >
+        <Eye className="h-4 w-4" /> Watch their game
+      </Link>
       <div className="space-y-1.5">
         <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Username</p>
         <div className="flex gap-2">
@@ -205,6 +371,8 @@ function PlayerDetail({
         </Button>
       </div>
 
+      <BanPanel player={player} onChange={onPatch} />
+
       <div className="space-y-1.5 rounded-lg border border-red-200 bg-red-50/60 p-2.5">
         <p className="text-xs font-semibold uppercase tracking-wide text-red-700">Danger zone</p>
         <div className="flex items-center justify-between gap-2">
@@ -232,6 +400,8 @@ function PlayerDetail({
           </Button>
         </div>
       </div>
+
+      <BackupsPanel playerId={player.id} refreshKey={backupKey} onRestored={load} />
 
       <PlayerActivity playerId={player.id} />
 
@@ -324,6 +494,7 @@ export default function PlayerManager({ initialPlayers, initialSearch = '' }: { 
                   <p className="text-base font-semibold">
                     {p.username ?? <span className="font-normal italic text-muted-foreground">No name</span>}{' '}
                     <span className="font-mono text-xs font-normal tracking-wider text-muted-foreground">{p.short_id}</span>
+                    {isBanned(p) && <span className="ml-1.5 rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-semibold text-red-700">BANNED</span>}
                   </p>
                   <p className="text-xs tabular-nums text-muted-foreground">
                     Lv {p.level} · 🧱 {fmt(p.scrap)} · {p.plots} plot{p.plots === 1 ? '' : 's'} · {p.workers} workers · {fmtDuration(p.play_seconds)} played · {ago(p.last_seen)}
@@ -336,6 +507,7 @@ export default function PlayerManager({ initialPlayers, initialSearch = '' }: { 
                   <PlayerDetail
                     player={p}
                     onRenamed={(username) => setPlayers((prev) => prev.map((x) => (x.id === p.id ? { ...x, username } : x)))}
+                    onPatch={(patch) => setPlayers((prev) => prev.map((x) => (x.id === p.id ? { ...x, ...patch } : x)))}
                     onReset={() =>
                       setPlayers((prev) =>
                         prev.map((x) => (x.id === p.id ? { ...x, scrap: 0, xp: 0, level: 1, plots: 1, workers: 1 } : x))

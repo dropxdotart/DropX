@@ -3,6 +3,8 @@
 export const UPGRADE_OPTIONS: { value: string; label: string }[] = [
   { value: 'workers', label: 'Worker' },
   { value: 'fleet', label: 'Truck' },
+  { value: 'yardSize', label: 'Yard expansion' },
+  { value: 'yardDocks', label: 'Unloading dock' },
   { value: 'tools', label: 'Better tools level' },
   { value: 'speed', label: 'Walking speed level' },
   { value: 'yardSpeed', label: 'Faster unloading level' },

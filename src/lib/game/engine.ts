@@ -2,12 +2,19 @@ import { type Brick, type BrickColor } from './blueprints'
 import { BUILDINGS, brickCount, bricksFor, getBuilding, levelForXp, registerCustomBuildings, sizeFor, xpForLevel, type BuildingDef } from './buildings'
 import { PLOT_SLOTS } from './plots'
 import {
+  dockPoint,
+  MAX_DOCKS,
+  kerbPath,
+  kerbSpot,
+  KERB_INSET,
   parkingSpot,
   parkPath,
+  unparkPath,
+  yardCapacity,
+  YARD_MAX_SIZE,
   planRoute,
   plotStop,
   routeLength,
-  YARD_BAY,
   YARD_GATE_IN,
   YARD_GATE_OUT,
   yardEnterPath,
@@ -26,6 +33,8 @@ import {
 // means the same logic can be ported to the native app later.
 
 import { BRICK, DUMPSTER, DUMPSTER_SLOTS, LOT_HALF, MAX_DUMPSTERS } from './layout'
+import { eventDetail, eventInfo, eventTitle, type LiveEventKind } from '../liveEvents'
+import { cleanTuning, DEFAULT_TUNING, type TuneKey, type Tuning } from '../tuning'
 export { BRICK, DUMPSTER, DUMPSTER_SLOTS, LOT_HALF, MAX_DUMPSTERS, ROAD_Z, TRUCK_STOP } from './layout'
 
 const SAVE_KEY = 'rubble-save-v5'
@@ -33,6 +42,10 @@ const LEGACY_SAVE_KEY = 'rubble-save-v4'
 // Set when an admin reset wipes the save, so the fresh game can say so;
 // gifts sent after the reset wait here to be applied to the fresh game.
 const RESET_NOTICE_KEY = 'rubble-reset-notice'
+const RESTORE_NOTICE_KEY = 'rubble-restore-notice'
+const BAN_KEY = 'rubble-ban'
+const SEEN_LIVE_KEY = 'rubble-seen-live' // events/messages already popped up
+const DISMISSED_KEY = 'rubble-dismissed-banners'
 export const PENDING_GRANTS_KEY = 'rubble-pending-grants'
 export const CUSTOM_BUILDINGS_KEY = 'rubble-custom-buildings'
 // Time away counts up to a full night.
@@ -63,6 +76,8 @@ export type Upgrades = {
   speed: number
   workers: number
   fleet: number
+  yardSize: number // Brick Yard expansions (size = 1 + this)
+  yardDocks: number // extra unloading docks (docks = 1 + this)
   yardSpeed: number
   yardBonus: number
 }
@@ -73,23 +88,88 @@ export const UPGRADE_INFO: Record<UpgradeKey, { label: string; base: number; gro
   speed: { label: 'Walking speed', base: 25, growth: 1.45 },
   workers: { label: 'Hire worker', base: 40, growth: 1.7 },
   fleet: { label: 'Buy a truck', base: 300, growth: 2.6 },
+  yardSize: { label: 'Expand the yard', base: 1000, growth: 6.5 },
+  yardDocks: { label: 'Add an unloading dock', base: 5000, growth: 10 },
   yardSpeed: { label: 'Faster unloading', base: 60, growth: 1.55 },
   yardBonus: { label: 'Better prices', base: 120, growth: 1.7 },
 }
 
 // Each dumpster is bought per plot and sized up on its own.
 export const DUMPSTER_UPGRADE = { label: 'Bigger dumpster', base: 30, growth: 1.5 }
+// ── Balance sliders (admin, see tuning.ts) ──────────────────────────────
+
+let tuning: Tuning = { ...DEFAULT_TUNING }
+const TUNING_KEY = 'rubble-tuning'
+// A slider as a factor: 1 = as designed.
+const T = (k: TuneKey) => tuning[k] / 100
+
+export function setTuning(raw: unknown) {
+  tuning = cleanTuning(raw)
+  try {
+    localStorage.setItem(TUNING_KEY, JSON.stringify(tuning))
+  } catch {
+    // fine — the next sync sends it again
+  }
+}
+
+function loadTuning() {
+  try {
+    const raw = localStorage.getItem(TUNING_KEY)
+    if (raw) tuning = cleanTuning(JSON.parse(raw))
+  } catch {
+    // defaults
+  }
+}
+
+// What a building contract / a plot costs right now.
+export function buildPrice(cost: number) {
+  return Math.round(cost * T('buildPrices'))
+}
+
+// ── Live events (admin-scheduled, see liveEvents.ts) ────────────────────
+
+export type LiveEvent = { id: string; kind: LiveEventKind; value: number; startsAt: string; endsAt: string }
+export type Broadcast = { id: string; title: string; body: string | null; style: 'popup' | 'banner'; endsAt: string }
+
+// The events currently known (from the last sync). Module-level so the
+// price functions below can apply a sale.
+let liveEvents: LiveEvent[] = []
+
+// The real-world time the simulation is at: "now", or earlier while time
+// away is being replayed (so an event only counts for when it was on).
+let simClockOffsetMs = 0
+const simNow = () => Date.now() - simClockOffsetMs
+
+function eventsLive(kind: LiveEventKind, at = simNow()) {
+  return liveEvents.filter((e) => e.kind === kind && new Date(e.startsAt).getTime() <= at && new Date(e.endsAt).getTime() > at)
+}
+
+// Multiplier from live events of a kind (1 when none).
+export function eventMultiplier(kind: Exclude<LiveEventKind, 'upgrade_sale'>): number {
+  return eventsLive(kind).reduce((m, e) => m * e.value, 1)
+}
+
+// Price factor from live sales (e.g. 0.75 for 25% off).
+function saleFactor(): number {
+  return Math.max(0.1, eventsLive('upgrade_sale', Date.now()).reduce((f, e) => f * (1 - e.value / 100), 1))
+}
+
+// Upgrade prices: the slider and any sale.
+const priceFactor = () => T('upgradePrices') * saleFactor()
+
 export function dumpsterUpgradeCost(level: number): number {
-  return Math.round(DUMPSTER_UPGRADE.base * Math.pow(DUMPSTER_UPGRADE.growth, level))
+  return Math.round(DUMPSTER_UPGRADE.base * Math.pow(DUMPSTER_UPGRADE.growth, level) * priceFactor())
 }
 // Price of a plot's 2nd and 3rd dumpster.
 const DUMPSTER_BUY_COSTS = [0, 400, 2500]
 export function dumpsterBuyCost(owned: number): number | null {
-  return owned < MAX_DUMPSTERS ? DUMPSTER_BUY_COSTS[owned] : null
+  return owned < MAX_DUMPSTERS ? Math.round(DUMPSTER_BUY_COSTS[owned] * priceFactor()) : null
 }
 
-export type RewardKind = 'bricks' | 'set_bricks' | 'set_level' | 'boost' | 'upgrade' | 'reset'
-export type Reward = { kind: RewardKind; amount: number; upgrade: string | null }
+export type RewardKind = 'bricks' | 'set_bricks' | 'set_level' | 'boost' | 'upgrade' | 'reset' | 'restore'
+export type Reward = { kind: RewardKind; amount: number; upgrade: string | null; data?: unknown }
+// Set by an admin: the game shows a block screen (until = ISO end, null = permanent).
+export type Ban = { until: string | null; reason: string }
 export type ActivityEvent = { kind: 'building_started' | 'building_finished'; building: string; name: string; seconds?: number; at: number }
 
 const ACTIVITY_KEY = 'rubble-activity'
@@ -103,6 +183,23 @@ function loadActivity(): ActivityEvent[] {
   }
 }
 
+function readList(key: string): string[] {
+  try {
+    const raw = localStorage.getItem(key)
+    return raw ? (JSON.parse(raw) as string[]) : []
+  } catch {
+    return []
+  }
+}
+
+function writeList(key: string, list: string[]) {
+  try {
+    localStorage.setItem(key, JSON.stringify(list))
+  } catch {
+    // storage unavailable — it may pop up again, that's all
+  }
+}
+
 function storeActivity(events: ActivityEvent[]) {
   try {
     localStorage.setItem(ACTIVITY_KEY, JSON.stringify(events))
@@ -111,12 +208,14 @@ function storeActivity(events: ActivityEvent[]) {
   }
 }
 
-export type Notice = { title: string; detail: string; message: string | null }
+export type Notice = { title: string; detail: string; message: string | null; emoji?: string; button?: string }
 
 // Upgrades a code or gift can hand out for free, as players see them.
 export const REWARD_UPGRADE_LABELS: Partial<Record<UpgradeKey, string>> = {
   workers: 'worker',
   fleet: 'truck',
+  yardSize: 'yard expansion',
+  yardDocks: 'unloading dock',
   tools: 'Better tools',
   speed: 'Walking speed',
   yardSpeed: 'Faster unloading',
@@ -131,12 +230,36 @@ export const TRUCK_UPGRADE_INFO: Record<TruckUpgrade, { label: string; base: num
 
 export function truckUpgradeCost(key: TruckUpgrade, level: number): number {
   const info = TRUCK_UPGRADE_INFO[key]
-  return Math.round(info.base * Math.pow(info.growth, level))
+  return Math.round(info.base * Math.pow(info.growth, level) * priceFactor())
 }
 
 export function upgradeCost(key: UpgradeKey, level: number): number {
   const info = UPGRADE_INFO[key]
-  return Math.round(info.base * Math.pow(info.growth, level))
+  return Math.round(info.base * Math.pow(info.growth, level) * priceFactor())
+}
+
+// Level needed for the 2nd, 3rd and 4th unloading dock.
+const DOCK_LEVELS = [5, 10, 15]
+
+// Level needed for the yard's next size (from yardSize level n).
+export function yardExpandLevel(n: number): number {
+  return n < 4 ? [3, 6, 10, 15][n] : 15 + 5 * (n - 3)
+}
+
+// Why an upgrade can't be bought right now (besides the price), if so.
+export function upgradeLock(key: UpgradeKey, u: Upgrades, level: number): string | null {
+  if (key === 'fleet' && stats.truckCount(u) >= stats.yardCapacity(u)) return 'Yard full'
+  if (key === 'yardDocks') {
+    if (stats.docks(u) >= MAX_DOCKS) return 'Max docks'
+    const need = DOCK_LEVELS[u.yardDocks]
+    if (level < need) return `Lv ${need}`
+  }
+  if (key === 'yardSize') {
+    if (stats.yardSize(u) >= YARD_MAX_SIZE) return 'Max size'
+    const need = yardExpandLevel(u.yardSize)
+    if (level < need) return `Lv ${need}`
+  }
+  return null
 }
 
 // Station looks change at these levels (see stations.ts); the crew
@@ -152,15 +275,19 @@ export const stats = {
   carry: (u: Upgrades) => 1 + milestonesReached(1 + u.workers + u.speed),
   // Pickup time: how long a worker spends working a brick loose (or
   // picking one up) before carrying it off. Starts slow; tools speed it up.
-  pullSeconds: (u: Upgrades) => 3 / (1 + 0.15 * u.tools),
-  walkSpeed: (u: Upgrades) => 2 * (1 + 0.15 * u.speed),
+  pullSeconds: (u: Upgrades) => 3 / (1 + 0.15 * u.tools) / T('pickupSpeed'),
+  walkSpeed: (u: Upgrades) => 2 * (1 + 0.15 * u.speed) * T('walkSpeed'),
   workerCount: (u: Upgrades) => 1 + u.workers,
   dumpsterCapacity: (level: number) => 8 + 6 * level,
   truckCount: (u: Upgrades) => 1 + u.fleet,
+  // The Brick Yard's size sets how many trucks you can buy (2 bays a size).
+  yardSize: (u: Upgrades) => Math.min(YARD_MAX_SIZE, 1 + u.yardSize),
+  yardCapacity: (u: Upgrades) => yardCapacity(Math.min(YARD_MAX_SIZE, 1 + u.yardSize)),
+  docks: (u: Upgrades) => Math.min(MAX_DOCKS, 1 + u.yardDocks),
   // Per truck, from that truck's own levels.
-  truckCargo: (loadLevel: number) => 8 + 6 * loadLevel,
-  truckSpeed: (speedLevel: number) => 6 * (1 + 0.12 * speedLevel),
-  unloadSeconds: (u: Upgrades) => Math.max(0.4, 2 * Math.pow(0.88, u.yardSpeed)),
+  truckCargo: (loadLevel: number) => Math.max(1, Math.round((8 + 6 * loadLevel) * T('truckLoad'))),
+  truckSpeed: (speedLevel: number) => 6 * (1 + 0.12 * speedLevel) * T('truckSpeed'),
+  unloadSeconds: (u: Upgrades) => Math.max(0.4, 2 * Math.pow(0.88, u.yardSpeed)) / T('unloadSpeed'),
   priceBonus: (u: Upgrades) => 0.05 * u.yardBonus,
 }
 
@@ -205,6 +332,7 @@ export type Truck = {
   dest: { kind: 'plot'; plot: number } | { kind: 'yard' } | { kind: 'park' }
   at: RoadSpot // the plot stop it's at, when out on the road
   inYard: 'bay' | 'parked' | null // inside the fenced Brick Yard
+  dock: number // the unloading dock it's heading to / using
   lap: number // next plot index to visit this lap
   timer: number
   cargo: number
@@ -257,6 +385,9 @@ export type Snapshot = {
   catchUp: number | null
   shortId: string | null
   username: string | null
+  ban: Ban | null
+  events: LiveEvent[]
+  banners: Broadcast[]
   synced: boolean
 }
 
@@ -489,7 +620,7 @@ export class Engine {
   time = 0
   scrap = 0
   xp = 0
-  upgrades: Upgrades = { tools: 0, speed: 0, workers: 0, fleet: 0, yardSpeed: 0, yardBonus: 0 }
+  upgrades: Upgrades = { tools: 0, speed: 0, workers: 0, fleet: 0, yardSize: 0, yardDocks: 0, yardSpeed: 0, yardBonus: 0 }
   sitesCleared = 0
   offlineEarnings = 0
 
@@ -521,8 +652,16 @@ export class Engine {
     return this.trucks.some((t) => t.state === 'loading' && t.dest.kind === 'plot' && t.dest.plot === site.id)
   }
 
+  // A truck the yard has no bay for parks at the kerb out front.
+  private kerbIndex(truck: { id: number }): number | null {
+    const cap = stats.yardCapacity(this.upgrades)
+    return truck.id >= cap ? truck.id - cap : null
+  }
+
   private newTruck(id: number, levels?: { load: number; speed: number }): Truck {
-    const spot = parkingSpot(id)
+    const kerb = this.kerbIndex({ id })
+    const road = kerb === null ? null : kerbSpot(kerb)
+    const spot = road ? { x: road.x, z: road.line - KERB_INSET } : parkingSpot(id)
     return {
       id,
       load: levels?.load ?? 0,
@@ -530,11 +669,12 @@ export class Engine {
       state: 'parked',
       x: spot.x,
       z: spot.z,
-      heading: 0,
+      heading: road ? Math.PI / 2 : 0,
       path: [],
       dest: { kind: 'park' },
-      at: YARD_GATE_OUT,
-      inYard: 'parked',
+      at: road ?? YARD_GATE_OUT,
+      inYard: road ? null : 'parked',
+      dock: 0,
       lap: 0,
       timer: 0,
       cargo: 0,
@@ -585,6 +725,11 @@ export class Engine {
   // ── Persistence ───────────────────────────────────────────────────────
 
   load() {
+    loadTuning()
+    try {
+    } catch {
+      // unreadable — the next sync says
+    }
     this.loadSave()
     try {
       const resetMessage = localStorage.getItem(RESET_NOTICE_KEY)
@@ -592,6 +737,12 @@ export class Engine {
         localStorage.removeItem(RESET_NOTICE_KEY)
         this.notices.push({ title: 'Fresh start', detail: 'Your progress was reset', message: resetMessage || null })
       }
+      if (localStorage.getItem(RESTORE_NOTICE_KEY) !== null) {
+        localStorage.removeItem(RESTORE_NOTICE_KEY)
+        this.notices.push({ title: 'Progress restored', detail: 'Support put your game back to an earlier save', message: null })
+      }
+      const ban = localStorage.getItem(BAN_KEY)
+      if (ban) this.setBan(JSON.parse(ban) as Ban)
       const pending = localStorage.getItem(PENDING_GRANTS_KEY)
       if (pending) {
         localStorage.removeItem(PENDING_GRANTS_KEY)
@@ -604,17 +755,28 @@ export class Engine {
     }
   }
 
-  private loadSave() {
-    let save: SaveData | null = null
-    try {
-      const raw = localStorage.getItem(SAVE_KEY)
-      if (raw) save = JSON.parse(raw) as SaveData
-      else {
-        const legacy = localStorage.getItem(LEGACY_SAVE_KEY)
-        if (legacy) save = migrateLegacy(JSON.parse(legacy) as LegacySave)
+  // A read-only copy of someone's game from their cloud save (the admin's
+  // "watch" view): it runs, but never saves or logs anything.
+  static viewer(save: SaveData): Engine {
+    const e = new Engine()
+    e.frozen = true
+    e.loadSave(save)
+    return e
+  }
+
+  private loadSave(given?: SaveData) {
+    let save: SaveData | null = given ?? null
+    if (!given) {
+      try {
+        const raw = localStorage.getItem(SAVE_KEY)
+        if (raw) save = JSON.parse(raw) as SaveData
+        else {
+          const legacy = localStorage.getItem(LEGACY_SAVE_KEY)
+          if (legacy) save = migrateLegacy(JSON.parse(legacy) as LegacySave)
+        }
+      } catch {
+        save = null
       }
-    } catch {
-      save = null
     }
 
     if (!save || !save.plots?.length) {
@@ -638,6 +800,12 @@ export class Engine {
       ...upgrades
     } = save.upgrades as Upgrades & { truck?: number; dumpster?: number }
     this.upgrades = { ...this.upgrades, ...upgrades }
+    // Saves from before the yard could grow: make it big enough for the
+    // trucks they already have.
+    if (upgrades.yardSize === undefined) {
+      const trucks = save.trucks?.length ?? 1
+      this.upgrades.yardSize = Math.min(YARD_MAX_SIZE - 1, Math.max(0, Math.ceil(trucks / 2) - 1))
+    }
     this.sitesCleared = save.sitesCleared ?? 0
     this.crewPlan = save.crewPlan ?? null
     this.trucks = (save.trucks ?? [{ load: oldTruckLevel ?? 0, speed: 0 }]).map((t, id) => this.newTruck(id, t))
@@ -660,7 +828,7 @@ export class Engine {
     })
     this.syncWorkers()
 
-    this.beginCatchUp((Date.now() - save.lastSeen) / 1000)
+    if (!given) this.beginCatchUp((Date.now() - save.lastSeen) / 1000)
   }
 
   // Once a reset starts, nothing may write the old progress back.
@@ -724,6 +892,19 @@ export class Engine {
       window.location.reload()
       return
     }
+    if (r.kind === 'restore') {
+      // Swap in a backed-up save (an admin undoing a mistake).
+      if (!r.data || typeof r.data !== 'object') return
+      this.frozen = true
+      try {
+        localStorage.setItem(SAVE_KEY, JSON.stringify({ ...(r.data as SaveData), lastSeen: Date.now() }))
+        localStorage.setItem(RESTORE_NOTICE_KEY, '1')
+      } catch {
+        // storage unavailable — can't restore on this device
+      }
+      window.location.reload()
+      return
+    }
     // Admins can send negative amounts to take things away.
     const raw = Number(r.amount) || 0
     const amount = r.kind === 'set_bricks' || r.kind === 'set_level' ? Math.max(0, raw) : raw
@@ -781,6 +962,24 @@ export class Engine {
     this.markDirty()
   }
 
+  // A ban from the cloud (or null once lifted). Remembered on the device so
+  // the block screen shows even before the next sync.
+  ban: Ban | null = null
+
+  setBan(ban: Ban | null) {
+    // A temporary ban that has run out is no ban.
+    const live = ban && (ban.until === null || new Date(ban.until).getTime() > Date.now()) ? ban : null
+    if (JSON.stringify(live) === JSON.stringify(this.ban)) return
+    this.ban = live
+    try {
+      if (live) localStorage.setItem(BAN_KEY, JSON.stringify(live))
+      else localStorage.removeItem(BAN_KEY)
+    } catch {
+      // fine — it comes back on the next sync
+    }
+    this.markDirty()
+  }
+
   setUsername(name: string | null) {
     if (name === this.username) return
     this.username = name
@@ -795,6 +994,38 @@ export class Engine {
 
   dismissNotice() {
     this.notices.shift()
+    this.markDirty()
+  }
+
+  // Events and messages from the last sync. New ones pop up once (events
+  // when they start; popup-style messages); banner messages show until
+  // they end or the player closes them.
+  banners: Broadcast[] = []
+
+  setLive(events: LiveEvent[], broadcasts: Broadcast[]) {
+    liveEvents = events
+    const seen = new Set(readList(SEEN_LIVE_KEY))
+    const now = Date.now()
+    for (const e of events) {
+      if (seen.has(e.id) || new Date(e.startsAt).getTime() > now) continue
+      seen.add(e.id)
+      const info = eventInfo(e.kind)
+      this.notices.push({ title: eventTitle(e.kind, e.value), detail: eventDetail(e.kind, e.value), message: null, emoji: info.emoji, button: "Let's go!" })
+    }
+    for (const b of broadcasts) {
+      if (b.style !== 'popup' || seen.has(b.id)) continue
+      seen.add(b.id)
+      this.notices.push({ title: b.title, detail: b.body ?? '', message: null, emoji: '📣', button: 'OK' })
+    }
+    writeList(SEEN_LIVE_KEY, [...seen].slice(-200))
+    const dismissed = new Set(readList(DISMISSED_KEY))
+    this.banners = broadcasts.filter((b) => b.style === 'banner' && !dismissed.has(b.id))
+    this.markDirty()
+  }
+
+  dismissBanner(id: string) {
+    writeList(DISMISSED_KEY, [...readList(DISMISSED_KEY), id].slice(-200))
+    this.banners = this.banners.filter((b) => b.id !== id)
     this.markDirty()
   }
 
@@ -816,6 +1047,7 @@ export class Engine {
   private activity: ActivityEvent[] = loadActivity()
 
   private logActivity(e: Omit<ActivityEvent, 'at'>) {
+    if (this.frozen) return // a viewer copy, or mid-reset
     this.activity = [...this.activity, { ...e, at: Date.now() }].slice(-200)
     storeActivity(this.activity)
   }
@@ -850,7 +1082,9 @@ export class Engine {
   private replaying = false
 
   beginCatchUp(seconds: number) {
-    const away = Math.min(MAX_OFFLINE_SECONDS, Math.max(0, seconds))
+    // Banned time doesn't count as time away.
+    if (this.ban) return
+    const away = Math.min(MAX_OFFLINE_SECONDS * T('offlineTime'), Math.max(0, seconds))
     if (away < 5) return
     if (this.catchUpLeft > 0) {
       this.catchUpLeft += away
@@ -879,6 +1113,7 @@ export class Engine {
       while (this.catchUpLeft > 0 && performance.now() - start < budgetMs) {
         for (let i = 0; i < 50 && this.catchUpLeft > 0; i++) {
           const dt = Math.min(0.1, this.catchUpLeft)
+          simClockOffsetMs = this.catchUpLeft * 1000
           this.tick(dt)
           this.catchUpLeft -= dt
           this.catchUpReplayed += dt
@@ -886,6 +1121,7 @@ export class Engine {
       }
     } finally {
       this.replaying = false
+      simClockOffsetMs = 0
     }
     // Skip the flying-brick effects for replayed time.
     for (const site of this.plots) site.events.length = 0
@@ -899,6 +1135,8 @@ export class Engine {
   // The rest of a very long absence, at each plot's measured replay pace.
   private estimateRest() {
     const seconds = this.catchUpLeft
+    // Pay at the middle of the estimated stretch for any events.
+    simClockOffsetMs = (seconds / 2) * 1000
     const u = this.upgrades
     this.plots.forEach((site, i) => {
       if (site.phase !== 'demolishing' || this.catchUpReplayed <= 0) return
@@ -927,6 +1165,7 @@ export class Engine {
     })
     this.time += seconds
     this.catchUpLeft = 0
+    simClockOffsetMs = 0
   }
 
   private finishCatchUp() {
@@ -938,7 +1177,8 @@ export class Engine {
 
   // The game loop's tick: paused while time away is being replayed.
   frameTick(dt: number) {
-    if (this.catchUpLeft > 0) return
+    // Nothing happens while time away is replayed, or while banned.
+    if (this.catchUpLeft > 0 || this.ban) return
     this.tick(dt)
   }
 
@@ -953,7 +1193,7 @@ export class Engine {
   }
 
   private boostMul() {
-    return this.boostActive() ? BOOST_FACTOR : 1
+    return (this.boostActive() ? 1 + (BOOST_FACTOR - 1) * T('boostPower') : 1) * eventMultiplier('crew_boost')
   }
 
   boost() {
@@ -1007,7 +1247,7 @@ export class Engine {
 
   buyUpgrade(key: UpgradeKey): boolean {
     const cost = upgradeCost(key, this.upgrades[key])
-    if (this.scrap < cost) return false
+    if (this.scrap < cost || upgradeLock(key, this.upgrades, levelForXp(this.xp))) return false
     this.scrap -= cost
     this.upgrades = { ...this.upgrades, [key]: this.upgrades[key] + 1 }
     this.syncWorkers()
@@ -1021,8 +1261,9 @@ export class Engine {
     const def = getBuilding(id)
     if (def.id !== id || (def.shape && !def.available)) return "That building isn't available right now"
     if (levelForXp(this.xp) < def.requiredLevel) return `Reach level ${def.requiredLevel} first`
-    if (this.scrap < def.contractCost) return 'Not enough bricks for this contract'
-    this.scrap -= def.contractCost
+    const price = buildPrice(def.contractCost)
+    if (this.scrap < price) return 'Not enough bricks for this contract'
+    this.scrap -= price
     site.phase = 'demolishing'
     site.rubble = []
     site.worked = 0
@@ -1053,8 +1294,9 @@ export class Engine {
     const slot = PLOT_SLOTS[this.plots.length]
     if (!slot) return 'No more plots for sale'
     if (levelForXp(this.xp) < slot.requiredLevel) return `Reach level ${slot.requiredLevel} first`
-    if (this.scrap < slot.cost) return 'Not enough bricks'
-    this.scrap -= slot.cost
+    const price = buildPrice(slot.cost)
+    if (this.scrap < price) return 'Not enough bricks'
+    this.scrap -= price
     const site = new Site(slot.id)
     this.plots.push(site)
     if (this.crewPlan) this.crewPlan.push(0)
@@ -1176,8 +1418,9 @@ export class Engine {
   }
 
   private pay(bricks: number, value: number) {
+    value *= eventMultiplier('double_bricks') * T('brickValue')
     this.scrap += value
-    this.xp += bricks
+    this.xp += bricks * eventMultiplier('double_xp') * T('xpRate')
     this.recentHauls.push({ t: this.time, value })
     this.markDirty()
   }
@@ -1387,7 +1630,7 @@ export class Engine {
       if (!this.trailerDropped && p >= TRAILER_DROP_AT) {
         this.trailerDropped = true
         this.bonusDrop = {
-          amount: stats.truckCargo(this.trucks[0]?.load ?? 0) * 2,
+          amount: Math.max(1, Math.round(stats.truckCargo(this.trucks[0]?.load ?? 0) * 2 * T('bonusDrop'))),
           droppedAt: this.time,
           expiresAt: this.time + BONUS_LIFETIME_SECONDS,
         }
@@ -1474,23 +1717,45 @@ export class Engine {
 
   // Builds the route: out of the yard by the OUT gate if it's inside, along
   // the roads, and in by the IN gate to the bay (and on to a parking bay).
+  // The dock with the shortest line (trucks already heading to or using it).
+  private pickDock(truck: Truck): number {
+    const n = stats.docks(this.upgrades)
+    let best = 0
+    let bestLine = Infinity
+    for (let k = 0; k < n; k++) {
+      const line = this.trucks.filter((t) => t !== truck && t.dest.kind === 'yard' && t.dock === k).length
+      if (line < bestLine) {
+        best = k
+        bestLine = line
+      }
+    }
+    return best
+  }
+
   private driveTo(truck: Truck, dest: Truck['dest']) {
     const path: Point[] = []
+    if (dest.kind === 'yard') truck.dock = this.pickDock(truck)
     let from: RoadSpot | null = truck.inYard ? null : truck.at
+    const kerb = this.kerbIndex(truck)
     if (truck.inYard) {
-      if (dest.kind === 'plot') {
-        path.push(...yardExitPath({ x: truck.x, z: truck.z }))
+      // Back-row bays reach the bay line by the side lane first.
+      const out = truck.inYard === 'parked' ? unparkPath(truck.id) : []
+      if (dest.kind === 'plot' || (dest.kind === 'park' && kerb !== null)) {
+        path.push(...out, ...yardExitPath(out.length ? out[out.length - 1] : { x: truck.x, z: truck.z }))
         from = YARD_GATE_OUT
       } else if (dest.kind === 'park') {
         if (truck.inYard === 'bay') path.push(...parkPath(truck.id))
       } else {
-        path.push(YARD_BAY)
+        path.push(...out, dockPoint(truck.dock))
       }
     }
     if (from) {
       if (dest.kind === 'plot') path.push(...planRoute(from, plotStop(dest.plot)))
-      else {
-        path.push(...planRoute(from, YARD_GATE_IN), ...yardEnterPath())
+      else if (dest.kind === 'park' && kerb !== null) {
+        const spot = kerbSpot(kerb)
+        path.push(...planRoute(from, spot), ...kerbPath(spot))
+      } else {
+        path.push(...planRoute(from, YARD_GATE_IN), ...yardEnterPath(dest.kind === 'yard' ? truck.dock : 0))
         if (dest.kind === 'park') path.push(...parkPath(truck.id))
       }
     }
@@ -1568,7 +1833,11 @@ export class Engine {
     const fx = Math.sin(truck.heading)
     const fz = Math.cos(truck.heading)
     for (const other of this.trucks) {
-      if (other === truck) continue
+      // Parked trucks are off the road (bays, kerb), and oncoming ones pass
+      // by — only wait behind traffic going the same way, or two trucks
+      // meeting in the yard would wait for each other forever.
+      if (other === truck || other.state === 'parked') continue
+      if (Math.sin(other.heading) * fx + Math.cos(other.heading) * fz < 0) continue
       const dx = other.x - truck.x
       const dz = other.z - truck.z
       const ahead = dx * fx + dz * fz
@@ -1606,7 +1875,12 @@ export class Engine {
       truck.state = 'unloading'
       truck.timer = stats.unloadSeconds(this.upgrades)
     } else {
-      truck.inYard = 'parked'
+      const kerb = this.kerbIndex(truck)
+      if (kerb === null) truck.inYard = 'parked'
+      else {
+        truck.inYard = null
+        truck.at = kerbSpot(kerb)
+      }
       truck.state = 'parked'
     }
     this.markDirty()
@@ -1671,6 +1945,9 @@ export class Engine {
         shortId: this.shortId,
         username: this.username,
         synced: this.synced,
+        ban: this.ban,
+        events: liveEvents.filter((e) => new Date(e.startsAt).getTime() <= Date.now() && new Date(e.endsAt).getTime() > Date.now()),
+        banners: this.banners,
         bonusDrop: this.bonusDrop
           ? { amount: this.bonusDrop.amount, secondsLeft: Math.ceil(this.bonusDrop.expiresAt - this.time) }
           : null,
@@ -1691,6 +1968,8 @@ function migrateLegacy(old: LegacySave): SaveData {
       speed: u.speed ?? 0,
       workers: u.workers ?? 0,
       fleet: 0,
+      yardSize: 0,
+      yardDocks: 0,
       yardSpeed: 0,
       yardBonus: 0,
     },

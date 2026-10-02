@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
+import { Eye } from 'lucide-react'
 import { fmtDuration, fmtNum } from './format'
 import type { Dashboard as Data, TopSort } from './statsActions'
 
@@ -63,14 +64,17 @@ export default function Dashboard({ data }: { data: Data }) {
         {top.length === 0 && <p className="py-2 text-xs text-muted-foreground">No players yet.</p>}
         <ol className="space-y-1">
           {top.map((p, i) => (
-            <li key={p.id}>
-              <Link href={`/admin/players?q=${p.short_id}`} className="flex items-center gap-2 rounded-lg px-1.5 py-1 text-sm hover:bg-accent">
+            <li key={p.id} className="flex items-center gap-1">
+              <Link href={`/admin/players?q=${p.short_id}`} className="flex min-w-0 flex-1 items-center gap-2 rounded-lg px-1.5 py-1 text-sm hover:bg-accent">
                 <span className="w-5 text-right text-xs tabular-nums text-muted-foreground">{i + 1}</span>
                 <span className="min-w-0 flex-1 truncate">
                   {p.username ?? <span className="italic text-muted-foreground">No name</span>}{' '}
                   <span className="font-mono text-xs text-muted-foreground">{p.short_id}</span>
                 </span>
                 <span className="shrink-0 text-xs font-medium tabular-nums">{col.show(p)}</span>
+              </Link>
+              <Link href={`/admin/players/${p.id}/watch`} className="shrink-0 rounded-lg p-1.5 hover:bg-accent" aria-label="Watch their game">
+                <Eye className="h-4 w-4 text-muted-foreground" />
               </Link>
             </li>
           ))}

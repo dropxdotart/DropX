@@ -31,13 +31,22 @@ export const YARD_GATE_IN: RoadSpot = { x: YARD_BLOCK.x - 3, line: YARD_BLOCK.z 
 export const YARD_GATE_OUT: RoadSpot = { x: YARD_BLOCK.x + 3, line: YARD_BLOCK.z + ROAD_Z }
 export const YARD_BAY: Point = { x: YARD_BLOCK.x - 3, z: YARD_FRONT - 4.5 }
 
-// From the IN gate on the road to the unload bay.
-export function yardEnterPath(): Point[] {
-  return [
-    { x: YARD_GATE_IN.x, z: YARD_FRONT + 0.8 },
-    { x: YARD_GATE_IN.x, z: YARD_FRONT - 1 },
-    YARD_BAY,
-  ]
+// Unloading docks along the bay line (dock 0 is YARD_BAY, with the raised
+// hopper; more are bought in the yard). Local x positions.
+export const MAX_DOCKS = 4
+const DOCK_X = [-3, -0.4, 2.2, 5.4]
+export const dockLocalX = (k: number) => DOCK_X[Math.max(0, Math.min(MAX_DOCKS - 1, k))]
+export function dockPoint(k: number): Point {
+  return { x: YARD_BLOCK.x + dockLocalX(k), z: YARD_BAY.z }
+}
+
+// From the IN gate on the road to an unloading dock: straight down to the
+// first; to the others, along the drive just inside the front fence.
+export function yardEnterPath(dock = 0): Point[] {
+  const p = dockPoint(dock)
+  const inside = YARD_FRONT - 1
+  if (dock === 0) return [{ x: YARD_GATE_IN.x, z: YARD_FRONT + 0.8 }, { x: YARD_GATE_IN.x, z: inside }, p]
+  return [{ x: YARD_GATE_IN.x, z: YARD_FRONT + 0.8 }, { x: YARD_GATE_IN.x, z: inside }, { x: p.x, z: inside }, p]
 }
 
 // From the bay (or a parking bay) out through the OUT gate onto the road.
@@ -50,14 +59,92 @@ export function yardExitPath(from: Point): Point[] {
   ]
 }
 
-export function parkingSpot(truck: number): Point {
-  return { x: YARD_BLOCK.x - 5 + (truck % 5) * 2.6, z: YARD_BAY.z - 4 - Math.floor(truck / 5) * 3 }
+// ── Yard size and parking ──────────────────────────────────────────────
+//
+// The yard starts as a small fenced lot with 2 parking bays. Each
+// expansion adds 2 bays: the fence first pushes out sideways until the yard
+// fills its block, then it grows back over the beach onto a pier in the
+// water, a row of bays at a time. Bay positions never move as it grows.
+// Local coordinates (relative to YARD_BLOCK): +z faces the road.
+
+export const YARD_MAX_SIZE = 10
+export const yardCapacity = (size: number) => 2 * size
+
+// Half the yard's width at each size (it fills the block from size 3).
+export function yardHalfWidth(size: number) {
+  return size <= 1 ? 6.5 : size === 2 ? 8 : 9.3
 }
 
-// From the bay into a parking bay.
-export function parkPath(truck: number): Point[] {
-  const spot = parkingSpot(truck)
-  return [{ x: spot.x, z: YARD_BAY.z }, spot]
+const BAY_LINE_Z = 3.5 // YARD_BAY's z, local
+const LANE_X = -7.6 // the lane down the left side to the back rows
+const FRONT_BAYS: Point[] = [
+  { x: -5.4, z: -0.5 },
+  { x: 0, z: -0.5 },
+  { x: 2.6, z: -0.5 },
+  { x: 5.2, z: -0.5 },
+  { x: 7.8, z: -0.5 },
+  { x: 7.8, z: 5 },
+]
+const BACK_ROW_X = [-4.4, -1.8, 0.8, 3.4, 6]
+const backRowZ = (row: number) => -11 - 4.6 * row
+
+// A bay's spot, local to the yard.
+export function bayLocal(i: number): Point {
+  if (i < FRONT_BAYS.length) return FRONT_BAYS[i]
+  const k = i - FRONT_BAYS.length
+  return { x: BACK_ROW_X[k % BACK_ROW_X.length], z: backRowZ(Math.floor(k / BACK_ROW_X.length)) }
+}
+
+// The fence's back edge (local z): the plant's back wall, or behind the
+// last row of bays once the yard has grown onto the pier.
+export function yardBackZ(size: number) {
+  const extra = yardCapacity(size) - FRONT_BAYS.length
+  if (extra <= 0) return -LOT_HALF
+  const rows = Math.ceil(extra / BACK_ROW_X.length)
+  return backRowZ(rows - 1) - 1.8
+}
+
+const world = (p: Point): Point => ({ x: YARD_BLOCK.x + p.x, z: YARD_BLOCK.z + p.z })
+
+export function parkingSpot(i: number): Point {
+  return world(bayLocal(i))
+}
+
+// The aisle in front of a back-row bay, and the way to it from the bay line.
+function backRowAccess(i: number): Point[] {
+  const b = bayLocal(i)
+  const aisle = b.z + 2.2
+  return [world({ x: LANE_X, z: BAY_LINE_Z }), world({ x: LANE_X, z: aisle }), world({ x: b.x, z: aisle })]
+}
+
+// From the unload bay into parking bay i.
+export function parkPath(i: number): Point[] {
+  const spot = parkingSpot(i)
+  if (i < FRONT_BAYS.length) return [{ x: spot.x, z: YARD_BAY.z }, spot]
+  return [...backRowAccess(i), spot]
+}
+
+// From parking bay i back out to the bay line (then yardExitPath or the bay).
+export function unparkPath(i: number): Point[] {
+  if (i < FRONT_BAYS.length) return []
+  return backRowAccess(i).reverse()
+}
+
+// Trucks the yard has no room for (an admin can gift more than fit) park
+// at the kerb on the road out front, alternating sides of the gates and
+// skipping the crossroads.
+export function kerbSpot(k: number): RoadSpot {
+  const m = Math.floor(k / 2)
+  const off = m < 2 ? 6 + 2.6 * m : 15 + 3 * (m - 2)
+  return { x: YARD_BLOCK.x + (k % 2 === 0 ? off : -off), line: YARD_BLOCK.z + ROAD_Z }
+}
+
+export const KERB_INSET = 1.9 // from the road's centre line toward the yard
+
+// From the near lane onto the kerb, ending parallel to the road.
+export function kerbPath(spot: RoadSpot): Point[] {
+  const z = spot.line - KERB_INSET
+  return [{ x: spot.x - 1.5, z }, { x: spot.x, z }]
 }
 
 function laneOffset(from: Point, to: Point): Point {

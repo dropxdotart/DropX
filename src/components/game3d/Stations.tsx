@@ -5,6 +5,7 @@ import { useFrame, type ThreeEvent } from '@react-three/fiber'
 import * as THREE from 'three'
 import { BRICK, DUMPSTER_SLOTS, LOT_HALF, stats, type Engine, type Site } from '@/lib/game/engine'
 import { dumpsterLevel, getStation, tierFor, type StationId } from '@/lib/game/stations'
+import { bayLocal, dockLocalX, yardBackZ, yardCapacity, yardHalfWidth } from '@/lib/game/roads'
 import Prop from './Prop'
 import { pointer } from './drag'
 import { Logo } from './SiteProps'
@@ -332,16 +333,18 @@ export function Fleet({
 // The truck depot sign by the Brick Yard's parking bays (local to the yard
 // block) — always there to tap, since trucks are usually off driving.
 export function TruckDepot({
+  size,
   affordable,
   onSelect,
 }: {
+  size: number
   affordable: boolean
   onSelect: (id: StationId) => void
 }) {
   return (
     <Hotspot
       id="truck"
-      position={[-7.1, 0, -0.5]}
+      position={[-yardHalfWidth(size) + 0.7, 0, 6.8]}
       hitSize={[1.2, 2.2, 0.8]}
       arrowHeight={2.4}
       affordable={affordable}
@@ -362,25 +365,54 @@ export function TruckDepot({
 // the dock just inside IN, idle ones park in the painted bays, and the back
 // looks out over the water.
 const YARD_GATES = [-3, 3]
-const YARD_FENCE: { pos: [number, number, number]; rot: number }[] = []
-for (let t = -LOT_HALF + 1; t <= LOT_HALF - 1; t += 2) {
-  YARD_FENCE.push({ pos: [t, 0, -LOT_HALF], rot: Math.PI / 2 })
-  YARD_FENCE.push({ pos: [-LOT_HALF, 0, t], rot: 0 })
-  YARD_FENCE.push({ pos: [LOT_HALF, 0, t], rot: 0 })
-  if (YARD_GATES.every((g) => Math.abs(t - g) > 1.6)) YARD_FENCE.push({ pos: [t, 0, LOT_HALF], rot: Math.PI / 2 })
+const YARD_FRONT_Z = LOT_HALF
+const BLOCK_BACK_Z = -11.5 // past here the yard is a pier over the beach and water
+
+// The fence around a yard of this size: sides at ±half width, back edge
+// from yardBackZ, and the front with gaps for the two gates.
+function yardFence(size: number) {
+  const hw = yardHalfWidth(size)
+  const back = yardBackZ(size)
+  const out: { pos: [number, number, number]; rot: number }[] = []
+  for (let t = -hw + 1; t <= hw - 1 + 0.01; t += 2) {
+    out.push({ pos: [t, 0, back], rot: Math.PI / 2 })
+    if (YARD_GATES.every((g) => Math.abs(t - g) > 1.6)) out.push({ pos: [t, 0, YARD_FRONT_Z], rot: Math.PI / 2 })
+  }
+  for (let t = back + 1; t <= YARD_FRONT_Z - 1 + 0.01; t += 2) {
+    out.push({ pos: [-hw, 0, t], rot: 0 })
+    out.push({ pos: [hw, 0, t], rot: 0 })
+  }
+  return out
 }
 
-function YardLook({ tier }: { tier: number }) {
+function YardLook({ tier, size, docks }: { tier: number; size: number; docks: number }) {
+  const hw = yardHalfWidth(size)
+  const back = yardBackZ(size)
+  const fence = useMemo(() => yardFence(size), [size])
+  const bays = useMemo(() => Array.from({ length: yardCapacity(size) }, (_, i) => bayLocal(i)), [size])
+  const pierDepth = Math.max(0, BLOCK_BACK_Z - back)
   const piles: [number, number][] = [
-    [6, 1.5],
-    [6.2, 4.3],
-    [-6.4, 2.6],
+    [-4.6, -6],
+    [-5.6, -3.4],
   ]
+  const ground = tier >= 2 ? '#b7bcc4' : '#c8ab7e'
   return (
     <group>
-      {/* Yard surface */}
-      <Box size={[16, 0.06, 16]} position={[0, 0.02, 0]} color={tier >= 2 ? '#b7bcc4' : '#c8ab7e'} />
-      {YARD_FENCE.map((f, i) => (
+      {/* Yard surface, then the pier deck once it has grown past the block */}
+      <Box
+        size={[hw * 2, 0.06, YARD_FRONT_Z - Math.max(back, BLOCK_BACK_Z)]}
+        position={[0, 0.02, (YARD_FRONT_Z + Math.max(back, BLOCK_BACK_Z)) / 2]}
+        color={ground}
+      />
+      {pierDepth > 0 && (
+        <>
+          <Box size={[hw * 2, 0.2, pierDepth]} position={[0, 0.0, BLOCK_BACK_Z - pierDepth / 2]} color="#9a8466" />
+          {Array.from({ length: Math.floor(pierDepth / 3) + 1 }, (_, k) => BLOCK_BACK_Z - 1 - k * 3).flatMap((z) =>
+            [-hw + 0.3, hw - 0.3].map((x) => <Box key={`${x},${z}`} size={[0.35, 1.4, 0.35]} position={[x, -0.6, z]} color="#6b5a44" />)
+          )}
+        </>
+      )}
+      {fence.map((f, i) => (
         <Prop key={i} url="/models/roads/construction-fence.glb" size={0.9} position={f.pos} rotationY={f.rot} />
       ))}
       {/* Gate posts: green light IN, orange light OUT */}
@@ -403,9 +435,25 @@ function YardLook({ tier }: { tier: number }) {
       <Box size={[3.2, 0.9, 1.4]} position={[-3, 0.45, 1.6]} color="#7d8794" />
       <Box size={[2.2, 1.1, 1.2]} position={[-3, 1.45, 1.5]} color="#f2c230" />
       <Box size={[2.6, 0.12, 1.5]} position={[-3, 2.05, 1.5]} color="#3a3a3e" />
-      {/* Parking bays */}
-      {[0, 1, 2, 3, 4].map((n) => (
-        <Box key={n} size={[0.1, 0.02, 2.4]} position={[-6.3 + n * 2.6, 0.06, -0.5]} color="#f4f1ea" />
+      {/* Extra unloading docks: a grated chute in the ground, a hazard
+          stripe and a signal post each (the first dock is the hopper above) */}
+      {Array.from({ length: docks - 1 }, (_, i) => dockLocalX(i + 1)).map((x) => (
+        <group key={x} position={[x, 0, 1.9]}>
+          <Box size={[2, 0.05, 1.3]} position={[0, 0.06, 0]} color="#3a3a3e" />
+          <Box size={[2.2, 0.04, 0.18]} position={[0, 0.07, 0.75]} color="#f2c230" />
+          <Box size={[0.14, 1.3, 0.14]} position={[1.15, 0.65, -0.4]} color="#5b6470" />
+          <mesh position={[1.15, 1.38, -0.4]}>
+            <sphereGeometry args={[0.14, 10, 8]} />
+            <meshStandardMaterial color="#3fdc4f" emissive="#1f8a28" emissiveIntensity={0.7} />
+          </mesh>
+        </group>
+      ))}
+      {/* A painted bay for every truck the yard can hold */}
+      {bays.map((b, i) => (
+        <group key={i} position={[b.x, b.z < BLOCK_BACK_Z ? 0.11 : 0.06, b.z]}>
+          <Box size={[0.1, 0.02, 2.6]} position={[-1.2, 0, 0]} color="#f4f1ea" />
+          <Box size={[0.1, 0.02, 2.6]} position={[1.2, 0, 0]} color="#f4f1ea" />
+        </group>
       ))}
       {piles.map(([x, z], i) => (
         <mesh key={i} position={[x, 0.45, z]} castShadow>
@@ -438,7 +486,7 @@ function YardLook({ tier }: { tier: number }) {
         </>
       )}
       {/* A barge moored past the beach behind the yard, loaded with bricks */}
-      <group position={[0, 0, -21.5]}>
+      <group position={[0, 0, Math.min(-21.5, back - 5)]}>
         <Box size={[9, 0.9, 3.2]} position={[0, 0.2, 0]} color="#5b6470" />
         <Box size={[9.2, 0.15, 3.4]} position={[0, 0.7, 0]} color="#ff6b1a" />
         {tier >= 1 && (
@@ -458,16 +506,20 @@ function YardLook({ tier }: { tier: number }) {
 
 export function BrickYard({
   tier,
+  size,
+  docks,
   affordable,
   onSelect,
 }: {
   tier: number
+  size: number
+  docks: number
   affordable: boolean
   onSelect: (id: StationId) => void
 }) {
   return (
     <>
-      <YardLook tier={tier} />
+      <YardLook tier={tier} size={size} docks={docks} />
       {/* Tap the plant itself (not the open yard, where trucks drive). */}
       <Hotspot id="yard" position={[1.5, 0, -4.8]} hitSize={[9, 5, 6]} arrowHeight={5 + tier} affordable={affordable} onSelect={onSelect}>
         {null}

@@ -5,6 +5,7 @@ import {
   stats,
   truckUpgradeCost,
   upgradeCost,
+  upgradeLock,
   dumpsterBuyCost,
   dumpsterUpgradeCost,
   type PlotSnap,
@@ -99,7 +100,7 @@ export const STATIONS: StationDef[] = [
     emoji: '🚛',
     upgrades: ['fleet'],
     // The depot sign by the Brick Yard's parking (relative to YARD_BLOCK).
-    position: { x: -7.1, z: -0.5 },
+    position: { x: -6, z: 6.8 },
     level: (u) => 1 + u.fleet,
     tierNames: ['Flatbed', 'Box Truck', 'Garbage Truck', 'Mega Hauler'],
     effects: (u) => [
@@ -114,12 +115,22 @@ export const STATIONS: StationDef[] = [
     id: 'yard',
     name: 'Brick Yard',
     emoji: '🏭',
-    upgrades: ['yardSpeed', 'yardBonus'],
+    upgrades: ['yardSize', 'yardDocks', 'yardSpeed', 'yardBonus'],
     // Relative to YARD_BLOCK, not a plot.
     position: { x: 2, z: 3 },
     level: (u) => 1 + u.yardSpeed + u.yardBonus,
     tierNames: ['Scrap Heap', 'Brick Yard', 'Recycling Plant', 'Mega Plant'],
     effects: (u) => [
+      {
+        label: 'Truck parking',
+        now: `${stats.yardCapacity(u)} trucks`,
+        next: (k) => `${stats.yardCapacity(k === 'yardSize' ? { ...u, yardSize: u.yardSize + 1 } : u)} trucks`,
+      },
+      {
+        label: 'Unloading docks',
+        now: `${stats.docks(u)}`,
+        next: (k) => `${stats.docks(k === 'yardDocks' ? { ...u, yardDocks: u.yardDocks + 1 } : u)}`,
+      },
       {
         label: 'Unload time',
         now: `${stats.unloadSeconds(u).toFixed(1)}s`,
@@ -152,9 +163,15 @@ export function dumpstersAffordable(plot: PlotSnap | undefined, scrap: number): 
   return plot.dumpsters.some((d) => scrap >= dumpsterUpgradeCost(d.level))
 }
 
+// A station upgrade that can be bought now: affordable and not locked
+// (yard full, level too low…).
+export function upgradeReady(key: UpgradeKey, snap: Snapshot): boolean {
+  return snap.scrap >= upgradeCost(key, snap.upgrades[key]) && !upgradeLock(key, snap.upgrades, snap.level)
+}
+
 // Anything to buy for the fleet: another truck, or any truck's upgrade.
 export function fleetAffordable(snap: Snapshot): boolean {
-  if (snap.scrap >= upgradeCost('fleet', snap.upgrades.fleet)) return true
+  if (upgradeReady('fleet', snap)) return true
   return snap.trucks.some((t) => snap.scrap >= truckUpgradeCost('load', t.load) || snap.scrap >= truckUpgradeCost('speed', t.speed))
 }
 

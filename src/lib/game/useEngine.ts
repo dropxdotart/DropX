@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useSyncExternalStore } from 'react'
-import { CUSTOM_BUILDINGS_KEY, getEngine, PENDING_GRANTS_KEY, type Engine, type Snapshot } from './engine'
+import { CUSTOM_BUILDINGS_KEY, getEngine, PENDING_GRANTS_KEY, setTuning, type Engine, type Snapshot } from './engine'
 import { registerCustomBuildings } from './buildings'
 import { getCustomBuildings, syncPlayer } from '@/app/playerActions'
 import { playerId } from '@/lib/player'
@@ -67,7 +67,7 @@ function resumeSession(hiddenMs: number) {
 async function syncCloud(engine: Engine) {
   const activity = engine.takeActivity()
   try {
-    const { shortId, username, grants } = await syncPlayer(
+    const { shortId, username, grants, ban, live, tuning } = await syncPlayer(
       playerId(),
       engine.cloudSummary(),
       engine.saveData(),
@@ -75,6 +75,10 @@ async function syncCloud(engine: Engine) {
       activity
     )
     engine.setUsername(username)
+    engine.setBan(ban)
+    engine.setLive(live.events, live.broadcasts)
+    setTuning(tuning)
+    engine.markDirty()
     engine.markSynced()
     if (shortId && shortId !== engine.shortId) {
       engine.setShortId(shortId)
@@ -86,7 +90,8 @@ async function syncCloud(engine: Engine) {
     }
     // A reset reloads the game: gifts sent after it wait in storage and are
     // applied to the fresh game; anything before it is moot.
-    const lastReset = grants.map((g) => g.kind).lastIndexOf('reset')
+    // (A restore works the same way: it reloads with the backed-up save.)
+    const lastReset = grants.findLastIndex((g) => g.kind === 'reset' || g.kind === 'restore')
     if (lastReset >= 0) {
       try {
         localStorage.setItem(PENDING_GRANTS_KEY, JSON.stringify(grants.slice(lastReset + 1)))

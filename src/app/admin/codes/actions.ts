@@ -36,7 +36,7 @@ export type CodeInput = {
 
 type Result = { ok: true } | { ok: false; message: string }
 
-const UPGRADES = ['workers', 'fleet', 'tools', 'speed', 'yardSpeed', 'yardBonus']
+const UPGRADES = ['workers', 'fleet', 'yardSize', 'yardDocks', 'tools', 'speed', 'yardSpeed', 'yardBonus']
 
 export async function listCodes(): Promise<RedeemCode[]> {
   await requireAdminSession()

@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { Lock, X } from 'lucide-react'
 import { brickCount, pickableBuildings } from '@/lib/game/buildings'
-import type { Engine, Snapshot } from '@/lib/game/engine'
+import { buildPrice, type Engine, type Snapshot } from '@/lib/game/engine'
 import { formatNumber } from './format'
 import { plotName } from './PlotsSheet'
 
@@ -64,7 +64,7 @@ export default function SitePicker({
           {pickableBuildings().map((b) => {
             const bricks = brickCount(b)
             const locked = snap.level < b.requiredLevel
-            const affordable = snap.scrap >= b.contractCost
+            const affordable = snap.scrap >= buildPrice(b.contractCost)
             const payout = bricks * b.brickValue + b.bonus
             return (
               <div
@@ -91,7 +91,7 @@ export default function SitePicker({
                   }}
                   className="shrink-0 rounded-xl bg-[#ff6b1a] px-3 py-2 font-display text-sm text-white shadow-[0_3px_0_#c94e0a] active:translate-y-[3px] active:shadow-none disabled:bg-[#b9c2cf] disabled:shadow-[0_3px_0_#97a1ae]"
                 >
-                  {b.contractCost === 0 ? 'Free' : `🧱 ${formatNumber(b.contractCost)}`}
+                  {b.contractCost === 0 ? 'Free' : `🧱 ${formatNumber(buildPrice(b.contractCost))}`}
                 </button>
               </div>
             )

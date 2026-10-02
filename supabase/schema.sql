@@ -452,3 +452,93 @@ as $$
   group by building;
 $$;
 revoke all on function building_stats from public, anon, authenticated;
+
+-- Bans (temporary or permanent, with a reason the player sees) and save
+-- backups taken right before every admin change to a player, so a mistake
+-- can be undone by restoring one.
+
+alter table players
+  add column if not exists ban_until timestamptz,
+  add column if not exists ban_permanent boolean not null default false,
+  add column if not exists ban_reason text;
+
+create table player_backups (
+  id bigint generated always as identity primary key,
+  player_id uuid not null references players (id) on delete cascade,
+  save jsonb,
+  scrap double precision not null default 0,
+  xp double precision not null default 0,
+  level integer not null default 1,
+  reason text not null, -- the admin change it was taken before
+  created_at timestamptz not null default now()
+);
+create index player_backups_player on player_backups (player_id, created_at desc);
+alter table player_backups enable row level security;
+revoke all on player_backups from anon, authenticated;
+
+-- A restore replaces the game's save with the one in `data`.
+alter type reward_kind add value if not exists 'restore';
+alter table player_grants add column if not exists data jsonb;
+
+-- Game-wide things admins schedule: events (double bricks, crew boost,
+-- upgrade sale, double XP), messages to everyone, and gifts to everyone.
+-- The game picks them up when it syncs.
+
+create table live_events (
+  id uuid primary key default gen_random_uuid(),
+  kind text not null check (kind in ('double_bricks', 'crew_boost', 'upgrade_sale', 'double_xp')),
+  value double precision not null check (value > 0), -- multiplier, or % off for a sale
+  active boolean not null default true,
+  starts_at timestamptz not null default now(),
+  ends_at timestamptz not null,
+  created_at timestamptz not null default now(),
+  check (ends_at > starts_at)
+);
+
+create table broadcasts (
+  id uuid primary key default gen_random_uuid(),
+  title text not null,
+  body text,
+  style text not null check (style in ('popup', 'banner')),
+  active boolean not null default true,
+  starts_at timestamptz not null default now(),
+  ends_at timestamptz not null,
+  created_at timestamptz not null default now(),
+  check (ends_at > starts_at)
+);
+
+create table global_gifts (
+  id uuid primary key default gen_random_uuid(),
+  kind reward_kind not null check (kind in ('bricks', 'boost', 'upgrade')),
+  amount double precision not null check (amount > 0),
+  upgrade text,
+  message text,
+  active boolean not null default true,
+  starts_at timestamptz not null default now(),
+  ends_at timestamptz not null,
+  created_at timestamptz not null default now(),
+  check (ends_at > starts_at)
+);
+
+create table global_gift_claims (
+  gift_id uuid not null references global_gifts (id) on delete cascade,
+  player_id uuid not null references players (id) on delete cascade,
+  created_at timestamptz not null default now(),
+  primary key (gift_id, player_id)
+);
+
+alter table live_events enable row level security;
+alter table broadcasts enable row level security;
+alter table global_gifts enable row level security;
+alter table global_gift_claims enable row level security;
+revoke all on live_events, broadcasts, global_gifts, global_gift_claims from anon, authenticated;
+
+-- Game-wide settings an admin edits (first: the balance sliders under
+-- key 'tuning', percentages of the built-in numbers). Sent to games on sync.
+create table game_settings (
+  key text primary key,
+  value jsonb not null,
+  updated_at timestamptz not null default now()
+);
+alter table game_settings enable row level security;
+revoke all on game_settings from anon, authenticated;

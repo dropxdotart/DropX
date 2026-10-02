@@ -8,6 +8,7 @@ import { getBuilding, xpForLevel } from '@/lib/game/buildings'
 import BannerAd from './BannerAd'
 import InterstitialAd from './InterstitialAd'
 import StationPanel from './StationPanel'
+import { eventInfo, eventTitle, timeLeft } from '@/lib/liveEvents'
 import TruckPanel from './TruckPanel'
 import DumpsterPanel from './DumpsterPanel'
 import StationsMap from './StationsMap'
@@ -284,6 +285,43 @@ export default function Game() {
           </div>
         </div>
 
+        {/* Live events: one pill each, with time left */}
+        {snap.events.length > 0 && (
+          <div className="mx-3 mt-2 flex flex-wrap gap-1.5">
+            {snap.events.map((e) => (
+              <span
+                key={e.id}
+                className="flex items-center gap-1 rounded-full bg-[#ff6b1a] px-3 py-1 font-display text-sm text-white shadow-[0_3px_0_#c24d0a]"
+              >
+                {eventInfo(e.kind).emoji} {eventTitle(e.kind, e.value)}
+                <span className="text-white/80">· {timeLeft(e.endsAt)} left</span>
+              </span>
+            ))}
+          </div>
+        )}
+        {/* Banner messages from the team */}
+        {snap.banners.map((b) => (
+          <div
+            key={b.id}
+            className="pointer-events-auto mx-3 mt-2 flex items-start justify-between gap-2 rounded-2xl bg-[#1d3a6e] p-3 text-white shadow-[0_3px_0_rgba(0,0,0,0.2)]"
+          >
+            <div className="min-w-0">
+              <p className="font-display text-sm">📣 {b.title}</p>
+              {b.body && <p className="mt-0.5 text-xs text-white/85">{b.body}</p>}
+            </div>
+            <button
+              onClick={() => {
+                engine.dismissBanner(b.id)
+                engine.notify()
+              }}
+              className="shrink-0"
+              aria-label="Close"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+        ))}
+
         {snap.catchUp !== null && (
           <div className="mx-3 mt-3 flex items-center gap-2 rounded-2xl bg-white p-3 shadow-[0_3px_0_rgba(0,0,0,0.15)]">
             <span className="text-lg">⏳</span>
@@ -373,6 +411,7 @@ export default function Game() {
           snap={snap}
           truck={selected.truck ?? 0}
           onPickTruck={(truck) => setSelected({ ...selected, truck })}
+          onOpenYard={() => setSelected({ id: 'yard', plot: selected.plot })}
           onClose={() => setSelected(null)}
         />
       ) : (
@@ -415,9 +454,9 @@ export default function Game() {
       {snap.notice && (
         <div className="pointer-events-auto fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-6">
           <div className="w-full max-w-xs rounded-3xl border-4 border-white bg-[#2f8fe8] p-5 text-center text-white shadow-[0_6px_0_#1d5fa8]">
-            <p className="text-5xl">🎁</p>
+            <p className="text-5xl">{snap.notice.emoji ?? '🎁'}</p>
             <p className="mt-2 font-display text-2xl leading-tight">{snap.notice.title}</p>
-            <p className="mt-2 font-display text-xl">{snap.notice.detail}</p>
+            {snap.notice.detail && <p className="mt-2 font-display text-xl">{snap.notice.detail}</p>}
             {snap.notice.message && <p className="mt-2 text-sm text-white/90">“{snap.notice.message}”</p>}
             <button
               onClick={() => {
@@ -426,13 +465,29 @@ export default function Game() {
               }}
               className="mt-4 w-full rounded-2xl bg-[#3fbf4a] py-2.5 font-display text-lg shadow-[0_4px_0_#2a8a33] active:translate-y-1 active:shadow-none"
             >
-              Nice!
+              {snap.notice.button ?? 'Nice!'}
             </button>
           </div>
         </div>
       )}
       <BonusTab engine={engine} snap={snap} open={bonusOpen && !!snap.bonusDrop} onOpenChange={setBonusOpen} />
       <InterstitialAd trigger={snap.sitesCleared} />
+      {/* Banned by an admin: covers the whole game until the ban ends or is lifted */}
+      {snap.ban && (
+        <div className="pointer-events-auto fixed inset-0 z-[60] flex items-center justify-center bg-[#1d3a6e]/95 p-6">
+          <div className="w-full max-w-xs rounded-3xl bg-white p-5 text-center shadow-[0_6px_0_rgba(0,0,0,0.25)]">
+            <p className="text-5xl">🚫</p>
+            <p className="mt-2 font-display text-2xl leading-tight text-[#1d3a6e]">You&apos;re banned</p>
+            <p className="mt-2 text-sm text-[#5b6f93]">
+              {snap.ban.until
+                ? `Until ${new Date(snap.ban.until).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}`
+                : 'This ban is permanent'}
+            </p>
+            {snap.ban.reason && <p className="mt-3 rounded-2xl bg-[#eef2f8] p-3 text-sm text-[#1d3a6e]">“{snap.ban.reason}”</p>}
+            {snap.shortId && <p className="mt-3 text-xs text-[#5b6f93]">Your player ID: {snap.shortId}</p>}
+          </div>
+        </div>
+      )}
       {!loadingGone && <LoadingScreen progress={loadProgress} leaving={loaded} />}
     </div>
   )
