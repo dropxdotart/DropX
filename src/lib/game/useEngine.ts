@@ -130,6 +130,9 @@ export function useEngine(): { engine: Engine; snap: Snapshot } | null {
     const firstSync = setTimeout(() => syncCloud(engine), 2000)
     const cloud = setInterval(() => syncCloud(engine), SYNC_SECONDS * 1000)
     const persist = setInterval(() => engine.save(), 3000)
+    // Admin edits to buildings (new ones, schedules, redesigns) arrive
+    // without a reload: every few minutes, and on coming back to the app.
+    const buildings = setInterval(() => loadCustomBuildings(engine), 5 * 60 * 1000)
     let hiddenAt = 0
     const onVisibility = () => {
       if (document.visibilityState === 'hidden') {
@@ -138,6 +141,7 @@ export function useEngine(): { engine: Engine; snap: Snapshot } | null {
         engine.save()
         syncCloud(engine)
       } else if (hiddenAt) {
+        loadCustomBuildings(engine)
         // Frames don't run while the tab is hidden, so time spent in the
         // background is credited the same way as time with the app closed.
         resumeSession(Date.now() - hiddenAt)
@@ -155,6 +159,7 @@ export function useEngine(): { engine: Engine; snap: Snapshot } | null {
       clearTimeout(firstSync)
       clearInterval(cloud)
       clearInterval(persist)
+      clearInterval(buildings)
       document.removeEventListener('visibilitychange', onVisibility)
       window.removeEventListener('pagehide', onPageHide)
     }

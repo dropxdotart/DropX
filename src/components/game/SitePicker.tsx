@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { Lock, X } from 'lucide-react'
 import { brickCount, pickableBuildings } from '@/lib/game/buildings'
+import { timeLeft } from '@/lib/liveEvents'
 import { buildPrice, type Engine, type Snapshot } from '@/lib/game/engine'
 import { formatNumber } from './format'
 import { plotName } from './PlotsSheet'
@@ -75,7 +76,14 @@ export default function SitePicker({
                   {locked ? <Lock className="h-5 w-5 text-[#8a94a6]" /> : (b.emoji ?? ICONS[b.id] ?? '🏢')}
                 </span>
                 <div className="min-w-0 flex-1">
-                  <p className="font-display text-base leading-tight text-[#1d3a6e]">{b.name}</p>
+                  <p className="font-display text-base leading-tight text-[#1d3a6e]">
+                    {b.name}
+                    {b.endsAt && (
+                      <span className="ml-1.5 inline-block rounded-full bg-[#ff6b1a] px-2 py-0.5 align-middle font-display text-[11px] leading-none text-white">
+                        ⏳ {timeLeft(b.endsAt)} left
+                      </span>
+                    )}
+                  </p>
                   <p className="text-xs leading-tight text-[#5b6f93]">
                     {formatNumber(bricks)} bricks · pays ~🧱{formatNumber(payout)}
                   </p>

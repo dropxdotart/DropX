@@ -166,6 +166,7 @@ export function dumpstersAffordable(plot: PlotSnap | undefined, scrap: number): 
 // A station upgrade that can be bought now: affordable and not locked
 // (yard full, level too low…).
 export function upgradeReady(key: UpgradeKey, snap: Snapshot): boolean {
+  if (key === 'yardSize' && snap.yardBuild) return false // already building
   return snap.scrap >= upgradeCost(key, snap.upgrades[key]) && !upgradeLock(key, snap.upgrades, snap.level)
 }
 

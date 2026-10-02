@@ -380,7 +380,7 @@ export default function Scene({
             )
           })}
           <group position={[YARD_BLOCK.x, 0, YARD_BLOCK.z]}>
-            <BrickYard {...station.yard} size={stats.yardSize(snap.upgrades)} docks={stats.docks(snap.upgrades)} onSelect={(id) => onSelectStation(id, 0)} />
+            <BrickYard {...station.yard} size={stats.yardSize(snap.upgrades)} docks={stats.docks(snap.upgrades)} building={!!snap.yardBuild} onSelect={(id) => onSelectStation(id, 0)} />
             {/* Truck upgrades live by the yard's parking bays */}
             <TruckDepot size={stats.yardSize(snap.upgrades)} affordable={station.truck.affordable} onSelect={(id) => onSelectStation(id, 0)} />
           </group>

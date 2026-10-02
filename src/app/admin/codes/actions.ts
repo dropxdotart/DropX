@@ -102,3 +102,21 @@ export async function deleteCode(id: string): Promise<Result> {
   await audit('Deleted code', label)
   return { ok: true }
 }
+
+export type Redemption = { player_id: string; short_id: string; username: string | null; created_at: string }
+
+// Who used a code, newest first.
+export async function listRedemptions(codeId: string): Promise<Redemption[]> {
+  await requireAdminSession()
+  const { data, error } = await createAdminClient()
+    .from('code_redemptions')
+    .select('player_id, created_at, players(short_id, username)')
+    .eq('code_id', codeId)
+    .order('created_at', { ascending: false })
+    .limit(200)
+  if (error) throw new Error(error.message)
+  return (data ?? []).map((r) => {
+    const p = (Array.isArray(r.players) ? r.players[0] : r.players) as { short_id: string; username: string | null } | null
+    return { player_id: r.player_id, created_at: r.created_at, short_id: p?.short_id ?? '?', username: p?.username ?? null }
+  })
+}

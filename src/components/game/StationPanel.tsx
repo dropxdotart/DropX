@@ -1,9 +1,19 @@
 'use client'
 
 import { X } from 'lucide-react'
-import { upgradeCost, upgradeLock, UPGRADE_INFO, type Engine, type Snapshot } from '@/lib/game/engine'
+import { upgradeCost, upgradeLock, UPGRADE_INFO, YARD_AD_SHARE, type Engine, type Snapshot } from '@/lib/game/engine'
+import RewardedAdButton from './RewardedAdButton'
 import { getStation, nextMilestone, tierFor, type StationId } from '@/lib/game/stations'
 import { formatNumber } from './format'
+
+// 1h 5m · 14m · 40s
+function formatDuration(seconds: number) {
+  const s = Math.max(0, Math.round(seconds))
+  if (s < 60) return `${s}s`
+  const m = Math.ceil(s / 60)
+  if (m < 60) return `${m}m`
+  return m % 60 ? `${Math.floor(m / 60)}h ${m % 60}m` : `${m / 60}h`
+}
 
 // Upgrade panel for one station, opened by tapping it in the world (the
 // camera glides in on it behind this sheet).
@@ -59,6 +69,33 @@ export default function StationPanel({
             const cost = upgradeCost(key, u[key])
             const lock = upgradeLock(key, u, snap.level)
             const affordable = snap.scrap >= cost && !lock
+            const build = key === 'yardSize' ? snap.yardBuild : null
+            if (build)
+              return (
+                <div key={key} className="rounded-2xl bg-[#fff4d6] p-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="min-w-0 flex-1">
+                      <p className="font-display text-base leading-tight text-[#1d3a6e]">🏗️ Expanding to size {build.toSize}</p>
+                      <p className="text-xs leading-tight text-[#5b6f93]">{formatDuration(build.secondsLeft)} left · the crew is building</p>
+                      <div className="mt-1.5 h-2 overflow-hidden rounded-full bg-[#f1dca0]">
+                        <div
+                          className="h-full rounded-full bg-[#ff6b1a] transition-[width] duration-500"
+                          style={{ width: `${Math.round((1 - build.secondsLeft / build.totalSeconds) * 100)}%` }}
+                        />
+                      </div>
+                    </div>
+                    <RewardedAdButton
+                      onReward={() => {
+                        engine.speedUpYard()
+                        engine.notify()
+                      }}
+                      className="shrink-0 rounded-xl bg-[#3fbf4a] px-3 py-2 font-display text-sm text-white shadow-[0_3px_0_#2a8a33] active:translate-y-[3px] active:shadow-none disabled:opacity-70"
+                    >
+                      ▶ −{formatDuration(build.totalSeconds * YARD_AD_SHARE)}
+                    </RewardedAdButton>
+                  </div>
+                </div>
+              )
             return (
               <div key={key} className="rounded-2xl bg-[#eef2f8] p-3">
                 <div className="flex items-center justify-between gap-3">

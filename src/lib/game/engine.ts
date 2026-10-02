@@ -1,5 +1,5 @@
 import { type Brick, type BrickColor } from './blueprints'
-import { BUILDINGS, brickCount, bricksFor, getBuilding, levelForXp, registerCustomBuildings, sizeFor, xpForLevel, type BuildingDef } from './buildings'
+import { BUILDINGS, brickCount, bricksFor, getBuilding, legacyOf, levelForXp, registerCustomBuildings, sizeFor, xpForLevel, type BuildingDef } from './buildings'
 import { PLOT_SLOTS } from './plots'
 import {
   dockPoint,
@@ -386,6 +386,7 @@ export type Snapshot = {
   shortId: string | null
   username: string | null
   ban: Ban | null
+  yardBuild: { toSize: number; secondsLeft: number; totalSeconds: number } | null
   events: LiveEvent[]
   banners: Broadcast[]
   synced: boolean
@@ -413,7 +414,20 @@ export type SaveData = {
   crewPlan: number[] | null
   sitesCleared: number
   lastSeen: number
+  yardBuild?: YardBuild | null
 }
+
+// A yard expansion under construction: real-world times (ms), so it keeps
+// building while the game is closed. `level` is the yardSize it finishes at.
+export type YardBuild = { level: number; startedAt: number; endsAt: number }
+
+// How long building the yard up to each size takes (sizes 2–10).
+const YARD_BUILD_MINUTES = [5, 15, 30, 60, 120, 180, 240, 300, 360]
+export function yardBuildSeconds(toSize: number): number {
+  return YARD_BUILD_MINUTES[Math.max(0, Math.min(YARD_BUILD_MINUTES.length - 1, toSize - 2))] * 60
+}
+// Each ad takes this share of the full build time off.
+export const YARD_AD_SHARE = 0.25
 
 type LegacySave = {
   scrap: number
@@ -438,10 +452,21 @@ function encodeBits(bits: Uint8Array): string {
   return btoa(s)
 }
 
+function savedBrickBytes(encoded: string): number {
+  try {
+    return atob(encoded).length
+  } catch {
+    return -1
+  }
+}
+
 function decodeBits(encoded: string, length: number): Uint8Array {
   const bits = new Uint8Array(length)
   try {
     const s = atob(encoded)
+    // Saved for a different number of bricks (the building was redesigned):
+    // start it fresh rather than knock random holes in the new one.
+    if (s.length !== Math.ceil(length / 8)) return bits
     for (let i = 0; i < length; i++) bits[i] = (s.charCodeAt(i >> 3) >> (i & 7)) & 1
   } catch {
     // corrupt save — start the site fresh
@@ -807,6 +832,7 @@ export class Engine {
       this.upgrades.yardSize = Math.min(YARD_MAX_SIZE - 1, Math.max(0, Math.ceil(trucks / 2) - 1))
     }
     this.sitesCleared = save.sitesCleared ?? 0
+    this.yardBuild = save.yardBuild ?? null
     this.crewPlan = save.crewPlan ?? null
     this.trucks = (save.trucks ?? [{ load: oldTruckLevel ?? 0, speed: 0 }]).map((t, id) => this.newTruck(id, t))
     this.plots = save.plots.slice(0, PLOT_SLOTS.length).map((ps, id) => {
@@ -817,7 +843,10 @@ export class Engine {
         .slice(0, MAX_DUMPSTERS)
         .map((d) => ({ level: d.level, load: d.load, queue: [] }))
       if (ps.custom) registerCustomBuildings([ps.custom], false)
-      const def = ps.custom ?? getBuilding(ps.buildingId)
+      let def = ps.custom ?? getBuilding(ps.buildingId)
+      // Started before this building was redesigned: finish the old one.
+      const old = ps.phase !== 'empty' && !ps.custom ? legacyOf(def.id) : null
+      if (old && savedBrickBytes(ps.removed) === Math.ceil(brickCount(old) / 8) && savedBrickBytes(ps.removed) !== Math.ceil(brickCount(def) / 8)) def = old
       if (ps.phase === 'empty') {
         site.building = def
       } else {
@@ -853,6 +882,7 @@ export class Engine {
       crewPlan: this.crewPlan,
       sitesCleared: this.sitesCleared,
       lastSeen: Date.now(),
+      yardBuild: this.yardBuild,
       trucks: this.trucks.map((t) => ({ load: t.load, speed: t.speed })),
       plots: this.plots.map((p) => ({
         phase: p.phase,
@@ -1245,9 +1275,48 @@ export class Engine {
     return 1
   }
 
+  // ── Yard expansion (built over time) ─────────────────────────────────
+
+  yardBuild: YardBuild | null = null
+
+  // Finishes the expansion once its time is up (called every tick, and
+  // after loading so time away counts).
+  private checkYardBuild() {
+    const b = this.yardBuild
+    if (!b || Date.now() < b.endsAt) return
+    this.yardBuild = null
+    if (this.upgrades.yardSize < b.level) this.upgrades = { ...this.upgrades, yardSize: b.level }
+    const size = stats.yardSize(this.upgrades)
+    if (!this.frozen)
+      this.notices.push({ title: 'Brick Yard expanded!', detail: `Room for ${yardCapacity(size)} trucks now`, message: null, emoji: '🏗️', button: 'Nice!' })
+    this.save()
+    this.markDirty()
+  }
+
+  // A watched ad: knock a quarter of the full build time off.
+  speedUpYard() {
+    const b = this.yardBuild
+    if (!b) return
+    b.endsAt -= yardBuildSeconds(b.level + 1) * 1000 * YARD_AD_SHARE
+    this.checkYardBuild()
+    this.save()
+    this.markDirty()
+  }
+
   buyUpgrade(key: UpgradeKey): boolean {
     const cost = upgradeCost(key, this.upgrades[key])
     if (this.scrap < cost || upgradeLock(key, this.upgrades, levelForXp(this.xp))) return false
+    if (key === 'yardSize') {
+      // Expansions are built over time, not instantly.
+      if (this.yardBuild) return false
+      this.scrap -= cost
+      const now = Date.now()
+      const level = this.upgrades.yardSize + 1
+      this.yardBuild = { level, startedAt: now, endsAt: now + yardBuildSeconds(level + 1) * 1000 }
+      this.save()
+      this.markDirty()
+      return true
+    }
     this.scrap -= cost
     this.upgrades = { ...this.upgrades, [key]: this.upgrades[key] + 1 }
     this.syncWorkers()
@@ -1490,6 +1559,7 @@ export class Engine {
     dt = Math.min(dt, 0.1)
     this.time += dt
     const u = this.upgrades
+    if (this.yardBuild) this.checkYardBuild()
     for (const site of this.plots) if (site.phase === 'demolishing') site.worked += dt
 
     this.rebalanceCrew()
@@ -1503,8 +1573,10 @@ export class Engine {
         case 'toPick':
           if (this.moveToward(w, dt)) {
             w.state = 'picking'
-            w.timer = stats.pullSeconds(u) / this.boostMul()
             const t = w.target
+            // Bricks still in the building can be tougher (big late
+            // buildings); rubble on the ground is always quick.
+            w.timer = (stats.pullSeconds(u) * (t?.kind === 'brick' ? (site.building.toughness ?? 1) : 1)) / this.boostMul()
             if (t?.kind === 'brick') {
               const b = site.bricks[t.index]
               w.heading = Math.atan2(b.x * BRICK - w.x, b.z * BRICK - w.z)
@@ -1666,6 +1738,13 @@ export class Engine {
   // Freezes the countdown while the claim card (and its ad) is open.
   holdBonusDrop(held: boolean) {
     this.bonusHeld = held
+  }
+
+  // Ignored too long: a seagull made off with it.
+  loseBonusDrop() {
+    this.bonusDrop = null
+    this.bonusHeld = false
+    this.markDirty()
   }
 
   claimBonusDrop() {
@@ -1946,6 +2025,13 @@ export class Engine {
         username: this.username,
         synced: this.synced,
         ban: this.ban,
+        yardBuild: this.yardBuild
+          ? {
+              toSize: this.yardBuild.level + 1,
+              secondsLeft: Math.max(0, Math.ceil((this.yardBuild.endsAt - Date.now()) / 1000)),
+              totalSeconds: yardBuildSeconds(this.yardBuild.level + 1),
+            }
+          : null,
         events: liveEvents.filter((e) => new Date(e.startsAt).getTime() <= Date.now() && new Date(e.endsAt).getTime() > Date.now()),
         banners: this.banners,
         bonusDrop: this.bonusDrop

@@ -229,3 +229,80 @@
     animation: none;
   }
 }
+
+/* An ignored "dropped its load" card: a seagull swoops in, grabs it and
+   flies off with it (BonusTab). */
+.gull-swoop {
+  animation: gull-swoop 0.7s cubic-bezier(0.2, 0.7, 0.3, 1) forwards;
+}
+@keyframes gull-swoop {
+  0% {
+    transform: translate(180px, -260px) rotate(18deg) scale(0.6);
+  }
+  100% {
+    transform: translate(0, 0) rotate(-6deg) scale(1);
+  }
+}
+.gull-wing {
+  transform-origin: 50% 100%;
+  animation: gull-flap 0.18s ease-in-out infinite alternate;
+}
+@keyframes gull-flap {
+  from {
+    transform: scaleY(1);
+  }
+  to {
+    transform: scaleY(-0.6);
+  }
+}
+.gull-steal {
+  animation: gull-steal 1.1s cubic-bezier(0.5, 0, 0.8, 0.4) 0.75s forwards;
+}
+@keyframes gull-steal {
+  0% {
+    transform: translate(0, 0) rotate(0);
+  }
+  15% {
+    transform: translate(6px, 10px) rotate(3deg);
+  }
+  100% {
+    transform: translate(-115vw, -70vh) rotate(-24deg) scale(0.5);
+  }
+}
+.gull-caw {
+  animation: gull-caw 0.5s ease-out 0.55s both;
+}
+@keyframes gull-caw {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.6);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .gull-swoop,
+  .gull-wing,
+  .gull-steal,
+  .gull-caw {
+    animation-duration: 0.01s;
+    animation-delay: 0s;
+  }
+}
+
+/* iOS draws date/time inputs at their own width and height (they spilled
+   out of their column on the admin pages); make them fit like text inputs. */
+input[type='datetime-local'],
+input[type='date'],
+input[type='time'] {
+  -webkit-appearance: none;
+  appearance: none;
+  min-width: 0;
+  max-width: 100%;
+}
+input[type='datetime-local']::-webkit-date-and-time-value {
+  text-align: left;
+  min-height: 1.25em;
+}

@@ -2,7 +2,9 @@
 
 import { revalidatePath } from 'next/cache'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { bricksFromCells, decodeCells, SHAPE_LIMITS, type BuilderParams, type Shape } from '@/lib/game/shapes'
+import { bricksFromCells, cellsFromBlueprint, decodeCells, encodeCells, SHAPE_LIMITS, type BuilderParams, type Shape } from '@/lib/game/shapes'
+import { BUILDINGS, suggestPricing } from '@/lib/game/buildings'
+import { shapeFromFootprint, toMetres } from '@/lib/game/fromMap'
 import { requireAdminSession } from '../auth'
 import { audit, nameOf } from '../audit'
 
@@ -124,3 +126,155 @@ export async function deleteBuilding(id: string): Promise<Result> {
   await audit('Deleted building', label)
   return { ok: true }
 }
+
+// Copies a building as a new, switched-off one to edit: one of yours (its
+// uuid) or a built-in (its id, e.g. 'tower'). Returns the new id.
+export async function duplicateBuilding(source: string): Promise<{ ok: true; id: string } | { ok: false; message: string }> {
+  await requireAdminSession()
+  const admin = createAdminClient()
+  let row: Record<string, unknown>
+  const builtIn = BUILDINGS.find((b) => b.id === source)
+  if (builtIn) {
+    const { size, cells } = cellsFromBlueprint(builtIn.blueprint)
+    row = {
+      name: `${builtIn.name} (copy)`,
+      emoji: '🏢',
+      shape: { size, data: encodeCells(cells) },
+      params: null,
+      required_level: builtIn.requiredLevel,
+      contract_cost: builtIn.contractCost,
+      brick_value: builtIn.brickValue,
+      bonus: builtIn.bonus,
+    }
+  } else {
+    const { data: b } = await admin
+      .from('custom_buildings')
+      .select('name, emoji, shape, params, required_level, contract_cost, brick_value, bonus')
+      .eq('id', source)
+      .maybeSingle()
+    if (!b) return { ok: false, message: 'That building is gone' }
+    row = { ...b, name: `${b.name} (copy)`.slice(0, 60) }
+  }
+  const { data, error } = await admin
+    .from('custom_buildings')
+    .insert({ ...row, active: false })
+    .select('id')
+    .single()
+  if (error || !data) return { ok: false, message: error?.message ?? 'Could not copy it' }
+  await audit('Duplicated building', String(row.name))
+  revalidatePath('/admin/buildings')
+  return { ok: true, id: data.id }
+}
+
+// ── From an address ──────────────────────────────────────────────────────
+
+const OSM_UA = 'RubbleAdmin/1.0 (dropdotx.vercel.app)'
+type Ring = { lat: number; lon: number }[]
+type OsmElement = { type: string; id: number; tags?: Record<string, string>; geometry?: Ring; members?: { role: string; geometry?: Ring }[] }
+
+function ringOf(e: OsmElement): Ring | null {
+  if (e.geometry?.length) return e.geometry
+  const outer = e.members?.find((m) => m.role === 'outer' && m.geometry?.length)
+  return outer?.geometry ?? null
+}
+
+// The public map servers are busy now and then: try a few, twice over.
+const OVERPASS = ['https://overpass-api.de/api/interpreter', 'https://overpass.kumi.systems/api/interpreter', 'https://overpass.private.coffee/api/interpreter']
+
+async function overpass(query: string): Promise<OsmElement[]> {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    for (const url of OVERPASS) {
+      try {
+        const res = await fetch(url, {
+          method: 'POST',
+          headers: { 'User-Agent': OSM_UA, Accept: 'application/json', 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: 'data=' + encodeURIComponent(query),
+          signal: AbortSignal.timeout(20000),
+        })
+        if (res.ok) return ((await res.json()) as { elements: OsmElement[] }).elements ?? []
+      } catch {
+        // try the next server
+      }
+    }
+  }
+  throw new Error('map servers busy')
+}
+
+// Looks the address (or a place's name) up on OpenStreetMap, takes the
+// building there and turns its outline + height into a new, switched-off
+// building to touch up in the editor. Returns its id.
+export async function buildFromAddress(address: string): Promise<{ ok: true; id: string; note: string } | { ok: false; message: string }> {
+  await requireAdminSession()
+  const q = address.trim().slice(0, 200)
+  if (!q) return { ok: false, message: 'Type an address or a building’s name' }
+  try {
+    const geo = await fetch(`https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&q=${encodeURIComponent(q)}`, {
+      headers: { 'User-Agent': OSM_UA },
+    })
+    const hits = (await geo.json()) as { lat: string; lon: string; osm_type: string; osm_id: number; category?: string; name?: string; display_name: string }[]
+    const hit = hits[0]
+    if (!hit) return { ok: false, message: 'Couldn’t find that address' }
+    const lat = Number(hit.lat)
+    const lon = Number(hit.lon)
+
+    // The place itself if it's a building; otherwise buildings around it.
+    let elements: OsmElement[] = []
+    if (hit.osm_type === 'way' || hit.osm_type === 'relation') {
+      elements = (await overpass(`[out:json][timeout:20];${hit.osm_type}(${hit.osm_id});out geom tags;`)).filter((e) => e.tags?.building || e.tags?.['building:part'])
+    }
+    if (!elements.length) {
+      elements = await overpass(`[out:json][timeout:20];(way(around:40,${lat},${lon})[building];relation(around:40,${lat},${lon})[building];);out geom tags;`)
+    }
+    // Prefer the outline the point is inside, else the nearest one.
+    let best: { e: OsmElement; ring: Ring; score: number } | null = null
+    for (const e of elements) {
+      const ring = ringOf(e)
+      if (!ring || ring.length < 3) continue
+      const pts = toMetres([{ lat, lon }, ...ring]).slice(1)
+      let hit2 = false
+      for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+        const a = pts[i]
+        const b = pts[j]
+        if (a.y > 0 !== b.y > 0 && 0 < ((b.x - a.x) * (0 - a.y)) / (b.y - a.y) + a.x) hit2 = !hit2
+      }
+      const cx = pts.reduce((n, p) => n + p.x, 0) / pts.length
+      const cy = pts.reduce((n, p) => n + p.y, 0) / pts.length
+      const score = hit2 ? -1 : Math.hypot(cx, cy)
+      if (!best || score < best.score) best = { e, ring, score }
+    }
+    if (!best) return { ok: false, message: 'Found the place, but the map has no building outline there' }
+
+    const tags = best.e.tags ?? {}
+    const made = shapeFromFootprint(toMetres(best.ring), tags)
+    if (!made) return { ok: false, message: 'That building’s outline couldn’t be turned into bricks' }
+    const bricks = bricksFromCells(made.size, made.cells).length
+    const level = bricks < 800 ? 3 : bricks < 2000 ? 6 : bricks < 5000 ? 10 : bricks < 10000 ? 15 : 20
+    const price = suggestPricing(level, bricks)
+    const name = (tags.name ?? hit.name ?? q.split(',')[0]).slice(0, 60)
+    const { data, error } = await admin()
+      .from('custom_buildings')
+      .insert({
+        name,
+        emoji: '🏢',
+        shape: { size: made.size, data: encodeCells(made.cells) },
+        params: null,
+        required_level: level,
+        contract_cost: price.contractCost,
+        brick_value: price.brickValue,
+        bonus: price.bonus,
+        active: false,
+      })
+      .select('id')
+      .single()
+    if (error || !data) return { ok: false, message: error?.message ?? 'Could not save it' }
+    await audit('Built from an address', name, { address: q })
+    revalidatePath('/admin/buildings')
+    const known = tags.height || tags['building:levels'] ? '' : ' The map didn’t say how tall it is, so it’s a guess.'
+    return { ok: true, id: data.id, note: `1 brick ≈ ${made.metresPerCell.toFixed(1)} m, about ${Math.round(made.heightM)} m tall.${known}` }
+  } catch (err) {
+    console.error('buildFromAddress failed', err)
+    return { ok: false, message: 'The map service didn’t answer — try again in a minute' }
+  }
+}
+
+const admin = () => createAdminClient()

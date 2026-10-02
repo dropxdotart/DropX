@@ -1,6 +1,10 @@
 import Link from 'next/link'
 import { Plus } from 'lucide-react'
-import { bricksFromCells, decodeCells } from '@/lib/game/shapes'
+import { bricksFromCells, cellsFromBlueprint, decodeCells } from '@/lib/game/shapes'
+import { BUILDINGS, brickCount } from '@/lib/game/buildings'
+import Thumb from './Thumb'
+import DuplicateButton from './DuplicateButton'
+import AddressBuilder from './AddressBuilder'
 import { isAdminSession } from '../auth'
 import PasswordGate from '../PasswordGate'
 import { StatusBadge } from '../ads/AdInsights'
@@ -20,25 +24,54 @@ export default async function BuildingsAdminPage() {
             <Plus className="h-4 w-4" /> New building
           </Link>
         </div>
+        <AddressBuilder />
         <p className="text-sm text-muted-foreground">
           Your own buildings join the 8 built-in ones in the game&apos;s building picker while they&apos;re on.
         </p>
         {buildings.length === 0 && <p className="py-6 text-center text-sm text-muted-foreground">No buildings yet — make one!</p>}
         {buildings.map((b) => {
-          const bricks = bricksFromCells(b.shape.size, decodeCells(b.shape.size, b.shape.data)).length
+          const cells = decodeCells(b.shape.size, b.shape.data)
+          const bricks = bricksFromCells(b.shape.size, cells).length
           return (
-            <Link key={b.id} href={`/admin/buildings/${b.id}`} className="flex items-center gap-3 rounded-xl border border-border bg-card p-3 hover:bg-accent">
-              <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-secondary text-2xl">{b.emoji}</span>
-              <span className="min-w-0 flex-1">
-                <span className="block font-medium">{b.name}</span>
-                <span className="block text-xs tabular-nums text-muted-foreground">
-                  Lv {b.required_level} · 🧱 {Math.round(b.contract_cost).toLocaleString()} to start · {bricks.toLocaleString()} bricks
+            <div key={b.id} className="flex items-center gap-3 rounded-xl border border-border bg-card p-3">
+              <Link href={`/admin/buildings/${b.id}`} className="flex min-w-0 flex-1 items-center gap-3">
+                <Thumb size={b.shape.size} cells={cells} />
+                <span className="min-w-0 flex-1">
+                  <span className="block font-medium">
+                    {b.emoji} {b.name}
+                  </span>
+                  <span className="block text-xs tabular-nums text-muted-foreground">
+                    Lv {b.required_level} · 🧱 {Math.round(b.contract_cost).toLocaleString()} to start · {bricks.toLocaleString()} bricks
+                  </span>
+                  <span className="mt-1 block">
+                    <StatusBadge ad={b} />
+                  </span>
                 </span>
-              </span>
-              <StatusBadge ad={b} />
-            </Link>
+              </Link>
+              <DuplicateButton source={b.id} />
+            </div>
           )
         })}
+
+        <div className="space-y-2 pt-4">
+          <h2 className="text-sm font-semibold">Built-in buildings</h2>
+          <p className="text-xs text-muted-foreground">Always in the game. Duplicate one to start a new building from it.</p>
+          {BUILDINGS.map((b) => {
+            const { size, cells } = cellsFromBlueprint(b.blueprint)
+            return (
+              <div key={b.id} className="flex items-center gap-3 rounded-xl border border-border bg-card p-3">
+                <Thumb size={size} cells={cells} />
+                <span className="min-w-0 flex-1">
+                  <span className="block font-medium">{b.name}</span>
+                  <span className="block text-xs tabular-nums text-muted-foreground">
+                    Lv {b.requiredLevel} · 🧱 {Math.round(b.contractCost).toLocaleString()} to start · {brickCount(b).toLocaleString()} bricks
+                  </span>
+                </span>
+                <DuplicateButton source={b.id} />
+              </div>
+            )
+          })}
+        </div>
 
         <div className="space-y-2 pt-4">
           <h2 className="text-sm font-semibold">How players are doing</h2>

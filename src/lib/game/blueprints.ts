@@ -153,7 +153,243 @@ const BLUEPRINTS: Blueprint[] = [
       return (x === 0 || x === 11 ? z : x) % 3 === 0 ? 'concreteDark' : 'glass'
     },
   },
-  // 4 — Shopping mall: storefront glass with striped awnings, a blue sign
+  // 4 — Shopping mall (~45 min): two floors of storefronts with striped
+  // awnings, a sign band, a glass atrium with a pyramid skylight, a tall
+  // sign pylon, rooftop AC units and a painted plaza.
+  {
+    size: [34, 24, 26],
+    voxel: (x, y, z) => {
+      // Sign pylon at the front-left corner of the plaza.
+      if (between(x, 1, 2) && z === 0) {
+        if (y > 21) return null
+        if (y === 21) return 'red'
+        return y % 4 === 3 ? (y % 8 === 3 ? 'orange' : 'yellow') : 'navy'
+      }
+      if (y === 0) {
+        if (z <= 1) return x % 4 === 0 ? 'white' : 'concreteDark'
+        return between(x, 1, 32) && z <= 24 ? 'concreteDark' : null
+      }
+      // Awnings jut out over the shop windows.
+      if (z === 1 && y === 5) return between(x, 2, 31) && !between(x, 14, 19) ? (x % 2 === 0 ? 'red' : 'white') : null
+      if (z === 1 && y === 4 && between(x, 2, 31) && !between(x, 14, 19) && x % 2 === 0) return 'red'
+      // Rooftop: AC units, then the atrium and its skylight.
+      const atrium = between(x, 12, 21) && between(z, 8, 17)
+      if (y >= 15) {
+        if (y <= 16 && !atrium) {
+          if ((between(x, 4, 7) && between(z, 18, 21)) || (between(x, 26, 29) && between(z, 5, 8)) || (between(x, 26, 29) && between(z, 17, 20)))
+            return y === 16 ? 'steelDark' : (x + z) % 2 === 0 ? 'steel' : 'steelDark'
+        }
+        if (y === 15 && between(x, 1, 32) && between(z, 2, 24) && !atrium && (x === 1 || x === 32 || z === 2 || z === 24)) return 'trim'
+        if (atrium) {
+          if (y <= 19) {
+            const edge = (x === 12 || x === 21) && (z === 8 || z === 17)
+            return edge || y === 19 ? 'steelDark' : 'glass'
+          }
+          const k = y - 20
+          if (between(x, 12 + k + 1, 21 - k - 1) && between(z, 8 + k + 1, 17 - k - 1)) return k % 2 === 0 ? 'glass' : 'glassDark'
+          if (k === 0) return 'steel'
+        }
+        return null
+      }
+      if (!between(x, 1, 32) || !between(z, 2, 24)) return null
+      if (y === 14) return 'roof'
+      const front = z === 2
+      const side = x === 32
+      if (front) {
+        if (between(x, 14, 19) && y <= 6) return x === 14 || x === 19 || y === 6 ? 'trim' : 'glassDark'
+        if (y <= 4) return x % 5 === 1 ? 'white' : 'glass'
+        if (y === 7 || y === 8) return between(x, 9, 24) ? (y === 7 ? 'blue' : 'navy') : 'white'
+        if (between(y, 9, 12)) return x % 4 === 0 ? 'white' : y === 12 ? 'trim' : 'glass'
+        return y === 13 ? 'trim' : 'white'
+      }
+      if (side) {
+        if (y <= 4) return z % 5 === 0 ? 'white' : 'glass'
+        if (y === 5) return z % 2 === 0 ? 'red' : 'white'
+        if (between(y, 9, 12)) return z % 4 === 0 ? 'white' : 'glass'
+        return y === 7 || y === 13 ? 'trim' : 'white'
+      }
+      if (y === 7 || y === 13) return 'trim'
+      return (x + z + y) % 7 === 0 ? 'concrete' : 'white'
+    },
+  },
+  // 5 — Stadium (~1.5 h): an elliptical bowl of tiered seats in team
+  // colours with aisles, a striped pitch with goals, an outer facade with
+  // entrances and window bands, a roof canopy, a scoreboard and four
+  // floodlight masts.
+  {
+    size: [36, 27, 32],
+    voxel: (x, y, z) => {
+      // Floodlight masts on the four corners.
+      for (const [px, pz] of [[0, 0], [35, 0], [0, 31], [35, 31]] as [number, number][]) {
+        if (x === px && z === pz) return y <= 26 ? (y >= 23 ? 'yellow' : 'steelDark') : null
+        if (y >= 23 && y <= 25 && Math.abs(x - px) + Math.abs(z - pz) === 1) return 'yellow'
+      }
+      const nx = (x - 17.5) / 17.5
+      const nz = (z - 15.5) / 15.5
+      const r = Math.sqrt(nx * nx + nz * nz)
+      if (r > 1) return null
+      const ang = Math.atan2(nz, nx)
+      const sector = Math.floor(((ang + Math.PI) / (2 * Math.PI)) * 24)
+      // Scoreboard over the north stand.
+      if (between(x, 13, 22) && z === 30 && between(y, 21, 26)) return y === 21 || y === 26 || x === 13 || x === 22 ? 'yellow' : 'black'
+      if (r < 0.5) {
+        if (y > 2) return null
+        // Goals at each end of the pitch.
+        if (y >= 1) return Math.abs(nz) < 0.12 && Math.abs(Math.abs(nx) - 0.42) < 0.03 ? 'white' : null
+        const line = Math.abs(nx) < 0.03 || Math.abs(r - 0.47) < 0.025 || (Math.abs(nx) < 0.1 && Math.abs(nz) < 0.1)
+        return line ? 'white' : 'grass'
+      }
+      // Roof canopy over the upper seats.
+      if (r > 0.84 && (y === 23 || y === 24)) return y === 23 ? 'white' : sector % 2 === 0 ? 'steel' : 'steelDark'
+      if (r > 0.95) {
+        if (y > 22) return null
+        if (y <= 4) return sector % 3 === 0 ? (y === 4 ? 'trim' : 'glassDark') : 'concreteDark'
+        if (y === 9 || y === 14) return sector % 2 === 0 ? 'glass' : 'concrete'
+        if (y >= 21) return 'trim'
+        return y % 2 === 0 ? 'concrete' : 'concreteDark'
+      }
+      const standTop = ((r - 0.5) / 0.45) * 22
+      if (y > standTop) return null
+      if (y >= Math.floor(standTop) - 1) {
+        if (sector % 4 === 0) return 'white' // aisle steps
+        const tier = Math.floor(y / 3) % 3
+        return tier === 0 ? 'red' : tier === 1 ? 'blue' : 'navy'
+      }
+      return 'concrete'
+    },
+  },
+  // 6 — Cruise ship (~3 h): a long tapered hull with red bottom paint,
+  // porthole rows, ten stepped decks of recessed balconies, lifeboats
+  // along both sides, a glass bridge, a pool deck, two funnels and a mast.
+  {
+    size: [36, 52, 30],
+    voxel: (x, y, z) => {
+      const mid = 14.5
+      // Hull: narrows toward the keel and to a point at the bow.
+      if (y <= 13) {
+        const bow = x > 26 ? (x - 26) * 1.35 : 0
+        const keel = y < 5 ? (5 - y) * 0.9 : 0
+        const half = 13.5 - bow - keel - (x < 2 ? 1.2 : 0)
+        if (Math.abs(z - mid) > half || half < 0.5) return null
+        if (y <= 3) return 'red'
+        if (y === 4) return 'black'
+        if (y === 5) return 'navy'
+        if ((y === 8 || y === 11) && x % 2 === 0 && Math.abs(Math.abs(z - mid) - half) < 1) return 'glassDark'
+        if (y === 13) return 'trim'
+        return 'white'
+      }
+      // Funnels and mast rise above the decks.
+      for (const fx of [8, 16]) {
+        if (between(x, fx, fx + 3) && between(z, 12, 17) && y <= 51) {
+          if (y >= 49) return 'black'
+          if (y === 46) return 'white'
+          return 'red'
+        }
+      }
+      if (x === 27 && between(z, 14, 15) && y <= 51) return y >= 50 ? 'red' : 'steel'
+      const d = Math.floor((y - 14) / 3)
+      if (d > 9) return null
+      const x0 = 1 + Math.floor(d * 1.2)
+      const x1 = 28 - Math.floor(d * 1.5)
+      const zi = 2 + Math.floor(d / 3)
+      const zo = 29 - zi
+      // Lifeboats hang just outside deck 1.
+      if (d === 1 && (z === zi - 1 || z === zo + 1) && between(y, 17, 18) && x % 6 < 4 && between(x, x0 + 2, x1 - 3))
+        return y === 18 ? 'white' : 'orange'
+      const v = (y - 14) % 3
+      if (!between(x, x0, x1) || !between(z, zi, zo)) {
+        // Railings along the open deck edges below (where this deck steps in).
+        if (v === 0 && d >= 1 && (x + z) % 2 === 0) {
+          const p0 = 1 + Math.floor((d - 1) * 1.2)
+          const p1 = 28 - Math.floor((d - 1) * 1.5)
+          const pi = 2 + Math.floor((d - 1) / 3)
+          const onBelow = between(x, p0, p1) && between(z, pi, 29 - pi)
+          const rim = x === p0 || x === p1 || z === pi || z === 29 - pi
+          if (onBelow && rim) return 'white'
+        }
+        return null
+      }
+      // A glass-roofed promenade runs up through the middle of the lower decks.
+      if (d <= 5 && between(x, 8, 20) && between(z, 11, 18)) {
+        if (d === 5 && v === 2) return (x + z) % 3 === 0 ? 'steel' : 'glass'
+        if (between(x, 9, 19) && between(z, 12, 17)) return d === 0 && v === 0 ? 'grass' : null
+      }
+      // Pool deck on the stern of deck 4.
+      if (d === 4 && v === 0 && x < x0 + 6 && between(z, zi + 3, zo - 3)) return x === x0 || z === zi + 3 || z === zo - 3 ? 'white' : 'blue'
+      const side = z === zi || z === zo
+      const front = x === x1
+      const stern = x === x0
+      if (front && d >= 7) return v === 2 ? 'white' : 'glassDark' // bridge
+      if (side || front || stern) {
+        if (v === 0 || x % 3 === 0) return 'white' // deck edges and balcony dividers
+        return null // the balcony itself: open, set back one brick
+      }
+      if (z === zi + 1 || z === zo - 1 || x === x1 - 1 || x === x0 + 1) return v === 1 ? 'glass' : v === 2 ? 'trim' : 'white'
+      return v === 0 ? 'concrete' : 'white'
+    },
+  },
+  // 7 — Space station (~6 h): a tall ribbed core on a launch pad, five
+  // habitat rings on spokes, gridded solar wings at three levels, four
+  // lattice towers, docking modules and a dish on a mast.
+  {
+    size: [36, 96, 32],
+    voxel: (x, y, z) => {
+      const dx = x - 17.5
+      const dz = z - 15.5
+      const r = Math.sqrt(dx * dx + dz * dz)
+      // Launch pad with a hazard border.
+      if (y === 0) {
+        if (!between(x, 3, 32) || !between(z, 1, 30)) return null
+        const edge = x === 3 || x === 32 || z === 1 || z === 30
+        return edge ? ((x + z) % 2 === 0 ? 'yellow' : 'black') : 'concrete'
+      }
+      // Lattice towers at the corners of the pad.
+      for (const [tx, tz] of [[4, 2], [30, 2], [4, 28], [30, 28]] as [number, number][]) {
+        if (between(x, tx, tx + 1) && between(z, tz, tz + 1) && y <= 30) return y === 30 ? 'red' : y % 4 === 0 ? 'steel' : 'steelDark'
+      }
+      // Core.
+      if (r <= 5.5 && y <= 84) {
+        if (y % 6 === 0) return 'steelDark'
+        const a = Math.floor(((Math.atan2(dz, dx) + Math.PI) / (2 * Math.PI)) * 16)
+        if (y % 6 === 3 && a % 2 === 0) return 'glass'
+        return a % 4 === 0 ? 'steel' : 'white'
+      }
+      // Habitat rings, joined to the core by spokes.
+      for (const ry of [12, 28, 44, 60, 76]) {
+        const tube = Math.sqrt((r - 12.5) ** 2 + (y - ry) ** 2)
+        if (tube <= 2.9 && r <= 17.4) {
+          const a = Math.floor(((Math.atan2(dz, dx) + Math.PI) / (2 * Math.PI)) * 32)
+          if (a % 8 === 0) return 'steelDark'
+          return y === ry && r > 13.5 && a % 2 === 0 ? 'glass' : 'white'
+        }
+        if (Math.abs(y - ry) <= 1 && r < 10 && (Math.abs(dx) <= 0.6 || Math.abs(dz) <= 0.6)) return 'steel'
+      }
+      // Solar wings out to both sides.
+      for (const wy of [20, 36, 52, 68]) {
+        if (y === wy && Math.abs(dx) > 6 && between(z, 3, 28)) {
+          if (Math.abs(dz) <= 0.6) return 'steelDark'
+          if (Math.abs(dx) > 17) return null
+          return Math.round(Math.abs(dx)) % 4 === 0 || z % 5 === 3 ? 'steelDark' : 'panel'
+        }
+      }
+      // Docking modules sticking out front and back.
+      for (const my of [4, 5, 6]) {
+        if (y === my && Math.abs(dx) <= 1.5 && between(Math.abs(dz), 5, 15)) return Math.abs(dz) >= 14 ? 'red' : 'white'
+      }
+      // Mast and dish on top.
+      if (y > 84) {
+        if (r < 0.8) return y >= 94 ? 'red' : 'steelDark'
+        const ring = (y - 85) * 1.3
+        if (y <= 91 && r <= ring + 0.8 && r >= ring - 0.8) return 'white'
+      }
+      return null
+    },
+  },
+  // The designs below are the ones these buildings had before they were
+  // made bigger (2026-10-02). They're kept so a demolition already under
+  // way in a save finishes with the building it started (see
+  // LEGACY_BUILDINGS); nobody can start one anymore.
+  // 8 — (old) Shopping mall: storefront glass with striped awnings, a blue sign
   // band, an upper floor of windows and a glass skylight.
   {
     size: [30, 13, 18],
@@ -168,7 +404,7 @@ const BLUEPRINTS: Blueprint[] = [
       return 'white'
     },
   },
-  // 5 — Stadium: an elliptical bowl of tiered seats, a lined pitch, and
+  // 9 — (old) Stadium: an elliptical bowl of tiered seats, a lined pitch, and
   // floodlight towers at the four corners.
   {
     size: [33, 14, 25],
@@ -192,7 +428,7 @@ const BLUEPRINTS: Blueprint[] = [
       return 'concrete'
     },
   },
-  // 6 — Cruise ship: tapered hull with a red waterline and portholes,
+  // 10 — (old) Cruise ship: tapered hull with a red waterline and portholes,
   // stepped white decks with window rows, a glass bridge and two funnels.
   {
     size: [36, 18, 12],
@@ -215,7 +451,7 @@ const BLUEPRINTS: Blueprint[] = [
       return 'white'
     },
   },
-  // 7 — Space station: a ribbed central core, two gridded solar wings, a
+  // 11 — (old) Space station: a ribbed central core, two gridded solar wings, a
   // ring module and a dish on top.
   {
     size: [33, 20, 33],
@@ -237,6 +473,13 @@ const BLUEPRINTS: Blueprint[] = [
 ]
 
 export const BLUEPRINT_COUNT = BLUEPRINTS.length
+
+// A built-in blueprint as a full grid (for copying into the admin's
+// building editor): size and the colour at each cell, or null.
+export function blueprintVoxels(blueprintIndex: number): { size: [number, number, number]; voxel: (x: number, y: number, z: number) => BrickColor | null } {
+  const { size, voxel } = BLUEPRINTS[blueprintIndex % BLUEPRINTS.length]
+  return { size, voxel }
+}
 
 const cache = new Map<number, Brick[]>()
 

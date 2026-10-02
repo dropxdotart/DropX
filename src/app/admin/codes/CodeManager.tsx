@@ -1,13 +1,14 @@
 'use client'
 
 import { useState } from 'react'
-import { Loader2, Shuffle, Trash2 } from 'lucide-react'
+import Link from 'next/link'
+import { ChevronDown, Loader2, Shuffle, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
 import { rewardText, UPGRADE_OPTIONS } from '@/lib/rewards'
-import { createCode, deleteCode, listCodes, setCodeActive, type CodeKind, type RedeemCode } from './actions'
+import { createCode, deleteCode, listCodes, listRedemptions, setCodeActive, type CodeKind, type Redemption, type RedeemCode } from './actions'
 
 // Avoids look-alike characters so codes are easy to type.
 const CODE_CHARS = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'
@@ -27,6 +28,49 @@ function status(c: RedeemCode): { label: string; tone: string } {
 
 function when(iso: string) {
   return new Date(iso).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
+}
+
+// Who redeemed a code (loaded when opened); names open the player.
+function CodeUses({ codeId, uses }: { codeId: string; uses: number }) {
+  const [rows, setRows] = useState<Redemption[] | null>(null)
+  const [open, setOpen] = useState(false)
+  const toggle = async () => {
+    const next = !open
+    setOpen(next)
+    if (next && !rows) {
+      try {
+        setRows(await listRedemptions(codeId))
+      } catch {
+        toast.error("Couldn't load who used it")
+        setRows([])
+      }
+    }
+  }
+  return (
+    <div className="mt-2 border-t border-border pt-2">
+      <button type="button" onClick={toggle} className="flex items-center gap-1 text-xs font-medium text-[#2d7ff9]">
+        <ChevronDown className={`h-3.5 w-3.5 transition-transform ${open ? 'rotate-180' : ''}`} /> Used {uses.toLocaleString()}× — who and when
+      </button>
+      {open && (
+        <div className="mt-1.5 max-h-56 space-y-1 overflow-y-auto">
+          {rows === null && <p className="text-xs text-muted-foreground">Loading…</p>}
+          {rows?.map((r, i) => (
+            <Link
+              key={i}
+              href={`/admin/players?q=${r.short_id}`}
+              className="flex items-center justify-between gap-2 rounded-md px-1 py-0.5 text-xs hover:bg-accent"
+            >
+              <span className="min-w-0 truncate">
+                {r.username ?? <span className="italic text-muted-foreground">No name</span>}{' '}
+                <span className="font-mono text-muted-foreground">{r.short_id}</span>
+              </span>
+              <span className="shrink-0 text-muted-foreground">{when(r.created_at)}</span>
+            </Link>
+          ))}
+        </div>
+      )}
+    </div>
+  )
 }
 
 export default function CodeManager({ initialCodes }: { initialCodes: RedeemCode[] }) {
@@ -136,18 +180,13 @@ export default function CodeManager({ initialCodes }: { initialCodes: RedeemCode
         )}
 
         <div className="grid grid-cols-2 gap-2">
-          <label className="space-y-1 text-xs text-muted-foreground">
+          <label className="min-w-0 space-y-1 text-xs text-muted-foreground">
             Max total uses
             <Input type="number" min={1} value={maxUses} onChange={(e) => setMaxUses(e.target.value)} placeholder="Unlimited" />
           </label>
-          <label className="space-y-1 text-xs text-muted-foreground">
+          <label className="min-w-0 space-y-1 text-xs text-muted-foreground">
             Expires (optional)
-            <input
-              type="datetime-local"
-              value={expires}
-              onChange={(e) => setExpires(e.target.value)}
-              className="w-full rounded-md border border-border bg-background px-2 py-2 text-sm text-foreground"
-            />
+            <Input type="datetime-local" value={expires} onChange={(e) => setExpires(e.target.value)} />
           </label>
         </div>
         <label className="flex items-center gap-2 text-sm">
@@ -176,7 +215,7 @@ export default function CodeManager({ initialCodes }: { initialCodes: RedeemCode
                   </div>
                   <p className="text-sm">{rewardText(c.kind, c.amount, c.upgrade)}</p>
                   <p className="text-xs tabular-nums text-muted-foreground">
-                    {c.uses} {c.max_uses !== null ? `/ ${c.max_uses} ` : ''}used
+                    {c.max_uses !== null ? `${c.uses} / ${c.max_uses} used` : `${c.uses} used`}
                     {c.once_per_player ? ' · once per player' : ' · repeatable'}
                     {c.expires_at ? ` · ${new Date(c.expires_at) > new Date() ? 'expires' : 'expired'} ${when(c.expires_at)}` : ''}
                   </p>
@@ -203,6 +242,7 @@ export default function CodeManager({ initialCodes }: { initialCodes: RedeemCode
                   </button>
                 </div>
               </div>
+              {c.uses > 0 && <CodeUses codeId={c.id} uses={c.uses} />}
             </div>
           )
         })}

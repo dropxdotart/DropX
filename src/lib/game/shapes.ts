@@ -1,4 +1,4 @@
-import { BRICK_COLORS, type Brick, type BrickColor } from './blueprints'
+import { BRICK_COLORS, blueprintVoxels, type Brick, type BrickColor } from './blueprints'
 
 // Admin-made building shapes. A shape is a W×H×D grid of cells, each empty
 // (0) or a brick colour (1 + its index in COLOR_KEYS). Stored compressed
@@ -73,6 +73,48 @@ export function bricksFromCells(size: ShapeSize, cells: Uint8Array): Brick[] {
     }
   }
   return bricks
+}
+
+// A built-in blueprint as an editable shape (same grid layout).
+export function cellsFromBlueprint(blueprintIndex: number): { size: ShapeSize; cells: Uint8Array } {
+  const { size, voxel } = blueprintVoxels(blueprintIndex)
+  const [W, H, D] = size
+  const cells = new Uint8Array(W * H * D)
+  for (let y = 0; y < H; y++)
+    for (let x = 0; x < W; x++)
+      for (let z = 0; z < D; z++) {
+        const c = voxel(x, y, z)
+        if (c) cells[cellIndex(size, x, y, z)] = COLOR_KEYS.indexOf(c) + 1
+      }
+  return { size: [W, H, D], cells }
+}
+
+// The front face as seen head-on (nearest brick in each column), top row
+// first, as runs of one colour — for small list thumbnails.
+export function frontView(size: ShapeSize, cells: Uint8Array): { y: number; x: number; w: number; color: string }[] {
+  const [W, H, D] = size
+  const runs: { y: number; x: number; w: number; color: string }[] = []
+  for (let y = H - 1; y >= 0; y--) {
+    let start = 0
+    let prev: string | null = null
+    for (let x = 0; x <= W; x++) {
+      let color: string | null = null
+      if (x < W)
+        for (let z = 0; z < D; z++) {
+          const v = cells[cellIndex(size, x, y, z)]
+          if (v) {
+            color = BRICK_COLORS[COLOR_KEYS[v - 1]] ?? null
+            break
+          }
+        }
+      if (color !== prev) {
+        if (prev) runs.push({ y: H - 1 - y, x: start, w: x - start, color: prev })
+        start = x
+        prev = color
+      }
+    }
+  }
+  return runs
 }
 
 // ── Slider builder ──────────────────────────────────────────────────────

@@ -201,6 +201,7 @@ export async function getCustomBuildings(): Promise<import('@/lib/game/buildings
     contractCost: b.contract_cost,
     brickValue: b.brick_value,
     bonus: b.bonus,
+    ...(b.ends_at ? { endsAt: b.ends_at } : {}),
     available:
       b.active && (!b.starts_at || new Date(b.starts_at).getTime() <= now) && (!b.ends_at || new Date(b.ends_at).getTime() > now),
   }))

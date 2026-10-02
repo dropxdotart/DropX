@@ -504,22 +504,81 @@ function YardLook({ tier, size, docks }: { tier: number; size: number; docks: nu
   )
 }
 
+// Equipment working where the yard is growing while an expansion is being
+// built: a tower crane (slowly turning, a pallet of bricks on its hook), an
+// excavator, brick pallets, cones and warning lights.
+function ConstructionSite({ size }: { size: number }) {
+  const jib = useRef<THREE.Group>(null)
+  useFrame(({ clock }) => {
+    if (jib.current) jib.current.rotation.y = Math.sin(clock.getElapsedTime() * 0.25) * 1.1
+  })
+  // Growing sideways until the block is full, then back over the water.
+  const side = size + 1 <= 3
+  const hw = yardHalfWidth(size)
+  const at: [number, number, number] = side ? [hw + 1.2, 0, -1] : [0, 0, yardBackZ(size) - 2.4]
+  const rot = side ? Math.PI / 2 : 0
+  return (
+    <group position={at} rotation={[0, rot, 0]}>
+      {/* Tower crane */}
+      <group position={[-4, 0, 0]}>
+        <Box size={[1.4, 0.4, 1.4]} position={[0, 0.2, 0]} color="#7d8794" />
+        {Array.from({ length: 9 }, (_, i) => (
+          <Box key={i} size={[0.5, 1, 0.5]} position={[0, 0.9 + i, 0]} color={i % 2 ? '#f2c230' : '#e0b020'} />
+        ))}
+        <group ref={jib} position={[0, 9.6, 0]}>
+          <Box size={[0.8, 0.8, 0.8]} position={[0, 0.4, 0]} color="#3a3a3e" />
+          <Box size={[8, 0.35, 0.4]} position={[2.6, 0.95, 0]} color="#f2c230" />
+          <Box size={[1.2, 0.6, 0.7]} position={[-1.6, 0.8, 0]} color="#5b6470" />
+          <Box size={[0.05, 3.4, 0.05]} position={[5.5, -0.8, 0]} color="#2b2b2e" />
+          <Box size={[1, 0.6, 1]} position={[5.5, -2.7, 0]} color="#c4553a" />
+        </group>
+      </group>
+      {/* Excavator */}
+      <group position={[2.5, 0, 0.6]} rotation={[0, -0.6, 0]}>
+        <Box size={[2.2, 0.5, 1.6]} position={[0, 0.25, 0]} color="#2b2b2e" />
+        <Box size={[1.6, 0.9, 1.3]} position={[0, 0.95, 0]} color="#f2c230" />
+        <Box size={[0.7, 0.6, 0.9]} position={[-0.3, 1.7, 0]} color="#8ec9e8" />
+        <Box size={[1.8, 0.3, 0.3]} position={[1.4, 1.6, 0]} color="#e0b020" />
+        <Box size={[0.3, 1.3, 0.3]} position={[2.2, 1.1, 0]} color="#e0b020" />
+        <Box size={[0.7, 0.4, 0.7]} position={[2.3, 0.35, 0]} color="#5b6470" />
+      </group>
+      {/* Pallets of new bricks */}
+      {[[-0.6, -1.4], [0.8, -1.6]].map(([x, z], i) => (
+        <group key={i} position={[x, 0, z]}>
+          <Box size={[1.1, 0.15, 1.1]} position={[0, 0.08, 0]} color="#8a5a30" />
+          <Box size={[0.9, 0.6, 0.9]} position={[0, 0.45, 0]} color="#c4553a" />
+        </group>
+      ))}
+      {/* Cones and lights along the edge of the new ground */}
+      {[-6, -3, 0, 3, 6].map((x) => (
+        <Prop key={x} url="/models/roads/construction-cone.glb" size={0.45} position={[x, 0, 2]} />
+      ))}
+      {[-4.5, 4.5].map((x) => (
+        <Prop key={x} url="/models/roads/construction-light.glb" size={0.8} position={[x, 0, 2.2]} />
+      ))}
+    </group>
+  )
+}
+
 export function BrickYard({
   tier,
   size,
   docks,
+  building,
   affordable,
   onSelect,
 }: {
   tier: number
   size: number
   docks: number
+  building?: boolean
   affordable: boolean
   onSelect: (id: StationId) => void
 }) {
   return (
     <>
       <YardLook tier={tier} size={size} docks={docks} />
+      {building && <ConstructionSite size={size} />}
       {/* Tap the plant itself (not the open yard, where trucks drive). */}
       <Hotspot id="yard" position={[1.5, 0, -4.8]} hitSize={[9, 5, 6]} arrowHeight={5 + tier} affordable={affordable} onSelect={onSelect}>
         {null}

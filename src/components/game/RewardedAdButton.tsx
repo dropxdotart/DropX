@@ -11,11 +11,13 @@ import AdPlayer, { type AdPlayerHandle } from './AdPlayer'
 // video ends); closing it after that gives the reward.
 export default function RewardedAdButton({
   onReward,
+  onStart,
   rewardBricks = 0,
   className,
   children,
 }: {
   onReward: () => void
+  onStart?: () => void // the ad is opening
   // Recorded with the "watched" stat as bricks given out through this ad.
   rewardBricks?: number
   className?: string
@@ -34,6 +36,7 @@ export default function RewardedAdButton({
 
   const start = () => {
     if (open) return
+    onStart?.()
     setOpen(true)
     if (ad) trackAd(ad.id, 'view')
     // Same tap, so the browser lets it play with sound.
