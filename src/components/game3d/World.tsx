@@ -96,13 +96,17 @@ function Roads() {
   )
 }
 
-// ── Waterfront ───────────────────────────────────────────────────────────
+// ── Shoreline ────────────────────────────────────────────────────────────
 
-const WATER_DEPTH = 120
+// The city is an island. Land runs from the top shore (SHORE_Z, by the
+// Brick Yard) to LAND_EDGE on the other three sides; water lies under
+// everything around it. The top is a sandy beach; the bottom and left
+// edges are a stone quay.
+const LAND_EDGE = EXTENT + 2.7
+const BEACH_WIDTH = 6
+const UMBRELLAS = [-44, -31, -19, -6, 8, 21, 33, 47]
 
-// Beyond the last row of blocks: a stone quay along the shore, then water
-// with a few gentle bobbing buoys.
-function Waterfront() {
+function Shoreline() {
   const buoys = useRef<THREE.Group>(null)
   useFrame(({ clock }) => {
     const g = buoys.current
@@ -113,21 +117,65 @@ function Waterfront() {
       b.rotation.z = Math.sin(t * 1.1 + i) * 0.12
     })
   })
-  const width = EXTENT * 2 + 80
+  const span = LAND_EDGE * 2
+  const quay = '#b9b2a4'
   return (
     <group>
-      {/* Quay: a stone edge along the shore */}
-      <mesh position={[0, 0.05, SHORE_Z + 0.6]} receiveShadow>
-        <boxGeometry args={[width, 0.2, 1.4]} />
-        <meshStandardMaterial color="#b9b2a4" roughness={0.9} />
-      </mesh>
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.05, SHORE_Z - WATER_DEPTH / 2]}>
-        <planeGeometry args={[width, WATER_DEPTH]} />
+      {/* Water under everything */}
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.06, 0]}>
+        <planeGeometry args={[600, 600]} />
         <meshStandardMaterial color="#3d9fd6" roughness={0.35} metalness={0.05} />
       </mesh>
+
+      {/* Top: sandy beach sloping into shallow water */}
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.02, SHORE_Z - BEACH_WIDTH / 2]} receiveShadow>
+        <planeGeometry args={[span, BEACH_WIDTH]} />
+        <meshStandardMaterial color="#ecd9a6" roughness={1} />
+      </mesh>
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.04, SHORE_Z - BEACH_WIDTH - 2]}>
+        <planeGeometry args={[span, 4]} />
+        <meshStandardMaterial color="#7fcbe8" roughness={0.4} />
+      </mesh>
+      {UMBRELLAS.map((x, i) => (
+        <group key={x} position={[x, 0, SHORE_Z - 2.2 - (i % 2) * 1.6]}>
+          <mesh position={[0, 0.9, 0]}>
+            <cylinderGeometry args={[0.05, 0.05, 1.8, 6]} />
+            <meshStandardMaterial color="#f4f1ea" />
+          </mesh>
+          <mesh position={[0, 1.75, 0]} castShadow>
+            <coneGeometry args={[1, 0.45, 8]} />
+            <meshStandardMaterial color={['#ff6b1a', '#2d7ff9', '#f2c230', '#3fbf4a'][i % 4]} />
+          </mesh>
+          <mesh position={[0.9, 0.02, 0.3]} rotation={[0, 0.3, 0]}>
+            <boxGeometry args={[0.7, 0.03, 1.5]} />
+            <meshStandardMaterial color={['#f4f1ea', '#e23f3f', '#2d7ff9', '#ffc93c'][i % 4]} />
+          </mesh>
+        </group>
+      ))}
+
+      {/* Bottom and left: stone quay into plain water */}
+      <mesh position={[0, 0.03, LAND_EDGE - 0.7]} receiveShadow>
+        <boxGeometry args={[span, 0.16, 1.4]} />
+        <meshStandardMaterial color={quay} roughness={0.9} />
+      </mesh>
+      <mesh position={[LAND_EDGE - 0.7, 0.03, (SHORE_Z + LAND_EDGE) / 2]} receiveShadow>
+        <boxGeometry args={[1.4, 0.16, LAND_EDGE - SHORE_Z]} />
+        <meshStandardMaterial color={quay} roughness={0.9} />
+      </mesh>
+      <mesh position={[-LAND_EDGE + 0.7, 0.03, (SHORE_Z + LAND_EDGE) / 2]} receiveShadow>
+        <boxGeometry args={[1.4, 0.16, LAND_EDGE - SHORE_Z]} />
+        <meshStandardMaterial color={quay} roughness={0.9} />
+      </mesh>
+
       <group ref={buoys}>
-        {[-30, -12, 9, 26, 41].map((x, i) => (
-          <mesh key={x} position={[x, 0.1, SHORE_Z - 6 - (i % 2) * 5]} castShadow>
+        {[
+          [-30, LAND_EDGE + 5],
+          [-6, LAND_EDGE + 8],
+          [19, LAND_EDGE + 5],
+          [LAND_EDGE + 6, 10],
+          [LAND_EDGE + 5, -25],
+        ].map(([x, z], i) => (
+          <mesh key={i} position={[x, 0.1, z]} castShadow>
             <cylinderGeometry args={[0.35, 0.45, 0.6, 10]} />
             <meshStandardMaterial color={i % 2 ? '#ff6b1a' : '#f4f1ea'} />
           </mesh>
@@ -352,12 +400,12 @@ export default function World({ ownedPlots }: { ownedPlots: number }) {
 
   return (
     <group>
-      {/* Grass from the shore to past the near edge of the map */}
-      <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow position={[0, -0.01, (SHORE_Z + EXTENT + 40) / 2]}>
-        <planeGeometry args={[EXTENT * 2 + 80, EXTENT + 40 - SHORE_Z]} />
+      {/* The island's grass, from the beach to the quays */}
+      <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow position={[0, -0.01, (SHORE_Z + LAND_EDGE) / 2]}>
+        <planeGeometry args={[LAND_EDGE * 2, LAND_EDGE - SHORE_Z]} />
         <meshStandardMaterial color="#86c56b" />
       </mesh>
-      <Waterfront />
+      <Shoreline />
 
       <Roads />
 

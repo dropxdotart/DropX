@@ -437,8 +437,8 @@ function YardLook({ tier }: { tier: number }) {
           )}
         </>
       )}
-      {/* A barge moored on the water behind the yard, loaded with bricks */}
-      <group position={[0, 0, -15.5]}>
+      {/* A barge moored past the beach behind the yard, loaded with bricks */}
+      <group position={[0, 0, -21.5]}>
         <Box size={[9, 0.9, 3.2]} position={[0, 0.2, 0]} color="#5b6470" />
         <Box size={[9.2, 0.15, 3.4]} position={[0, 0.7, 0]} color="#ff6b1a" />
         {tier >= 1 && (

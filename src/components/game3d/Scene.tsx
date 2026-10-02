@@ -25,7 +25,7 @@ const GROUND_FORWARD = new THREE.Vector3(-1, 0, -1).normalize()
 const PAN_LIMIT = MAP_BLOCKS * BLOCK
 const DRAG_THRESHOLD = 8
 // How far pinch/wheel can zoom out (wider city view) and in.
-const MIN_ZOOM = 0.45
+const MIN_ZOOM = 0.55
 const MAX_ZOOM = 2
 
 // `truck` set = one specific truck (the camera follows it as it drives);
