@@ -3,7 +3,7 @@
 import { useMemo, useRef, useState } from 'react'
 import dynamic from 'next/dynamic'
 import { useRouter } from 'next/navigation'
-import { Eraser, Loader2, Trash2 } from 'lucide-react'
+import { Eraser, Loader2, RotateCcw, Trash2, Undo2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -132,6 +132,31 @@ export default function BuildingEditor({ initial }: { initial: CustomBuilding | 
   const [layer, setLayer] = useState(0)
   const [paint, setPaint] = useState<BrickColor | null>('brick')
   const painting = useRef(false)
+  const strokeSaved = useRef(false)
+
+  // Undo steps (each brush stroke, button or builder change is one step).
+  type Step = { size: ShapeSize; cells: Uint8Array; params: BuilderParams; edited: boolean }
+  const [history, setHistory] = useState<Step[]>([])
+  const remember = () => setHistory((h) => [...h.slice(-49), { size, cells, params, edited }])
+  const restore = (st: Step) => {
+    setSize(st.size)
+    setCells(st.cells)
+    setParams(st.params)
+    setEdited(st.edited)
+    setLayer((l) => Math.min(l, st.size[1] - 1))
+  }
+  const undo = () => {
+    const last = history[history.length - 1]
+    if (!last) return
+    setHistory(history.slice(0, -1))
+    restore(last)
+  }
+  // Back to the last saved version (itself undoable).
+  const revert = () => {
+    if (!confirm(initial ? 'Revert to the last saved version?' : 'Start over from the default building?')) return
+    remember()
+    restore({ size: startShape.size, cells: startShape.cells, params: initial?.params ?? DEFAULT_PARAMS, edited: !!initial && !initial.params })
+  }
 
   const [name, setName] = useState(initial?.name ?? '')
   const [emoji, setEmoji] = useState(initial?.emoji ?? '🏢')
@@ -155,6 +180,7 @@ export default function BuildingEditor({ initial }: { initial: CustomBuilding | 
   const updateParams = (next: Partial<BuilderParams>) => {
     if (edited && !confirm('Changing the builder replaces your brick edits. Continue?')) return
     const p = { ...params, ...next }
+    remember()
     setParams(p)
     const g = generateShape(p)
     setSize(g.size)
@@ -167,6 +193,10 @@ export default function BuildingEditor({ initial }: { initial: CustomBuilding | 
     const i = cellIndex(size, x, layer, z)
     const v = paint ? COLOR_KEYS.indexOf(paint) + 1 : 0
     if (cells[i] === v) return
+    if (!strokeSaved.current) {
+      remember()
+      strokeSaved.current = true
+    }
     const next = cells.slice()
     next[i] = v
     setCells(next)
@@ -175,6 +205,7 @@ export default function BuildingEditor({ initial }: { initial: CustomBuilding | 
 
   const copyLayerBelow = () => {
     if (layer === 0) return
+    remember()
     const next = cells.slice()
     for (let x = 0; x < W; x++) for (let z = 0; z < D; z++) next[cellIndex(size, x, layer, z)] = cells[cellIndex(size, x, layer - 1, z)]
     setCells(next)
@@ -182,6 +213,7 @@ export default function BuildingEditor({ initial }: { initial: CustomBuilding | 
   }
 
   const clearLayer = () => {
+    remember()
     const next = cells.slice()
     for (let x = 0; x < W; x++) for (let z = 0; z < D; z++) next[cellIndex(size, x, layer, z)] = 0
     setCells(next)
@@ -191,6 +223,7 @@ export default function BuildingEditor({ initial }: { initial: CustomBuilding | 
   // A new empty layer on top (cells are stored y-major, so it just grows).
   const addLayer = () => {
     if (H >= SHAPE_LIMITS.maxH) return
+    remember()
     const nextSize: ShapeSize = [W, H + 1, D]
     const next = new Uint8Array(W * (H + 1) * D)
     next.set(cells)
@@ -202,7 +235,10 @@ export default function BuildingEditor({ initial }: { initial: CustomBuilding | 
 
   // Drag-painting that works with touch: find the cell under the finger.
   const onGridPointer = (e: React.PointerEvent) => {
-    if (e.type === 'pointerdown') painting.current = true
+    if (e.type === 'pointerdown') {
+      painting.current = true
+      strokeSaved.current = false
+    }
     if (!painting.current) return
     const el = document.elementFromPoint(e.clientX, e.clientY) as HTMLElement | null
     const cell = el?.dataset.cell
@@ -254,6 +290,14 @@ export default function BuildingEditor({ initial }: { initial: CustomBuilding | 
         {W} × {D} footprint · {H} tall · {fmt(bricks)} / {fmt(SHAPE_LIMITS.maxBricks)} visible bricks
         {tooMany ? ' — too many, make it smaller' : ''}
       </p>
+      <div className="flex gap-2">
+        <Button variant="secondary" size="sm" onClick={undo} disabled={history.length === 0}>
+          <Undo2 className="mr-1 h-4 w-4" /> Undo
+        </Button>
+        <Button variant="secondary" size="sm" onClick={revert} disabled={history.length === 0}>
+          <RotateCcw className="mr-1 h-4 w-4" /> Revert to saved
+        </Button>
+      </div>
 
       <Segmented
         value={tab}

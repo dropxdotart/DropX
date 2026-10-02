@@ -106,14 +106,14 @@ function PlayerDetail({
       </div>
 
       <div className="space-y-1.5">
-        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Send a gift</p>
+        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Send a gift or take away</p>
         <div className="grid grid-cols-2 gap-2">
           <Select value={kind} onChange={(e) => setKind(e.target.value as typeof kind)}>
             <option value="bricks">Bricks</option>
             <option value="boost">Crew boost (minutes)</option>
             <option value="upgrade">Free upgrade</option>
           </Select>
-          <Input type="number" min={1} value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="Amount" />
+          <Input type="number" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="Amount (− to take)" />
         </div>
         {kind === 'upgrade' && (
           <Select value={upgrade} onChange={(e) => setUpgrade(e.target.value)}>
@@ -136,7 +136,7 @@ function PlayerDetail({
           }
         >
           {busy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-          Send gift
+          {Number(amount) < 0 ? 'Take away' : 'Send gift'}
         </Button>
       </div>
 

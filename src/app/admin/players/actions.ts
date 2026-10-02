@@ -67,7 +67,8 @@ export async function sendGrant(
 ): Promise<Result> {
   await requireAdminSession()
   if (!['bricks', 'set_bricks', 'boost', 'upgrade'].includes(grant.kind)) return { ok: false, message: 'Pick what to send' }
-  if (!Number.isFinite(grant.amount) || grant.amount < 0 || (grant.kind !== 'set_bricks' && grant.amount === 0))
+  // Negative amounts take away (bricks, boost minutes, upgrades); a balance can't be set below 0.
+  if (!Number.isFinite(grant.amount) || (grant.kind === 'set_bricks' ? grant.amount < 0 : grant.amount === 0))
     return { ok: false, message: 'Enter an amount' }
   if (grant.kind === 'upgrade' && !UPGRADES.includes(grant.upgrade ?? '')) return { ok: false, message: 'Pick which upgrade' }
   if (grant.kind === 'upgrade' && !Number.isInteger(grant.amount)) return { ok: false, message: 'Upgrades are whole numbers' }

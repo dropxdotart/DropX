@@ -10,11 +10,12 @@ export const UPGRADE_OPTIONS: { value: string; label: string }[] = [
 ]
 
 export function rewardText(kind: string, amount: number, upgrade: string | null): string {
-  const n = Math.round(amount).toLocaleString()
-  if (kind === 'bricks') return `🧱 ${n} bricks`
+  const n = Math.round(Math.abs(amount)).toLocaleString()
+  const taken = amount < 0 && kind !== 'set_bricks'
+  if (kind === 'bricks') return taken ? `Took 🧱 ${n} bricks` : `🧱 ${n} bricks`
   if (kind === 'set_bricks') return `Set bricks to 🧱 ${n}`
-  if (kind === 'boost') return `⚡ ${amount} min crew boost`
+  if (kind === 'boost') return taken ? `Took ⚡ ${n} min boost` : `⚡ ${n} min crew boost`
   if (kind === 'reset') return '↺ Progress reset'
   const label = UPGRADE_OPTIONS.find((u) => u.value === upgrade)?.label ?? upgrade ?? 'upgrade'
-  return `${n}× free ${label}`
+  return taken ? `Took ${n}× ${label}` : `${n}× free ${label}`
 }

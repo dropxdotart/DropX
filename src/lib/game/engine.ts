@@ -529,6 +529,18 @@ export class Engine {
     }
   }
 
+  // After an admin takes workers or trucks away: drop the extras. A worker's
+  // claimed brick goes back up for grabs and it leaves any dumpster line.
+  private trimCrew() {
+    const wantTrucks = stats.truckCount(this.upgrades)
+    if (this.trucks.length > wantTrucks) this.trucks = this.trucks.slice(0, wantTrucks)
+    const want = stats.workerCount(this.upgrades)
+    if (this.workers.length <= want) return
+    for (const w of this.workers.slice(want)) this.releaseTarget(w)
+    this.workers = this.workers.slice(0, want)
+    for (const site of this.plots) for (const d of site.dumpsters) d.queue = d.queue.filter((id) => id < want)
+  }
+
   private newWorker(id: number, plot: number): Worker {
     return {
       id,
@@ -687,12 +699,15 @@ export class Engine {
       window.location.reload()
       return
     }
-    const amount = Math.max(0, Number(r.amount) || 0)
+    // Admins can send negative amounts to take things away.
+    const raw = Number(r.amount) || 0
+    const amount = r.kind === 'set_bricks' ? Math.max(0, raw) : raw
+    const taken = amount < 0
     let what = ''
     switch (r.kind) {
       case 'bricks':
-        this.scrap += amount
-        what = `+🧱${Math.round(amount).toLocaleString()} bricks`
+        this.scrap = Math.max(0, this.scrap + amount)
+        what = `${taken ? '−' : '+'}🧱${Math.round(Math.abs(amount)).toLocaleString()} bricks`
         break
       case 'set_bricks':
         this.scrap = amount
@@ -700,22 +715,26 @@ export class Engine {
         break
       case 'boost':
         // Minutes of crew boost, on top of any boost already running.
-        this.boostUntil = Math.max(this.boostUntil, this.time) + amount * 60
-        what = `⚡ ${amount} min crew boost`
+        if (taken) this.boostUntil = Math.max(this.time, this.boostUntil + amount * 60)
+        else this.boostUntil = Math.max(this.boostUntil, this.time) + amount * 60
+        what = taken ? `⚡ ${-amount} min of crew boost removed` : `⚡ ${amount} min crew boost`
         break
       case 'upgrade': {
         const key = r.upgrade as UpgradeKey | null
         if (!key || !(key in this.upgrades)) return
         const n = Math.round(amount)
-        this.upgrades = { ...this.upgrades, [key]: this.upgrades[key] + n }
+        const label = REWARD_UPGRADE_LABELS[key] ?? UPGRADE_INFO[key].label
+        this.upgrades = { ...this.upgrades, [key]: Math.max(0, this.upgrades[key] + n) }
         this.syncWorkers()
-        what = `${n} free ${REWARD_UPGRADE_LABELS[key] ?? UPGRADE_INFO[key].label}${n > 1 ? ' upgrades' : ''}`
+        this.trimCrew()
+        what = taken ? `${-n} ${label}${n < -1 ? ' upgrades' : ''} removed` : `${n} free ${label}${n > 1 ? ' upgrades' : ''}`
         break
       }
       default:
         return
     }
-    this.notices.push({ title: source === 'code' ? 'Code redeemed!' : 'You got a gift!', detail: what, message })
+    const title = taken ? 'Your account was updated' : source === 'code' ? 'Code redeemed!' : 'You got a gift!'
+    this.notices.push({ title, detail: what, message })
     this.save()
     this.markDirty()
   }
