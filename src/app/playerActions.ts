@@ -114,3 +114,25 @@ export async function redeemCode(id: string, code: string): Promise<{ ok: true; 
   await admin.from('player_grants').insert({ player_id: id, ...grant, applied_at: new Date().toISOString() })
   return { ok: true, grant }
 }
+
+// Admin-made buildings for the game: every one (so saves demolishing an
+// older one still load), each flagged with whether it can be started now.
+export async function getCustomBuildings(): Promise<import('@/lib/game/buildings').BuildingDef[]> {
+  const { data } = await createAdminClient()
+    .from('custom_buildings')
+    .select('id, name, emoji, shape, required_level, contract_cost, brick_value, bonus, active, starts_at, ends_at')
+  const now = Date.now()
+  return (data ?? []).map((b) => ({
+    id: `custom-${b.id}`,
+    name: b.name,
+    emoji: b.emoji,
+    blueprint: 0,
+    shape: b.shape,
+    requiredLevel: b.required_level,
+    contractCost: b.contract_cost,
+    brickValue: b.brick_value,
+    bonus: b.bonus,
+    available:
+      b.active && (!b.starts_at || new Date(b.starts_at).getTime() <= now) && (!b.ends_at || new Date(b.ends_at).getTime() > now),
+  }))
+}

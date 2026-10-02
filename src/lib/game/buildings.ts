@@ -1,4 +1,5 @@
-import { getBricks } from './blueprints'
+import { getBlueprintSize, getBricks, type Brick } from './blueprints'
+import { bricksFromCells, decodeCells, type Shape, type ShapeSize } from './shapes'
 
 // Demolition jobs. You need the player level to see a job as available AND
 // pay its contract price to start it; brickValue is what each hauled brick
@@ -11,6 +12,11 @@ export type BuildingDef = {
   contractCost: number
   brickValue: number
   bonus: number
+  // Admin-made buildings (see shapes.ts): their stored shape and emoji,
+  // and whether they can be started right now (on + in schedule).
+  shape?: Shape
+  emoji?: string
+  available?: boolean
 }
 
 export const BUILDINGS: BuildingDef[] = [
@@ -24,12 +30,75 @@ export const BUILDINGS: BuildingDef[] = [
   { id: 'station', name: 'Space Station', blueprint: 7, requiredLevel: 20, contractCost: 25_000_000, brickValue: 650, bonus: 30_000_000 },
 ]
 
+// Admin-made buildings known to this game (from the server, the local
+// cache, or a save that's demolishing one).
+const custom = new Map<string, BuildingDef>()
+
+export function registerCustomBuildings(defs: BuildingDef[], replace = true) {
+  for (const d of defs) if (replace || !custom.has(d.id)) custom.set(d.id, d)
+}
+
 export function getBuilding(id: string): BuildingDef {
-  return BUILDINGS.find((b) => b.id === id) ?? BUILDINGS[0]
+  return BUILDINGS.find((b) => b.id === id) ?? custom.get(id) ?? BUILDINGS[0]
+}
+
+// What the building picker offers: the built-ins plus admin buildings that
+// are on and in schedule, by unlock level.
+export function pickableBuildings(): BuildingDef[] {
+  return [...BUILDINGS, ...[...custom.values()].filter((b) => b.available)].sort(
+    (a, b) => a.requiredLevel - b.requiredLevel || a.contractCost - b.contractCost
+  )
+}
+
+const shapeCache = new Map<string, Brick[]>()
+
+export function bricksFor(def: BuildingDef): Brick[] {
+  if (!def.shape) return getBricks(def.blueprint)
+  const key = `${def.id}:${def.shape.data}`
+  let bricks = shapeCache.get(key)
+  if (!bricks) {
+    bricks = bricksFromCells(def.shape.size, decodeCells(def.shape.size, def.shape.data))
+    shapeCache.set(key, bricks)
+  }
+  return bricks
+}
+
+export function sizeFor(def: BuildingDef): ShapeSize {
+  return def.shape ? def.shape.size : getBlueprintSize(def.blueprint)
 }
 
 export function brickCount(def: BuildingDef): number {
-  return getBricks(def.blueprint).length
+  return bricksFor(def).length
+}
+
+// Balanced numbers for an admin building at a given unlock level, read off
+// the built-ins' curve (log scale between them, extended past the last).
+export function suggestPricing(level: number, bricks: number) {
+  const pts = BUILDINGS.map((b) => ({ l: b.requiredLevel, value: b.brickValue, contract: Math.max(1, b.contractCost), bonus: b.bonus }))
+  const at = (key: 'value' | 'contract' | 'bonus') => {
+    const L = Math.max(1, level)
+    let i = pts.findIndex((p) => p.l >= L)
+    if (i === -1) i = pts.length - 1
+    if (i === 0) i = 1
+    const a = pts[i - 1]
+    const b = pts[i]
+    const t = (L - a.l) / (b.l - a.l)
+    return Math.exp(Math.log(a[key]) + (Math.log(b[key]) - Math.log(a[key])) * t)
+  }
+  const nice = (n: number) => {
+    if (n < 10) return Math.max(1, Math.round(n))
+    const mag = Math.pow(10, Math.floor(Math.log10(n)) - 1)
+    return Math.round(n / mag) * mag
+  }
+  // Pay per brick keeps the total payout in line with a built-in of this
+  // level even if the building is much bigger or smaller.
+  const typicalBricks = 1300
+  const value = at('value') * Math.min(2, Math.max(0.5, typicalBricks / Math.max(1, bricks)))
+  return {
+    contractCost: level <= 1 ? 0 : nice(at('contract')),
+    brickValue: nice(value),
+    bonus: nice(at('bonus')),
+  }
 }
 
 // Level n needs 60·(n−1)² hauled bricks total: level 2 at 60, level 3 at

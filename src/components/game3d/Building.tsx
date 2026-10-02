@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useRef } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useFrame, type ThreeEvent } from '@react-three/fiber'
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js'
 import * as THREE from 'three'
@@ -8,7 +8,12 @@ import { BRICK_COLORS } from '@/lib/game/blueprints'
 import { BRICK, type Engine, type Site } from '@/lib/game/engine'
 import { pointer } from './drag'
 
-const MAX_BRICKS = 2200
+// The brick mesh is sized to the building (in steps, so it isn't rebuilt
+// for every site). Big admin buildings can have up to 20k bricks; past
+// ROUNDED_LIMIT they use plain boxes, which read the same from the game's
+// camera but are far cheaper to draw on a phone.
+const BRICK_STEP = 2048
+const ROUNDED_LIMIT = 3000
 const MAX_FLYING = 300
 const MAX_RUBBLE = 1500
 const MAX_DUST = 160
@@ -19,6 +24,7 @@ const PULL_SECONDS = 0.35
 
 export const brickGeometry = new RoundedBoxGeometry(BRICK * 0.94, BRICK * 0.94, BRICK * 0.94, 2, BRICK * 0.12)
 export const brickMaterial = new THREE.MeshStandardMaterial({ roughness: 0.85 })
+const plainBrickGeometry = new THREE.BoxGeometry(BRICK * 0.94, BRICK * 0.94, BRICK * 0.94)
 const dustGeometry = new THREE.BoxGeometry(0.12, 0.12, 0.12)
 const dustMaterial = new THREE.MeshStandardMaterial({ color: '#d8cbb2', roughness: 1 })
 
@@ -61,6 +67,7 @@ export default function Building({
 }) {
   const hitBox = useRef<THREE.Mesh>(null)
   const brickMesh = useRef<THREE.InstancedMesh>(null)
+  const [capacity, setCapacity] = useState(BRICK_STEP * 2)
   const flyMesh = useRef<THREE.InstancedMesh>(null)
   const rubbleMesh = useRef<THREE.InstancedMesh>(null)
   const dustMesh = useRef<THREE.InstancedMesh>(null)
@@ -154,8 +161,18 @@ export default function Building({
     mesh.instanceMatrix.needsUpdate = true
   }
 
+  // A new (bigger) mesh after a resize needs filling in.
+  useEffect(() => {
+    needsSync.current = true
+  }, [capacity])
+
   useFrame((_, delta) => {
     const dt = Math.min(delta, 1 / 20)
+    const want = Math.max(BRICK_STEP * 2, Math.ceil(site.bricks.length / BRICK_STEP) * BRICK_STEP)
+    if (want !== capacity) {
+      setCapacity(want)
+      return
+    }
 
     if (needsSync.current) {
       needsSync.current = false
@@ -321,8 +338,9 @@ export default function Building({
         {/* onClick also makes the bricks part of the tap ray, so taps can
             find the exact brick under the finger (see tapBuilding). */}
         <instancedMesh
+          key={capacity}
           ref={brickMesh}
-          args={[brickGeometry, brickMaterial, MAX_BRICKS]}
+          args={[site.bricks.length > ROUNDED_LIMIT ? plainBrickGeometry : brickGeometry, brickMaterial, capacity]}
           castShadow
           receiveShadow
           frustumCulled={false}

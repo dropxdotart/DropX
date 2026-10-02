@@ -1,12 +1,38 @@
 'use client'
 
 import { useEffect, useSyncExternalStore } from 'react'
-import { getEngine, PENDING_GRANTS_KEY, type Engine, type Snapshot } from './engine'
-import { syncPlayer } from '@/app/playerActions'
+import { CUSTOM_BUILDINGS_KEY, getEngine, PENDING_GRANTS_KEY, type Engine, type Snapshot } from './engine'
+import { registerCustomBuildings } from './buildings'
+import { getCustomBuildings, syncPlayer } from '@/app/playerActions'
 import { playerId } from '@/lib/player'
 
 const SYNC_SECONDS = 30
 const SHORT_ID_KEY = 'rubble-short-id'
+
+// Fetches the admin-made buildings (and keeps a copy for next launch).
+async function loadCustomBuildings(engine: Engine) {
+  try {
+    const defs = await getCustomBuildings()
+    registerCustomBuildings(defs)
+    try {
+      localStorage.setItem(CUSTOM_BUILDINGS_KEY, JSON.stringify(defs))
+    } catch {
+      // storage full — fetched again next launch
+    }
+    engine.notify()
+  } catch {
+    // offline — the cached list stands
+  }
+}
+
+// Replays time away a slice at a time (so the screen never freezes),
+// updating the HUD's progress as it goes.
+function runCatchUp(engine: Engine) {
+  if (!engine.catchingUp()) return
+  const done = engine.stepCatchUp(24)
+  engine.notify()
+  if (!done) setTimeout(() => runCatchUp(engine), 0)
+}
 
 // Uploads the save to the player's cloud record and applies any gifts or
 // balance edits an admin left for them.
@@ -57,6 +83,8 @@ export function useEngine(): { engine: Engine; snap: Snapshot } | null {
     } catch {
       // not available — shown after the first sync
     }
+    loadCustomBuildings(engine)
+    runCatchUp(engine)
     const firstSync = setTimeout(() => syncCloud(engine), 2000)
     const cloud = setInterval(() => syncCloud(engine), SYNC_SECONDS * 1000)
     const persist = setInterval(() => engine.save(), 3000)
@@ -69,9 +97,9 @@ export function useEngine(): { engine: Engine; snap: Snapshot } | null {
       } else if (hiddenAt) {
         // Frames don't run while the tab is hidden, so time spent in the
         // background is credited the same way as time with the app closed.
-        engine.offlineEarnings = engine.catchUp((Date.now() - hiddenAt) / 1000)
+        engine.beginCatchUp((Date.now() - hiddenAt) / 1000)
         hiddenAt = 0
-        engine.notify()
+        runCatchUp(engine)
         // Pick up any gifts sent while the app was in the background.
         syncCloud(engine)
       }

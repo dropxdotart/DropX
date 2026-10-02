@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { Lock, X } from 'lucide-react'
-import { BUILDINGS, brickCount } from '@/lib/game/buildings'
+import { brickCount, pickableBuildings } from '@/lib/game/buildings'
 import type { Engine, Snapshot } from '@/lib/game/engine'
 import { formatNumber } from './format'
 import { plotName } from './PlotsSheet'
@@ -61,7 +61,7 @@ export default function SitePicker({
         )}
         {error && <p className="mb-2 rounded-xl bg-[#ffe3e3] p-2 text-center text-sm text-[#c23030]">{error}</p>}
         <div className="space-y-2">
-          {BUILDINGS.map((b) => {
+          {pickableBuildings().map((b) => {
             const bricks = brickCount(b)
             const locked = snap.level < b.requiredLevel
             const affordable = snap.scrap >= b.contractCost
@@ -72,7 +72,7 @@ export default function SitePicker({
                 className={`flex items-center gap-3 rounded-2xl p-3 ${locked ? 'bg-[#eef0f3] opacity-70' : 'bg-[#eef2f8]'}`}
               >
                 <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-white text-2xl">
-                  {locked ? <Lock className="h-5 w-5 text-[#8a94a6]" /> : ICONS[b.id]}
+                  {locked ? <Lock className="h-5 w-5 text-[#8a94a6]" /> : (b.emoji ?? ICONS[b.id] ?? '🏢')}
                 </span>
                 <div className="min-w-0 flex-1">
                   <p className="font-display text-base leading-tight text-[#1d3a6e]">{b.name}</p>

@@ -4,8 +4,7 @@ import { Suspense, useEffect, useMemo, useRef } from 'react'
 import { Canvas, useFrame, useThree } from '@react-three/fiber'
 import { Html, OrthographicCamera, useProgress } from '@react-three/drei'
 import * as THREE from 'three'
-import { getBlueprintSize } from '@/lib/game/blueprints'
-import { getBuilding } from '@/lib/game/buildings'
+import { getBuilding, sizeFor } from '@/lib/game/buildings'
 import { BRICK, DUMPSTER_SLOTS, LOT_HALF, upgradeCost, type Engine, type Snapshot } from '@/lib/game/engine'
 import { BLOCK, MAP_BLOCKS, PLOT_SLOTS, YARD_BLOCK } from '@/lib/game/plots'
 import { STATIONS, dumpstersAffordable, fleetAffordable, getStation, tierFor, truckLevel, type StationId } from '@/lib/game/stations'
@@ -35,7 +34,7 @@ export type StationFocus = { id: StationId; plot: number; truck?: number; index?
 // Advances the simulation once per frame. Mounted first inside the canvas so
 // its frame callback runs before anything that draws engine state.
 function EngineTicker({ engine }: { engine: Engine }) {
-  useFrame((_, delta) => engine.tick(delta))
+  useFrame((_, delta) => engine.frameTick(delta))
   return null
 }
 
@@ -82,7 +81,7 @@ function CameraRig({
   // little more for the tallest building among your plots.
   const tallest = Math.max(
     0,
-    ...snap.plots.map((p) => (p.phase === 'empty' ? 0 : getBlueprintSize(getBuilding(p.buildingId).blueprint)[1]))
+    ...snap.plots.map((p) => (p.phase === 'empty' ? 0 : sizeFor(getBuilding(p.buildingId))[1]))
   )
   const span = Math.max(LOT_HALF * 2 + 6, tallest * BRICK * 1.3 + 10)
   const baseZoom = Math.min(size.width, size.height * 0.8) / span

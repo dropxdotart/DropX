@@ -1,5 +1,5 @@
-import { getBlueprintSize, getBricks, type Brick, type BrickColor } from './blueprints'
-import { BUILDINGS, brickCount, getBuilding, levelForXp, type BuildingDef } from './buildings'
+import { type Brick, type BrickColor } from './blueprints'
+import { BUILDINGS, brickCount, bricksFor, getBuilding, levelForXp, registerCustomBuildings, sizeFor, type BuildingDef } from './buildings'
 import { PLOT_SLOTS } from './plots'
 import {
   parkingSpot,
@@ -34,7 +34,12 @@ const LEGACY_SAVE_KEY = 'rubble-save-v4'
 // gifts sent after the reset wait here to be applied to the fresh game.
 const RESET_NOTICE_KEY = 'rubble-reset-notice'
 export const PENDING_GRANTS_KEY = 'rubble-pending-grants'
-const MAX_OFFLINE_SECONDS = 8 * 60 * 60
+export const CUSTOM_BUILDINGS_KEY = 'rubble-custom-buildings'
+// Time away counts up to a full night.
+const MAX_OFFLINE_SECONDS = 12 * 60 * 60
+// Compute spent replaying time away before the rest is estimated from the
+// pace measured during the replay.
+const MAX_REPLAY_MS = 5000
 const LOAD_SECONDS = 0.8
 const BREAK_FALL_SECONDS = 0.7
 // Tapping rubble gives the whole crew a short speed burst. No cooldown:
@@ -227,6 +232,8 @@ export type Snapshot = {
   // Seconds of crew boost left (0 = off).
   boostLeft: number
   notice: Notice | null
+  // Replaying time away: progress 0–1, or null when not catching up.
+  catchUp: number | null
   shortId: string | null
   username: string | null
   synced: boolean
@@ -237,6 +244,9 @@ type PlotSave = {
   buildingId: string
   removed: string
   rubble: number
+  // An admin-made building in progress keeps its own copy, so later edits
+  // to (or deleting) the building never break the demolition.
+  custom?: BuildingDef
   dumpsterLoad?: number // before each plot could have several dumpsters
   dumpsters?: { level: number; load: number }[]
 }
@@ -319,10 +329,10 @@ export class Site {
 
   loadBuilding(def: BuildingDef, removed?: Uint8Array) {
     this.building = def
-    this.bricks = getBricks(def.blueprint)
+    this.bricks = bricksFor(def)
     this.removed = removed ?? new Uint8Array(this.bricks.length)
     this.claimed = new Uint8Array(this.bricks.length)
-    const [w, , d] = getBlueprintSize(def.blueprint)
+    const [w, , d] = sizeFor(def)
     this.halfX = (w * BRICK) / 2
     this.halfZ = (d * BRICK) / 2
 
@@ -602,7 +612,8 @@ export class Engine {
       site.dumpsters = (ps.dumpsters ?? [{ level: oldDumpsterLevel ?? 0, load: ps.dumpsterLoad ?? 0 }])
         .slice(0, MAX_DUMPSTERS)
         .map((d) => ({ level: d.level, load: d.load, queue: [] }))
-      const def = getBuilding(ps.buildingId)
+      if (ps.custom) registerCustomBuildings([ps.custom], false)
+      const def = ps.custom ?? getBuilding(ps.buildingId)
       if (ps.phase === 'empty') {
         site.building = def
       } else {
@@ -613,8 +624,7 @@ export class Engine {
     })
     this.syncWorkers()
 
-    const away = Math.min(MAX_OFFLINE_SECONDS, Math.max(0, (Date.now() - save.lastSeen) / 1000))
-    this.offlineEarnings = this.catchUp(away)
+    this.beginCatchUp((Date.now() - save.lastSeen) / 1000)
   }
 
   // Once a reset starts, nothing may write the old progress back.
@@ -647,6 +657,7 @@ export class Engine {
         // Carried bricks go back on the ground on reload rather than vanishing.
         rubble: p.rubble.length + this.workers.reduce((n, w) => n + (w.plot === p.id ? w.held : 0), 0),
         dumpsters: p.dumpsters.map((d) => ({ level: d.level, load: d.load })),
+        ...(p.building.shape && p.phase !== 'empty' ? { custom: p.building } : {}),
       })),
     }
   }
@@ -747,32 +758,80 @@ export class Engine {
     }
   }
 
-  // Time away is simulated as a steady pipeline per plot: whichever is
-  // slower — that plot's crew walking bricks to the dumpster or its truck
-  // hauling them — sets the rate, capped by how many bricks are left.
-  catchUp(seconds: number): number {
-    if (seconds < 5) return 0
-    const u = this.upgrades
-    const before = this.scrap
-    let any = false
-    for (const site of this.plots) {
-      if (site.phase !== 'demolishing') continue
-      const crew = this.workers.filter((w) => w.plot === site.id).length
-      if (crew === 0) continue
-      const avgWalk = LOT_HALF * 0.8
-      const carry = stats.carry(u)
-      const workerTrip = (avgWalk * 2) / stats.walkSpeed(u) + stats.pullSeconds(u) * carry
-      const workerRate = (crew * carry) / workerTrip
-      // The fleet's hauling rate (bricks/second over a whole lap), shared
-      // between every plot being demolished.
-      const active = this.plots.filter((p) => p.phase === 'demolishing').length
-      const truckRate = this.fleetRate() / Math.max(1, active)
-      const available = site.bricksLeft + site.rubble.length + site.dumpsterLoad
-      let hauled = Math.min(Math.floor(Math.min(workerRate, truckRate) * seconds), available)
-      const total = hauled
-      if (total <= 0) continue
-      any = true
+  // ── Time away ─────────────────────────────────────────────────────────
+  //
+  // Time spent away (app closed or in the background) is replayed with the
+  // real simulation, a slice at a time so the screen never freezes (see
+  // useEngine), so you come back to exactly what would have happened. If a
+  // huge stretch would take too long to replay, the rest is filled in at
+  // the pace actually measured during the replay.
 
+  private catchUpLeft = 0
+  private catchUpTotal = 0
+  private catchUpStartScrap = 0
+  private catchUpSpentMs = 0
+  private catchUpReplayed = 0
+  private catchUpStartBricks: number[] = []
+  private replaying = false
+
+  beginCatchUp(seconds: number) {
+    const away = Math.min(MAX_OFFLINE_SECONDS, Math.max(0, seconds))
+    if (away < 5) return
+    if (this.catchUpLeft > 0) {
+      this.catchUpLeft += away
+      this.catchUpTotal += away
+      return
+    }
+    this.catchUpLeft = away
+    this.catchUpTotal = away
+    this.catchUpStartScrap = this.scrap
+    this.catchUpSpentMs = 0
+    this.catchUpReplayed = 0
+    this.catchUpStartBricks = this.plots.map((p) => p.bricksLeft)
+    this.markDirty()
+  }
+
+  catchingUp() {
+    return this.catchUpLeft > 0
+  }
+
+  // Replays up to `budgetMs` of computing; true once all time away is done.
+  stepCatchUp(budgetMs: number): boolean {
+    if (this.catchUpLeft <= 0) return true
+    const start = performance.now()
+    this.replaying = true
+    try {
+      while (this.catchUpLeft > 0 && performance.now() - start < budgetMs) {
+        for (let i = 0; i < 50 && this.catchUpLeft > 0; i++) {
+          const dt = Math.min(0.1, this.catchUpLeft)
+          this.tick(dt)
+          this.catchUpLeft -= dt
+          this.catchUpReplayed += dt
+        }
+      }
+    } finally {
+      this.replaying = false
+    }
+    // Skip the flying-brick effects for replayed time.
+    for (const site of this.plots) site.events.length = 0
+    this.catchUpSpentMs += performance.now() - start
+    if (this.catchUpLeft > 0 && this.catchUpSpentMs > MAX_REPLAY_MS) this.estimateRest()
+    if (this.catchUpLeft <= 0) this.finishCatchUp()
+    this.markDirty()
+    return this.catchUpLeft <= 0
+  }
+
+  // The rest of a very long absence, at each plot's measured replay pace.
+  private estimateRest() {
+    const seconds = this.catchUpLeft
+    const u = this.upgrades
+    this.plots.forEach((site, i) => {
+      if (site.phase !== 'demolishing' || this.catchUpReplayed <= 0) return
+      const pace = Math.max(0, (this.catchUpStartBricks[i] ?? site.bricksLeft) - site.bricksLeft) / this.catchUpReplayed
+      const available = site.bricksLeft + site.rubble.length + site.dumpsterLoad
+      let hauled = Math.min(Math.floor(pace * seconds), available)
+      const total = hauled
+      if (total <= 0) return
       for (const d of site.dumpsters) {
         const take = Math.min(hauled, d.load)
         d.load -= take
@@ -782,18 +841,31 @@ export class Engine {
       site.rubble.splice(0, fromRubble)
       hauled -= fromRubble
       while (hauled > 0) {
-        const i = site.pickTopBrick(null)
-        if (i < 0) break
-        site.removeBrick(i)
+        const b = site.pickTopBrick(null)
+        if (b < 0) break
+        site.removeBrick(b)
         hauled--
       }
       this.pay(total, total * site.building.brickValue * (1 + stats.priceBonus(u)))
       this.checkCleared(site)
-      site.events.push({ type: 'resync' })
-    }
-    if (any) this.markDirty()
-    return Math.round(this.scrap - before)
+    })
+    this.time += seconds
+    this.catchUpLeft = 0
   }
+
+  private finishCatchUp() {
+    this.offlineEarnings += Math.max(0, Math.round(this.scrap - this.catchUpStartScrap))
+    this.catchUpTotal = 0
+    for (const site of this.plots) site.events.push({ type: 'resync' })
+    this.save()
+  }
+
+  // The game loop's tick: paused while time away is being replayed.
+  frameTick(dt: number) {
+    if (this.catchUpLeft > 0) return
+    this.tick(dt)
+  }
+
 
   // ── Player actions ────────────────────────────────────────────────────
 
@@ -871,6 +943,7 @@ export class Engine {
     const site = this.plots[plot]
     if (!site || site.phase !== 'empty') return 'This plot is busy'
     const def = getBuilding(id)
+    if (def.id !== id || (def.shape && !def.available)) return "That building isn't available right now"
     if (levelForXp(this.xp) < def.requiredLevel) return `Reach level ${def.requiredLevel} first`
     if (this.scrap < def.contractCost) return 'Not enough bricks for this contract'
     this.scrap -= def.contractCost
@@ -1207,7 +1280,7 @@ export class Engine {
     this.tickBonus(dt)
     this.recentHauls = this.recentHauls.filter((h) => this.time - h.t < 60)
 
-    if (this.dirty && this.time - this.lastFlush > 0.12) this.flush()
+    if (!this.replaying && this.dirty && this.time - this.lastFlush > 0.12) this.flush()
   }
 
   // ── Bonus drop ────────────────────────────────────────────────────────
@@ -1514,6 +1587,7 @@ export class Engine {
         sitesCleared: this.sitesCleared,
         boostLeft: Math.max(0, Math.ceil(this.boostUntil - this.time)),
         notice: this.notices[0] ?? null,
+        catchUp: this.catchUpLeft > 0 && this.catchUpTotal > 0 ? 1 - this.catchUpLeft / this.catchUpTotal : null,
         shortId: this.shortId,
         username: this.username,
         synced: this.synced,
@@ -1560,6 +1634,14 @@ let instance: Engine | null = null
 
 export function getEngine(): Engine {
   if (!instance) {
+    // Admin-made buildings from last time, so saves using them load even
+    // before the game has checked the server.
+    try {
+      const cached = localStorage.getItem(CUSTOM_BUILDINGS_KEY)
+      if (cached) registerCustomBuildings(JSON.parse(cached) as BuildingDef[])
+    } catch {
+      // none cached
+    }
     instance = new Engine()
     instance.load()
     // Handy for poking at the simulation from the console during development.

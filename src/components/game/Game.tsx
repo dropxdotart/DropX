@@ -284,7 +284,19 @@ export default function Game() {
           </div>
         </div>
 
-        {snap.offlineEarnings > 0 && (
+        {snap.catchUp !== null && (
+          <div className="mx-3 mt-3 flex items-center gap-2 rounded-2xl bg-white p-3 shadow-[0_3px_0_rgba(0,0,0,0.15)]">
+            <span className="text-lg">⏳</span>
+            <div className="min-w-0 flex-1">
+              <p className="font-display text-sm text-[#1d3a6e]">Your crew worked while you were away…</p>
+              <div className="mt-1 h-2 overflow-hidden rounded-full bg-[#d5ddea]">
+                <div className="h-full rounded-full bg-[#ff6b1a]" style={{ width: `${Math.round(snap.catchUp * 100)}%` }} />
+              </div>
+            </div>
+            <span className="font-display text-sm tabular-nums text-[#1d3a6e]">{Math.round(snap.catchUp * 100)}%</span>
+          </div>
+        )}
+        {snap.catchUp === null && snap.offlineEarnings > 0 && (
           <div className="pointer-events-auto mx-3 mt-3 flex items-center justify-between gap-2 rounded-2xl bg-white p-3 shadow-[0_3px_0_rgba(0,0,0,0.15)]">
             <p className="font-display text-sm text-[#1d3a6e]">
               Your crew kept hauling — <span className="text-[#e8701f]">+🧱{formatNumber(snap.offlineEarnings)}</span> while you were away!
