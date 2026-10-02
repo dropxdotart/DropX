@@ -336,6 +336,8 @@ export type Truck = {
   at: RoadSpot // the plot stop it's at, when out on the road
   inYard: 'bay' | 'parked' | null // inside the fenced Brick Yard
   dock: number // the unloading dock it's heading to / using
+  stuck: number // seconds spent waiting behind another truck
+  squeeze: number // seconds left of squeezing past (after waiting too long)
   lap: number // next plot index to visit this lap
   timer: number
   cargo: number
@@ -803,6 +805,8 @@ export class Engine {
       at: road ?? YARD_GATE_OUT,
       inYard: road ? null : 'parked',
       dock: 0,
+      stuck: 0,
+      squeeze: 0,
       lap: 0,
       timer: 0,
       cargo: 0,
@@ -2153,18 +2157,32 @@ export class Engine {
     // Queue behind a truck just ahead in the same lane.
     const fx = Math.sin(truck.heading)
     const fz = Math.cos(truck.heading)
-    for (const other of this.trucks) {
-      // Parked trucks are off the road (bays, kerb), and oncoming ones pass
-      // by — only wait behind traffic going the same way, or two trucks
-      // meeting in the yard would wait for each other forever.
-      if (other === truck || other.state === 'parked') continue
-      if (Math.sin(other.heading) * fx + Math.cos(other.heading) * fz < 0) continue
-      const dx = other.x - truck.x
-      const dz = other.z - truck.z
-      const ahead = dx * fx + dz * fz
-      const side = Math.abs(dx * fz - dz * fx)
-      if (ahead > 0 && ahead < 2.6 && side < 0.4) return
-    }
+    // Wait behind a truck just ahead going the same way. Parked trucks
+    // are off the road and oncoming or crossing ones pass by. If trucks
+    // still end up waiting on each other (turning at a crossroads), any
+    // truck held up for a few seconds squeezes past, so traffic can never
+    // lock up for good.
+    let blocked = false
+    if (truck.squeeze <= 0) {
+      for (const other of this.trucks) {
+        if (other === truck || other.state === 'parked') continue
+        if (Math.sin(other.heading) * fx + Math.cos(other.heading) * fz < 0.7) continue
+        const dx = other.x - truck.x
+        const dz = other.z - truck.z
+        const ahead = dx * fx + dz * fz
+        const side = Math.abs(dx * fz - dz * fx)
+        if (ahead > 0 && ahead < 2.6 && side < 0.4) {
+          blocked = true
+          break
+        }
+      }
+    } else truck.squeeze -= dt
+    if (blocked) {
+      truck.stuck += dt
+      if (truck.stuck < 2.5) return
+      truck.stuck = 0
+      truck.squeeze = 1.5
+    } else if (truck.squeeze <= 0) truck.stuck = 0
 
     let step = stats.truckSpeed(truck.speed) * dt
     while (step > 0 && truck.path.length) {
