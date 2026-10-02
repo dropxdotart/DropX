@@ -35,6 +35,11 @@ export const BRICK_COLORS = {
   orange: '#ef7d2d',
   grass: '#6cb85a',
   black: '#2b2b2e',
+  // Added later: keep new colours at the END (shapes store the index).
+  patina: '#6fae98',
+  patinaDark: '#4f8a76',
+  gold: '#e3b33c',
+  stone: '#d8c79a',
 } as const
 
 export type BrickColor = keyof typeof BRICK_COLORS

@@ -18,6 +18,57 @@ function status(p: PlotSnap) {
   return { text: `${getBuilding(p.buildingId).name} · ${pct}% · 👷 ${p.crew}`, color: 'text-[#5b6f93]' }
 }
 
+// Splitting the crew between plots being demolished: a slider each, or
+// Auto (more workers where there's more left to do).
+function CrewPanel({ engine, snap }: { engine: Engine; snap: Snapshot }) {
+  const active = snap.plots.filter((p) => p.phase === 'demolishing')
+  if (active.length < 2) return null
+  const total = snap.plots.reduce((n, p) => n + p.crew, 0)
+  return (
+    <div className="mb-3 rounded-2xl bg-[#eef2f8] p-3">
+      <div className="mb-2 flex items-center justify-between">
+        <p className="font-display text-lg text-[#1d3a6e]">👷 Crew · {total}</p>
+        <button
+          onClick={() => {
+            engine.setCrewAuto()
+            engine.notify()
+          }}
+          className={`rounded-full px-3 py-1 font-display text-xs ${snap.crewAuto ? 'bg-[#2d7ff9] text-white' : 'bg-white text-[#1d3a6e]'}`}
+        >
+          {snap.crewAuto ? '✓ Auto · by work left' : 'Auto'}
+        </button>
+      </div>
+      <div className="space-y-2.5">
+        {active.map((p) => (
+          <div key={p.id}>
+            <div className="flex items-baseline justify-between text-xs">
+              <span className="font-display text-sm text-[#1d3a6e]">
+                {plotName(p.id)} <span className="font-sans text-xs text-[#5b6f93]">· {getBuilding(p.buildingId).name}</span>
+              </span>
+              <span className="font-display text-sm tabular-nums text-[#1d3a6e]">
+                {p.crewTarget}
+                {p.crew !== p.crewTarget && <span className="text-xs text-[#5b6f93]"> ({p.crew} there)</span>}
+              </span>
+            </div>
+            <input
+              type="range"
+              min={0}
+              max={total}
+              value={p.crewTarget}
+              onChange={(e) => {
+                engine.setCrew(p.id, Number(e.target.value))
+                engine.notify()
+              }}
+              className="w-full accent-[#ff6b1a]"
+              aria-label={`Workers on ${plotName(p.id)}`}
+            />
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 // The Plots button's sheet: every plot in the city. Owned ones fly the
 // camera over; the next one up for sale can be bought here.
 export default function PlotsSheet({
@@ -48,6 +99,7 @@ export default function PlotsSheet({
           </button>
         </div>
         {error && <p className="mb-2 rounded-xl bg-[#ffe3e3] p-2 text-center text-sm text-[#c23030]">{error}</p>}
+        <CrewPanel engine={engine} snap={snap} />
         <div className="space-y-2">
           {PLOT_SLOTS.map((slot) => {
             const owned = snap.plots[slot.id]

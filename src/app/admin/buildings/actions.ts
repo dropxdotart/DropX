@@ -4,7 +4,7 @@ import { revalidatePath } from 'next/cache'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { bricksFromCells, cellsFromBlueprint, decodeCells, encodeCells, SHAPE_LIMITS, type BuilderParams, type Shape } from '@/lib/game/shapes'
 import { BUILDINGS, suggestPricing } from '@/lib/game/buildings'
-import { shapeFromFootprint, toMetres } from '@/lib/game/fromMap'
+import { shapeFromMap, toMetres } from '@/lib/game/fromMap'
 import { requireAdminSession } from '../auth'
 import { audit, nameOf } from '../audit'
 
@@ -245,7 +245,35 @@ export async function buildFromAddress(address: string): Promise<{ ok: true; id:
     if (!best) return { ok: false, message: 'Found the place, but the map has no building outline there' }
 
     const tags = best.e.tags ?? {}
-    const made = shapeFromFootprint(toMetres(best.ring), tags)
+    // Its 3D parts, if mapped: anything tagged building:part whose middle
+    // sits inside this building's outline.
+    const origin = best.ring[0]
+    const outline = toMetres(best.ring, origin)
+    const lats = best.ring.map((p) => p.lat)
+    const lons = best.ring.map((p) => p.lon)
+    const bbox = `${Math.min(...lats) - 0.0002},${Math.min(...lons) - 0.0002},${Math.max(...lats) + 0.0002},${Math.max(...lons) + 0.0002}`
+    let parts: { outline: { x: number; y: number }[]; tags: Record<string, string> }[] = []
+    try {
+      const found = await overpass(`[out:json][timeout:25];(way["building:part"](${bbox});relation["building:part"](${bbox}););out geom tags;`)
+      parts = found
+        .map((e) => ({ ring: ringOf(e), tags: e.tags ?? {} }))
+        .filter((p): p is { ring: Ring; tags: Record<string, string> } => !!p.ring && p.ring.length >= 3)
+        .map((p) => ({ outline: toMetres(p.ring, origin), tags: p.tags }))
+        .filter((p) => {
+          const cx = p.outline.reduce((n, q) => n + q.x, 0) / p.outline.length
+          const cy = p.outline.reduce((n, q) => n + q.y, 0) / p.outline.length
+          let hit = false
+          for (let i = 0, j = outline.length - 1; i < outline.length; j = i++) {
+            const a = outline[i]
+            const b = outline[j]
+            if (a.y > cy !== b.y > cy && cx < ((b.x - a.x) * (cy - a.y)) / (b.y - a.y) + a.x) hit = !hit
+          }
+          return hit
+        })
+    } catch {
+      // no parts — the plain outline will do
+    }
+    const made = shapeFromMap({ outline, tags }, parts)
     if (!made) return { ok: false, message: 'That building’s outline couldn’t be turned into bricks' }
     const bricks = bricksFromCells(made.size, made.cells).length
     const level = bricks < 800 ? 3 : bricks < 2000 ? 6 : bricks < 5000 ? 10 : bricks < 10000 ? 15 : 20
@@ -269,8 +297,9 @@ export async function buildFromAddress(address: string): Promise<{ ok: true; id:
     if (error || !data) return { ok: false, message: error?.message ?? 'Could not save it' }
     await audit('Built from an address', name, { address: q })
     revalidatePath('/admin/buildings')
-    const known = tags.height || tags['building:levels'] ? '' : ' The map didn’t say how tall it is, so it’s a guess.'
-    return { ok: true, id: data.id, note: `1 brick ≈ ${made.metresPerCell.toFixed(1)} m, about ${Math.round(made.heightM)} m tall.${known}` }
+    const known = made.parts || tags.height || tags['building:levels'] ? '' : ' The map didn’t say how tall it is, so it’s a guess.'
+    const detail = made.parts ? ` Built from ${made.parts} mapped parts.` : ' The map only has its outline, so every floor is the same shape.'
+    return { ok: true, id: data.id, note: `1 brick ≈ ${made.metresPerCell.toFixed(1)} m, about ${Math.round(made.heightM)} m tall.${detail}${known}` }
   } catch (err) {
     console.error('buildFromAddress failed', err)
     return { ok: false, message: 'The map service didn’t answer — try again in a minute' }

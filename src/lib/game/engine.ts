@@ -42,6 +42,8 @@ const LEGACY_SAVE_KEY = 'rubble-save-v4'
 // Set when an admin reset wipes the save, so the fresh game can say so;
 // gifts sent after the reset wait here to be applied to the fresh game.
 const RESET_NOTICE_KEY = 'rubble-reset-notice'
+// Longest dumpster line; anyone else waits aside with their bricks.
+const MAX_LINE = 6
 const RESTORE_NOTICE_KEY = 'rubble-restore-notice'
 const BAN_KEY = 'rubble-ban'
 const SEEN_LIVE_KEY = 'rubble-seen-live' // events/messages already popped up
@@ -291,7 +293,7 @@ export const stats = {
   priceBonus: (u: Upgrades) => 0.05 * u.yardBonus,
 }
 
-export type WorkerState = 'idle' | 'toPick' | 'picking' | 'toDumpster' | 'waiting'
+export type WorkerState = 'idle' | 'toPick' | 'picking' | 'toDumpster' | 'waiting' | 'holding'
 
 export type Worker = {
   id: number
@@ -309,6 +311,7 @@ export type Worker = {
   carrying: BrickColor | null
   held: number
   dumpster: number // which of the plot's dumpsters they're heading to / lined up at
+  via: { x: number; z: number }[] // corners to walk past first (around the building)
 }
 
 export type Rubble = { id: number; x: number; z: number; color: BrickColor; claimed: boolean; readyAt: number }
@@ -362,6 +365,7 @@ export type PlotSnap = {
   dumpsters: { level: number; load: number; capacity: number }[]
   truckState: TruckState
   crew: number
+  crewTarget: number // where the crew split is heading (workers walk over)
 }
 
 export type TruckSnap = { id: number; load: number; speed: number; cargo: number; state: TruckState }
@@ -488,6 +492,7 @@ export class Site {
   // ever leave from the top, so a pointer per column tracks the current top.
   columns: number[][] = []
   columnTop = new Int32Array(0)
+  columnAt = new Map<string, number>() // "x,z" (brick units) → column
   brickColumn = new Int32Array(0)
   halfX = 0
   halfZ = 0
@@ -523,6 +528,7 @@ export class Site {
       else byKey.set(key, [i])
     })
     this.columns = [...byKey.values()].map((list) => list.sort((a, b) => this.bricks[a].y - this.bricks[b].y))
+    this.columnAt = new Map([...byKey.keys()].map((k, c) => [k, c]))
     this.columnTop = new Int32Array(this.columns.length)
     this.brickColumn = new Int32Array(this.bricks.length)
     this.columns.forEach((list, c) => {
@@ -542,6 +548,7 @@ export class Site {
     this.claimed = new Uint8Array(0)
     this.columns = []
     this.columnTop = new Int32Array(0)
+    this.columnAt = new Map()
     this.brickColumn = new Int32Array(0)
     this.bricksLeft = 0
     this.events.push({ type: 'siteStarted' })
@@ -574,8 +581,11 @@ export class Site {
       const i = this.columns[c][top]
       if (this.claimed[i]) continue
       const b = this.bricks[i]
+      // Workers peel the building from the outside in (close to where
+      // they stand), starting near their own side of it.
+      const depth = Math.min(this.halfX - Math.abs(b.x * BRICK), this.halfZ - Math.abs(b.z * BRICK))
       const score = near
-        ? (b.x * BRICK - near.x) ** 2 + (b.z * BRICK - near.z) ** 2 - b.y * BRICK * 0.15
+        ? (b.x * BRICK - near.x) ** 2 + (b.z * BRICK - near.z) ** 2 + depth * 8 - b.y * BRICK * 0.15
         : -b.y + Math.random() * 0.9
       if (score < bestScore) {
         bestScore = score
@@ -599,14 +609,91 @@ export class Site {
   // A spot in a dumpster's line: front first, along the slot's direction,
   // wrapping into a second row (see DUMPSTER_SLOTS).
   queueSpot(dumpster: number, i: number) {
+    // One tidy straight line (at most MAX_LINE long; the rest wait aside).
     const slot = DUMPSTER_SLOTS[dumpster]
-    const perRow = 4
-    const row = Math.floor(i / perRow)
-    const col = i % perRow
-    return {
-      x: slot.line.x + slot.dir.x * col + slot.wrap.x * row,
-      z: slot.line.z + slot.dir.z * col + slot.wrap.z * row,
+    const k = Math.min(i, MAX_LINE - 1)
+    return { x: slot.line.x + slot.dir.x * k, z: slot.line.z + slot.dir.z * k }
+  }
+
+  // Where workers wait with their bricks while a dumpster is full or its
+  // line is long: a loose group on the far side of the dumpster.
+  holdSpot(dumpster: number, i: number) {
+    const slot = DUMPSTER_SLOTS[dumpster]
+    const len = Math.hypot(slot.dir.x, slot.dir.z) || 1
+    const ux = slot.dir.x / len
+    const uz = slot.dir.z / len
+    // A 5×4 group; any more stand a little off-grid so they don't stack.
+    const k = i % 20
+    const col = k % 5
+    const row = Math.floor(k / 5)
+    const jitter = i >= 20 ? 0.25 * (1 + Math.floor(i / 20)) : 0
+    const x = slot.x - ux * (1.9 + col * 0.5 + jitter) + slot.wrap.x * (row * 0.6 + jitter)
+    const z = slot.z - uz * (1.9 + col * 0.5 + jitter) + slot.wrap.z * (row * 0.6 + jitter)
+    const lim = LOT_HALF - 0.4
+    return { x: Math.max(-lim, Math.min(lim, x)), z: Math.max(-lim, Math.min(lim, z)) }
+  }
+
+  // Corners to walk past so a straight line between two spots doesn't cut
+  // through the building's footprint.
+  detour(fx: number, fz: number, tx: number, tz: number): { x: number; z: number }[] {
+    if (!this.bricksLeft) return []
+    const hx = this.halfX + 0.25
+    const hz = this.halfZ + 0.25
+    const crosses = (ax: number, az: number, bx: number, bz: number) => {
+      // Segment vs. rectangle (slab test).
+      let t0 = 0
+      let t1 = 1
+      const dx = bx - ax
+      const dz = bz - az
+      for (const [p, d, lo, hi] of [[ax, dx, -hx, hx], [az, dz, -hz, hz]]) {
+        if (Math.abs(d) < 1e-9) {
+          if (p <= lo || p >= hi) return false
+        } else {
+          let a = (lo - p) / d
+          let b = (hi - p) / d
+          if (a > b) [a, b] = [b, a]
+          t0 = Math.max(t0, a)
+          t1 = Math.min(t1, b)
+          if (t0 >= t1) return false
+        }
+      }
+      return t1 - t0 > 0.02
     }
+    if (!crosses(fx, fz, tx, tz)) return []
+    const cx = this.halfX + 0.55
+    const cz = this.halfZ + 0.55
+    const corners = [
+      { x: cx, z: cz },
+      { x: -cx, z: cz },
+      { x: -cx, z: -cz },
+      { x: cx, z: -cz },
+    ]
+    const d = (a: { x: number; z: number }, b: { x: number; z: number }) => Math.hypot(a.x - b.x, a.z - b.z)
+    const from = { x: fx, z: fz }
+    const to = { x: tx, z: tz }
+    let best: { x: number; z: number }[] = []
+    let bestLen = Infinity
+    for (let i = 0; i < 4; i++) {
+      const c = corners[i]
+      if (!crosses(fx, fz, c.x, c.z) && !crosses(c.x, c.z, tx, tz)) {
+        const len = d(from, c) + d(c, to)
+        if (len < bestLen) {
+          bestLen = len
+          best = [c]
+        }
+      }
+      for (const j of [(i + 1) % 4, (i + 3) % 4]) {
+        const c2 = corners[j]
+        if (!crosses(fx, fz, c.x, c.z) && !crosses(c2.x, c2.z, tx, tz)) {
+          const len = d(from, c) + d(c, c2) + d(c2, to)
+          if (len < bestLen) {
+            bestLen = len
+            best = [c, c2]
+          }
+        }
+      }
+    }
+    return best
   }
 
   // Shortest line wins; ties go to the dumpster with the most room.
@@ -625,19 +712,35 @@ export class Site {
 
   // A preferred spot around the building for each worker (golden-angle
   // spread) so the crew fans out instead of all queueing at one wall.
-  homeSpot(w: Worker) {
-    const a = w.id * 2.39996
+  homeSpot(slot: number, crew: number) {
+    // Evenly round the building by the worker's place in this plot's crew.
+    const a = (slot / Math.max(1, crew)) * Math.PI * 2 + this.id * 0.7
     return { x: Math.cos(a) * (this.halfX + 2), z: Math.sin(a) * (this.halfZ + 2) }
   }
 
   // Where a worker stands to pull a given brick: just outside the footprint
   // on the side nearest that brick.
-  standSpot(bx: number, bz: number) {
-    const m = 0.45
-    const nx = bx / Math.max(this.halfX, 0.01)
-    const nz = bz / Math.max(this.halfZ, 0.01)
-    if (Math.abs(nx) > Math.abs(nz)) return { x: Math.sign(bx || 1) * (this.halfX + m), z: bz }
-    return { x: bx, z: Math.sign(bz || 1) * (this.halfZ + m) }
+  // Steps out from the brick (in brick units) toward the nearest outside
+  // edge until reaching ground that's already cleared or outside the
+  // footprint — so they stand right next to what they're pulling, never
+  // inside the walls.
+  standSpot(i: number) {
+    const b = this.bricks[i]
+    const nx = (b.x * BRICK) / Math.max(this.halfX, 0.01)
+    const nz = (b.z * BRICK) / Math.max(this.halfZ, 0.01)
+    const alongX = Math.abs(nx) > Math.abs(nz)
+    const dir = Math.sign(alongX ? b.x : b.z) || 1
+    for (let s = 1; s < 80; s++) {
+      const px = alongX ? b.x + dir * s : b.x
+      const pz = alongX ? b.z : b.z + dir * s
+      const c = this.columnAt.get(`${px},${pz}`)
+      if (c === undefined || this.columnTop[c] < 0) {
+        // Half a brick short of the empty cell's centre: close, not inside.
+        const back = s === 1 ? 0.1 : 0.35
+        return { x: (alongX ? px - dir * back : px) * BRICK, z: (alongX ? pz : pz - dir * back) * BRICK }
+      }
+    }
+    return { x: alongX ? dir * (this.halfX + 0.45) : b.x * BRICK, z: alongX ? b.z * BRICK : dir * (this.halfZ + 0.45) }
   }
 }
 
@@ -744,6 +847,7 @@ export class Engine {
       carrying: null,
       held: 0,
       dumpster: 0,
+      via: [],
     }
   }
 
@@ -1385,7 +1489,27 @@ export class Engine {
     const total = this.workers.length
     if (!active.length) return out
     if (!this.crewPlan) {
-      active.forEach((id, n) => (out[id] = Math.floor(total / active.length) + (n < total % active.length ? 1 : 0)))
+      // Auto: split by work left (bricks still standing, tougher ones
+      // counting more, plus rubble), at least one each.
+      const work = active.map((id) => {
+        const p = this.plots[id]
+        return p.bricksLeft * (p.building.toughness ?? 1) + p.rubble.length + 1
+      })
+      const sum = work.reduce((a, b) => a + b, 0)
+      let given = 0
+      active.forEach((id, n) => {
+        out[id] = Math.min(total, Math.max(total >= active.length ? 1 : 0, Math.floor((work[n] / sum) * total)))
+        given += out[id]
+      })
+      // Hand out what rounding left over to the plots with the most work.
+      const order = active.map((id, n) => ({ id, w: work[n] })).sort((a, b) => b.w - a.w)
+      for (let k = 0; given < total; k++, given++) out[order[k % order.length].id]++
+      for (let k = order.length - 1; given > total; k = (k + order.length - 1) % order.length) {
+        if (out[order[k].id] > 1) {
+          out[order[k].id]--
+          given--
+        }
+      }
       return out
     }
     for (const id of active) out[id] = this.crewPlan[id] ?? 0
@@ -1419,6 +1543,33 @@ export class Engine {
       const to = others.reduce((a, b) => (plan[b] < plan[a] ? b : a))
       plan[plot]--
       plan[to]++
+    }
+    this.crewPlan = plan
+    this.markDirty()
+  }
+
+  // The crew screen's slider: put exactly `n` workers on a plot, taking
+  // them from (or giving them to) the other plots, biggest first.
+  setCrew(plot: number, n: number) {
+    const plan = this.desiredCrew()
+    const others = this.plots.filter((p) => p.phase === 'demolishing' && p.id !== plot).map((p) => p.id)
+    if (this.plots[plot]?.phase !== 'demolishing') return
+    const total = this.workers.length
+    n = Math.max(0, Math.min(total, Math.round(n)))
+    if (!others.length) return
+    let diff = n - plan[plot]
+    while (diff > 0) {
+      const from = others.reduce((a, b) => (plan[b] > plan[a] ? b : a))
+      if (plan[from] === 0) break
+      plan[from]--
+      plan[plot]++
+      diff--
+    }
+    while (diff < 0) {
+      const to = others.reduce((a, b) => (plan[b] < plan[a] ? b : a))
+      plan[to]++
+      plan[plot]--
+      diff++
     }
     this.crewPlan = plan
     this.markDirty()
@@ -1507,11 +1658,33 @@ export class Engine {
     }
   }
 
+  // Sets where a worker is walking to, routed around the building.
+  private walkTo(w: Worker, site: Site, x: number, z: number) {
+    w.tx = x
+    w.tz = z
+    w.via = site.detour(w.x, w.z, x, z)
+  }
+
   private moveToward(w: Worker, dt: number): boolean {
+    let step = stats.walkSpeed(this.upgrades) * this.boostMul() * dt
+    // Corners first (walking round the building), then the spot itself.
+    while (w.via.length) {
+      const c = w.via[0]
+      const d = Math.hypot(c.x - w.x, c.z - w.z)
+      if (d > step) {
+        w.x += ((c.x - w.x) / d) * step
+        w.z += ((c.z - w.z) / d) * step
+        w.heading = Math.atan2(c.x - w.x, c.z - w.z)
+        return false
+      }
+      w.x = c.x
+      w.z = c.z
+      step -= d
+      w.via.shift()
+    }
     const dx = w.tx - w.x
     const dz = w.tz - w.z
     const dist = Math.hypot(dx, dz)
-    const step = stats.walkSpeed(this.upgrades) * this.boostMul() * dt
     if (dist <= step) {
       w.x = w.tx
       w.z = w.tz
@@ -1537,22 +1710,81 @@ export class Engine {
     if (bestRubble) {
       bestRubble.claimed = true
       w.target = { kind: 'rubble', id: bestRubble.id }
-      w.tx = bestRubble.x
-      w.tz = bestRubble.z
+      this.walkTo(w, site, bestRubble.x, bestRubble.z)
       w.state = 'toPick'
       return
     }
 
-    const i = site.pickTopBrick(site.homeSpot(w))
+    // This worker's place in the plot's crew sets its side of the building.
+    let slot = 0
+    let crew = 0
+    for (const o of this.workers) {
+      if (o.plot !== site.id) continue
+      crew++
+      if (o.id < w.id) slot++
+    }
+    const home = site.homeSpot(slot, crew)
+    // Skip bricks whose standing spot someone else already has, so the
+    // crew doesn't pile up on one spot.
+    const taken = this.workers
+      .filter((o) => o !== w && o.plot === site.id && (o.state === 'toPick' || o.state === 'picking') && o.target?.kind === 'brick')
+      .map((o) => ({ x: o.tx, z: o.tz }))
+    const skipped: number[] = []
+    let i = -1
+    let spot = { x: 0, z: 0 }
+    for (let tries = 0; tries < 8; tries++) {
+      i = site.pickTopBrick(home)
+      if (i < 0) break
+      spot = site.standSpot(i)
+      if (!taken.some((t) => (t.x - spot.x) ** 2 + (t.z - spot.z) ** 2 < 0.35 * 0.35)) break
+      site.claimed[i] = 1
+      skipped.push(i)
+      if (tries === 7) i = skipped.shift() ?? -1 // everywhere's busy: share a spot
+    }
+    for (const k of skipped) site.claimed[k] = 0
     if (i >= 0) {
       site.claimed[i] = 1
-      const b = site.bricks[i]
-      const spot = site.standSpot(b.x * BRICK, b.z * BRICK)
       w.target = { kind: 'brick', index: i }
-      w.tx = spot.x
-      w.tz = spot.z
+      this.walkTo(w, site, spot.x, spot.z)
       w.state = 'toPick'
     }
+  }
+
+  // Which dumpster to take bricks to: the shortest line among those with
+  // room, or null if they're all full or backed up (then wait aside).
+  private chooseDumpster(w: Worker, site: Site): number | null {
+    const walking = site.dumpsters.map(() => 0)
+    for (const o of this.workers) if (o.plot === site.id && o.state === 'toDumpster' && o !== w) walking[o.dumpster]++
+    let best: number | null = null
+    let bestScore = Infinity
+    site.dumpsters.forEach((d, i) => {
+      const room = stats.dumpsterCapacity(d.level) - d.load
+      const line = d.queue.length + walking[i]
+      if (room <= 0 || line >= MAX_LINE) return
+      const score = line * 1000 - room
+      if (score < bestScore) {
+        bestScore = score
+        best = i
+      }
+    })
+    return best
+  }
+
+  private headForDumpster(w: Worker, site: Site) {
+    const d = this.chooseDumpster(w, site)
+    if (d === null) {
+      // Everything's full: wait off to the side with the bricks.
+      w.state = 'holding'
+      const holders = this.workers.filter((o) => o.plot === site.id && o.state === 'holding' && o !== w).length
+      w.dumpster = Math.min(w.dumpster, site.dumpsters.length - 1)
+      const spot = site.holdSpot(w.dumpster, holders)
+      this.walkTo(w, site, spot.x, spot.z)
+      return
+    }
+    w.state = 'toDumpster'
+    w.dumpster = d
+    const tail = site.queueSpot(d, site.dumpsters[d].queue.length)
+    this.walkTo(w, site, tail.x, tail.z)
   }
 
   tick(dt: number) {
@@ -1609,14 +1841,7 @@ export class Engine {
               if ((w.state as WorkerState) === 'toPick') break
             }
             if (w.carrying) {
-              w.state = 'toDumpster'
-              // Head for whichever dumpster has the shortest line.
-              const walking = site.dumpsters.map(() => 0)
-              for (const o of this.workers) if (o.plot === site.id && o.state === 'toDumpster' && o !== w) walking[o.dumpster]++
-              w.dumpster = site.pickDumpster(stats.dumpsterCapacity, walking)
-              const tail = site.queueSpot(w.dumpster, site.dumpsters[w.dumpster].queue.length)
-              w.tx = tail.x
-              w.tz = tail.z
+              this.headForDumpster(w, site)
             } else {
               w.state = 'idle'
             }
@@ -1626,6 +1851,11 @@ export class Engine {
           // Head for the back of the line (it may have moved since setting
           // off) and join it on arrival.
           const dumpster = site.dumpsters[w.dumpster] ?? site.dumpsters[(w.dumpster = 0)]
+          // Filled up (or backed up) on the way: pick again.
+          if (dumpster.load >= stats.dumpsterCapacity(dumpster.level) || dumpster.queue.length >= MAX_LINE) {
+            this.headForDumpster(w, site)
+            break
+          }
           const tail = site.queueSpot(w.dumpster, dumpster.queue.length)
           w.tx = tail.x
           w.tz = tail.z
@@ -1633,6 +1863,12 @@ export class Engine {
             dumpster.queue.push(w.id)
             w.state = 'waiting'
           }
+          break
+        }
+        case 'holding': {
+          // Waiting aside; join a line as soon as a dumpster has room.
+          this.moveToward(w, dt)
+          if (this.chooseDumpster(w, site) !== null) this.headForDumpster(w, site)
           break
         }
         case 'waiting': {
@@ -1646,6 +1882,12 @@ export class Engine {
           const dir = DUMPSTER_SLOTS[w.dumpster].dir
           w.heading = Math.atan2(-dir.x, -dir.z)
           const capacity = stats.dumpsterCapacity(dumpster.level)
+          // Full: everyone behind the front of the line steps aside to wait.
+          if (place > 0 && dumpster.load >= capacity) {
+            dumpster.queue.splice(place, 1)
+            this.headForDumpster(w, site)
+            break
+          }
           if (place === 0 && dumpster.load < capacity && !this.loadingAt(site)) {
             const n = Math.min(w.held, capacity - dumpster.load)
             dumpster.load += n
@@ -1996,6 +2238,7 @@ export class Engine {
       const earned = this.recentHauls.reduce((n, h) => n + h.value, 0)
       const crew = this.plots.map(() => 0)
       for (const w of this.workers) crew[w.plot]++
+      const crewTarget = this.desiredCrew()
       this.snapshot = {
         scrap: this.scrap,
         xp: this.xp,
@@ -2012,6 +2255,7 @@ export class Engine {
           dumpsters: p.dumpsters.map((d) => ({ level: d.level, load: d.load, capacity: stats.dumpsterCapacity(d.level) })),
           truckState: this.truckAt(p)?.state ?? 'away',
           crew: crew[p.id],
+          crewTarget: crewTarget[p.id],
         })),
         trucks: this.trucks.map((t) => ({ id: t.id, load: t.load, speed: t.speed, cargo: t.cargo, state: t.state })),
         crewAuto: this.crewPlan === null,

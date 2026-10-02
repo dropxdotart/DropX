@@ -87,7 +87,7 @@ export default function Worker({ sim }: { sim: WorkerSim }) {
     g.rotation.y = THREE.MathUtils.lerp(g.rotation.y, sim.heading, 0.3)
 
     // Waiting in line still walks when shuffling up a spot.
-    const shuffling = sim.state === 'waiting' && Math.hypot(sim.tx - sim.x, sim.tz - sim.z) > 0.02
+    const shuffling = (sim.state === 'waiting' || sim.state === 'holding') && (sim.via.length > 0 || Math.hypot(sim.tx - sim.x, sim.tz - sim.z) > 0.02)
     const moving = sim.state === 'toPick' || sim.state === 'toDumpster' || shuffling
     setPose(moving ? 'walk' : sim.state === 'picking' ? 'interact-right' : 'idle')
 
