@@ -49,6 +49,7 @@ function PlayerDetail({
     onRenamed(next === null ? null : next.trim())
   }
   const [balance, setBalance] = useState('')
+  const [lvl, setLvl] = useState('')
   const [kind, setKind] = useState<'bricks' | 'boost' | 'upgrade'>('bricks')
   const [amount, setAmount] = useState('')
   const [upgrade, setUpgrade] = useState(UPGRADE_OPTIONS[0].value)
@@ -99,6 +100,19 @@ function PlayerDetail({
           <Button
             disabled={busy || balance === ''}
             onClick={() => send({ kind: 'set_bricks', amount: Number(balance), upgrade: null, message: '' }, () => setBalance(''))}
+          >
+            Set
+          </Button>
+        </div>
+      </div>
+
+      <div className="space-y-1.5">
+        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Set level</p>
+        <div className="flex gap-2">
+          <Input type="number" min={1} step={1} value={lvl} onChange={(e) => setLvl(e.target.value)} placeholder={`Now ${player.level}`} />
+          <Button
+            disabled={busy || lvl === ''}
+            onClick={() => send({ kind: 'set_level', amount: Number(lvl), upgrade: null, message: '' }, () => setLvl(''))}
           >
             Set
           </Button>

@@ -1,5 +1,5 @@
 import { type Brick, type BrickColor } from './blueprints'
-import { BUILDINGS, brickCount, bricksFor, getBuilding, levelForXp, registerCustomBuildings, sizeFor, type BuildingDef } from './buildings'
+import { BUILDINGS, brickCount, bricksFor, getBuilding, levelForXp, registerCustomBuildings, sizeFor, xpForLevel, type BuildingDef } from './buildings'
 import { PLOT_SLOTS } from './plots'
 import {
   parkingSpot,
@@ -88,7 +88,7 @@ export function dumpsterBuyCost(owned: number): number | null {
   return owned < MAX_DUMPSTERS ? DUMPSTER_BUY_COSTS[owned] : null
 }
 
-export type RewardKind = 'bricks' | 'set_bricks' | 'boost' | 'upgrade' | 'reset'
+export type RewardKind = 'bricks' | 'set_bricks' | 'set_level' | 'boost' | 'upgrade' | 'reset'
 export type Reward = { kind: RewardKind; amount: number; upgrade: string | null }
 export type Notice = { title: string; detail: string; message: string | null }
 
@@ -701,7 +701,7 @@ export class Engine {
     }
     // Admins can send negative amounts to take things away.
     const raw = Number(r.amount) || 0
-    const amount = r.kind === 'set_bricks' ? Math.max(0, raw) : raw
+    const amount = r.kind === 'set_bricks' || r.kind === 'set_level' ? Math.max(0, raw) : raw
     const taken = amount < 0
     let what = ''
     switch (r.kind) {
@@ -713,6 +713,13 @@ export class Engine {
         this.scrap = amount
         what = `Your bricks were set to 🧱${Math.round(amount).toLocaleString()}`
         break
+      case 'set_level': {
+        // Start of that level (XP is total bricks hauled).
+        const lv = Math.max(1, Math.round(amount))
+        this.xp = xpForLevel(lv)
+        what = `Your level was set to ${lv}`
+        break
+      }
       case 'boost':
         // Minutes of crew boost, on top of any boost already running.
         if (taken) this.boostUntil = Math.max(this.time, this.boostUntil + amount * 60)

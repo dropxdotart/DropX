@@ -13,6 +13,7 @@ export function rewardText(kind: string, amount: number, upgrade: string | null)
   const n = Math.round(Math.abs(amount)).toLocaleString()
   const taken = amount < 0 && kind !== 'set_bricks'
   if (kind === 'bricks') return taken ? `Took 🧱 ${n} bricks` : `🧱 ${n} bricks`
+  if (kind === 'set_level') return `Set level to ${n}`
   if (kind === 'set_bricks') return `Set bricks to 🧱 ${n}`
   if (kind === 'boost') return taken ? `Took ⚡ ${n} min boost` : `⚡ ${n} min crew boost`
   if (kind === 'reset') return '↺ Progress reset'
