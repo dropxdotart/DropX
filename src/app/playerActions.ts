@@ -7,7 +7,7 @@ import { usernameProblem } from '@/lib/usernames'
 // sign in: the device's random player id is the key, and only the game on
 // that device knows it. Everything runs with the service role here.
 
-export type RewardKind = 'bricks' | 'set_bricks' | 'boost' | 'upgrade' | 'reset'
+export type RewardKind = 'bricks' | 'set_bricks' | 'set_level' | 'boost' | 'upgrade' | 'reset'
 export type Grant = { kind: RewardKind; amount: number; upgrade: string | null; message: string | null; source: string }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -42,7 +42,12 @@ export type PlayerSummary = {
   level: number
   plots: number
   workers: number
+  sitesCleared: number
 }
+
+// This visit so far (seconds counts only time with the game on screen).
+export type SessionInfo = { id: string; startedAt: number; seconds: number }
+export type ActivityIn = { kind: string; building: string; name: string; seconds?: number; at: number }
 
 // Uploads the save and summary, and hands back any gifts or balance edits
 // waiting for this player. Gifts are marked delivered in the same step, so
@@ -50,7 +55,9 @@ export type PlayerSummary = {
 export async function syncPlayer(
   id: string,
   summary: PlayerSummary,
-  save: unknown
+  save: unknown,
+  session?: SessionInfo,
+  activity: ActivityIn[] = []
 ): Promise<{ shortId: string | null; username: string | null; grants: Grant[] }> {
   if (!UUID.test(id)) return { shortId: null, username: null, grants: [] }
   const shortId = await ensurePlayer(id)
@@ -65,9 +72,32 @@ export async function syncPlayer(
       level: Math.round(num(summary.level)),
       plots: Math.round(num(summary.plots)),
       workers: Math.round(num(summary.workers)),
+      sites_cleared: Math.round(num(summary.sitesCleared)),
       last_seen: new Date().toISOString(),
     })
     .eq('id', id)
+  if (session && UUID.test(session.id)) {
+    await admin.rpc('record_session', {
+      p_player: id,
+      p_session: session.id,
+      p_started: new Date(num(session.startedAt) || Date.now()).toISOString(),
+      p_seconds: num(session.seconds),
+    })
+  }
+  const events = (Array.isArray(activity) ? activity : [])
+    .slice(0, 200)
+    .filter((e) => (e.kind === 'building_started' || e.kind === 'building_finished') && typeof e.building === 'string')
+    .map((e) => ({
+      player_id: id,
+      kind: e.kind,
+      building: e.building.slice(0, 80),
+      building_name: String(e.name ?? '').slice(0, 80),
+      seconds: e.kind === 'building_finished' && Number.isFinite(e.seconds) ? Math.max(0, Number(e.seconds)) : null,
+      created_at: new Date(Math.min(num(e.at) || Date.now(), Date.now())).toISOString(),
+    }))
+  if (events.length) await admin.from('player_events').insert(events)
+  // Prune old activity now and then (cheap, indexed).
+  if (Math.random() < 0.01) await admin.rpc('prune_activity')
   const { data } = await admin
     .from('player_grants')
     .update({ applied_at: new Date().toISOString() })

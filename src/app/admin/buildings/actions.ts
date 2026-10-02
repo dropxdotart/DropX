@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { bricksFromCells, decodeCells, SHAPE_LIMITS, type BuilderParams, type Shape } from '@/lib/game/shapes'
 import { requireAdminSession } from '../auth'
+import { audit, nameOf } from '../audit'
 
 // Admin-made buildings (migration 011). Writes return results rather than
 // throwing, because production hides thrown server-action messages.
@@ -87,13 +88,16 @@ export async function saveBuilding(id: string | null, input: BuildingInput): Pro
     : await admin.from('custom_buildings').insert(row).select('id').single()
   if (error || !data) return { ok: false, message: error?.message ?? 'Could not save' }
   revalidatePath('/admin/buildings')
+  await audit(id ? 'Edited building' : 'Created building', row.name, { level: row.required_level, contract: row.contract_cost, brickValue: row.brick_value, bonus: row.bonus })
   return { ok: true, id: data.id }
 }
 
 export async function setBuildingActive(id: string, active: boolean): Promise<Result> {
   await requireAdminSession()
   const { error } = await createAdminClient().from('custom_buildings').update({ active }).eq('id', id)
-  return error ? { ok: false, message: error.message } : { ok: true }
+  if (error) return { ok: false, message: error.message }
+  await audit(active ? 'Turned building on' : 'Turned building off', await nameOf('custom_buildings', id, 'name'))
+  return { ok: true }
 }
 
 // Scheduling also switches it on (a schedule on a hidden building would
@@ -105,14 +109,18 @@ export async function setBuildingSchedule(id: string, startsAt: string | null, e
     .from('custom_buildings')
     .update({ starts_at: startsAt, ends_at: endsAt, ...(startsAt || endsAt ? { active: true } : {}) })
     .eq('id', id)
-  return error ? { ok: false, message: error.message } : { ok: true }
+  if (error) return { ok: false, message: error.message }
+  await audit('Scheduled building', await nameOf('custom_buildings', id, 'name'), { startsAt, endsAt })
+  return { ok: true }
 }
 
 // Players already demolishing it keep their own copy and can finish.
 export async function deleteBuilding(id: string): Promise<Result> {
   await requireAdminSession()
+  const label = await nameOf('custom_buildings', id, 'name')
   const { error } = await createAdminClient().from('custom_buildings').delete().eq('id', id)
   if (error) return { ok: false, message: error.message }
   revalidatePath('/admin/buildings')
+  await audit('Deleted building', label)
   return { ok: true }
 }

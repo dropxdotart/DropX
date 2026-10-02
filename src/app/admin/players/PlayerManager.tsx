@@ -7,6 +7,8 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
 import { rewardText, UPGRADE_OPTIONS } from '@/lib/rewards'
+import { fmtDuration } from '../format'
+import { getPlayerActivity, type ActivityItem } from '../statsActions'
 import { adminSetUsername, cancelGrant, listGrants, listPlayers, resetPlayer, sendGrant, type GrantRow, type PlayerRow } from './actions'
 
 function fmt(n: number) {
@@ -19,6 +21,55 @@ function ago(iso: string) {
   if (s < 3600) return `${Math.round(s / 60)} min ago`
   if (s < 86400) return `${Math.round(s / 3600)} h ago`
   return `${Math.round(s / 86400)} d ago`
+}
+
+const AD_NAMES: Record<string, string> = { rewarded: 'reward ad', interstitial: 'full-screen ad', banner: 'banner', billboard: 'billboard' }
+
+function activityText(a: ActivityItem): string {
+  if (a.type === 'session') return `Played for ${fmtDuration(a.seconds)}`
+  if (a.type === 'building')
+    return a.kind === 'building_started' ? `Started ${a.name}` : `Finished ${a.name}${a.seconds !== null ? ` in ${fmtDuration(a.seconds)}` : ''}`
+  const ad = AD_NAMES[a.placement ?? ''] ?? 'ad'
+  if (a.event === 'complete') return `Watched a ${ad}${a.bricks ? ` (+🧱${fmt(a.bricks)})` : ''}`
+  if (a.event === 'skip') return `Skipped a ${ad}`
+  return `Tapped a ${ad}`
+}
+
+// Visits, buildings and ads for the last 90 days (loaded on demand).
+function PlayerActivity({ playerId }: { playerId: string }) {
+  const [items, setItems] = useState<ActivityItem[] | null>(null)
+  const [loading, setLoading] = useState(false)
+  const show = async () => {
+    setLoading(true)
+    try {
+      setItems(await getPlayerActivity(playerId))
+    } catch {
+      toast.error("Couldn't load activity")
+    } finally {
+      setLoading(false)
+    }
+  }
+  return (
+    <div className="space-y-1.5">
+      <div className="flex items-center justify-between">
+        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Activity (90 days)</p>
+        <button type="button" onClick={show} disabled={loading} className="text-xs font-medium text-[#2d7ff9] disabled:opacity-50">
+          {loading ? 'Loading…' : items ? 'Refresh' : 'Show'}
+        </button>
+      </div>
+      {items?.length === 0 && <p className="text-xs text-muted-foreground">Nothing yet.</p>}
+      {items && items.length > 0 && (
+        <div className="max-h-64 space-y-1 overflow-y-auto">
+          {items.map((a, i) => (
+            <div key={i} className="flex items-center justify-between gap-2 text-xs">
+              <span className="min-w-0 truncate">{activityText(a)}</span>
+              <span className="shrink-0 text-muted-foreground">{ago(a.at)}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
 }
 
 // One player's panel: set their balance, send a gift, and see what's
@@ -182,6 +233,8 @@ function PlayerDetail({
         </div>
       </div>
 
+      <PlayerActivity playerId={player.id} />
+
       <div className="space-y-1.5">
         <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Gifts &amp; codes</p>
         {grants === null && <p className="text-xs text-muted-foreground">Loading…</p>}
@@ -216,10 +269,11 @@ function PlayerDetail({
   )
 }
 
-export default function PlayerManager({ initialPlayers }: { initialPlayers: PlayerRow[] }) {
+export default function PlayerManager({ initialPlayers, initialSearch = '' }: { initialPlayers: PlayerRow[]; initialSearch?: string }) {
   const [players, setPlayers] = useState(initialPlayers)
-  const [search, setSearch] = useState('')
-  const [open, setOpen] = useState<string | null>(null)
+  const [search, setSearch] = useState(initialSearch)
+  // Coming from a dashboard link: open that player straight away.
+  const [open, setOpen] = useState<string | null>(initialSearch && initialPlayers.length === 1 ? initialPlayers[0].id : null)
   const [searching, setSearching] = useState(false)
 
   const runSearch = async (q: string) => {
@@ -272,7 +326,7 @@ export default function PlayerManager({ initialPlayers }: { initialPlayers: Play
                     <span className="font-mono text-xs font-normal tracking-wider text-muted-foreground">{p.short_id}</span>
                   </p>
                   <p className="text-xs tabular-nums text-muted-foreground">
-                    Lv {p.level} · 🧱 {fmt(p.scrap)} · {p.plots} plot{p.plots === 1 ? '' : 's'} · {p.workers} workers · {ago(p.last_seen)}
+                    Lv {p.level} · 🧱 {fmt(p.scrap)} · {p.plots} plot{p.plots === 1 ? '' : 's'} · {p.workers} workers · {fmtDuration(p.play_seconds)} played · {ago(p.last_seen)}
                   </p>
                 </div>
                 <ChevronDown className={`h-4 w-4 shrink-0 transition-transform ${isOpen ? 'rotate-180' : ''}`} />

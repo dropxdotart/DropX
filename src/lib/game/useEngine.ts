@@ -36,9 +36,44 @@ function runCatchUp(engine: Engine) {
 
 // Uploads the save to the player's cloud record and applies any gifts or
 // balance edits an admin left for them.
+// This visit, for the admin play-time stats: only time with the game on
+// screen counts, and a break of over 5 minutes starts a new visit.
+const SESSION_GAP_MS = 5 * 60 * 1000
+const session = { id: '', startedAt: 0, seconds: 0, visibleSince: 0 }
+
+function newSession() {
+  session.id = crypto.randomUUID()
+  session.startedAt = Date.now()
+  session.seconds = 0
+  session.visibleSince = Date.now()
+}
+
+function sessionInfo() {
+  const live = session.visibleSince ? (Date.now() - session.visibleSince) / 1000 : 0
+  return { id: session.id, startedAt: session.startedAt, seconds: Math.round(session.seconds + live) }
+}
+
+function pauseSession() {
+  if (!session.visibleSince) return
+  session.seconds += (Date.now() - session.visibleSince) / 1000
+  session.visibleSince = 0
+}
+
+function resumeSession(hiddenMs: number) {
+  if (!session.id || hiddenMs > SESSION_GAP_MS) newSession()
+  else session.visibleSince = Date.now()
+}
+
 async function syncCloud(engine: Engine) {
+  const activity = engine.takeActivity()
   try {
-    const { shortId, username, grants } = await syncPlayer(playerId(), engine.cloudSummary(), engine.saveData())
+    const { shortId, username, grants } = await syncPlayer(
+      playerId(),
+      engine.cloudSummary(),
+      engine.saveData(),
+      session.id ? sessionInfo() : undefined,
+      activity
+    )
     engine.setUsername(username)
     engine.markSynced()
     if (shortId && shortId !== engine.shortId) {
@@ -65,6 +100,7 @@ async function syncCloud(engine: Engine) {
     engine.notify()
   } catch {
     // offline — try again next time
+    engine.returnActivity(activity)
   }
 }
 
@@ -85,6 +121,7 @@ export function useEngine(): { engine: Engine; snap: Snapshot } | null {
     }
     loadCustomBuildings(engine)
     runCatchUp(engine)
+    newSession()
     const firstSync = setTimeout(() => syncCloud(engine), 2000)
     const cloud = setInterval(() => syncCloud(engine), SYNC_SECONDS * 1000)
     const persist = setInterval(() => engine.save(), 3000)
@@ -92,11 +129,13 @@ export function useEngine(): { engine: Engine; snap: Snapshot } | null {
     const onVisibility = () => {
       if (document.visibilityState === 'hidden') {
         hiddenAt = Date.now()
+        pauseSession()
         engine.save()
         syncCloud(engine)
       } else if (hiddenAt) {
         // Frames don't run while the tab is hidden, so time spent in the
         // background is credited the same way as time with the app closed.
+        resumeSession(Date.now() - hiddenAt)
         engine.beginCatchUp((Date.now() - hiddenAt) / 1000)
         hiddenAt = 0
         runCatchUp(engine)

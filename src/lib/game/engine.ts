@@ -90,6 +90,27 @@ export function dumpsterBuyCost(owned: number): number | null {
 
 export type RewardKind = 'bricks' | 'set_bricks' | 'set_level' | 'boost' | 'upgrade' | 'reset'
 export type Reward = { kind: RewardKind; amount: number; upgrade: string | null }
+export type ActivityEvent = { kind: 'building_started' | 'building_finished'; building: string; name: string; seconds?: number; at: number }
+
+const ACTIVITY_KEY = 'rubble-activity'
+
+function loadActivity(): ActivityEvent[] {
+  try {
+    const raw = typeof localStorage === 'undefined' ? null : localStorage.getItem(ACTIVITY_KEY)
+    return raw ? (JSON.parse(raw) as ActivityEvent[]) : []
+  } catch {
+    return []
+  }
+}
+
+function storeActivity(events: ActivityEvent[]) {
+  try {
+    localStorage.setItem(ACTIVITY_KEY, JSON.stringify(events))
+  } catch {
+    // storage unavailable — they still go up with this session's syncs
+  }
+}
+
 export type Notice = { title: string; detail: string; message: string | null }
 
 // Upgrades a code or gift can hand out for free, as players see them.
@@ -249,6 +270,7 @@ type PlotSave = {
   custom?: BuildingDef
   dumpsterLoad?: number // before each plot could have several dumpsters
   dumpsters?: { level: number; load: number }[]
+  worked?: number // seconds spent demolishing this building so far
 }
 
 export type SaveData = {
@@ -300,6 +322,7 @@ function decodeBits(encoded: string, length: number): Uint8Array {
 // the dumpster and this plot's truck run.
 export class Site {
   phase: PlotPhase = 'empty'
+  worked = 0 // seconds of demolishing (online + away) on this building
   building: BuildingDef = BUILDINGS[0]
   bricks: Brick[] = []
   removed: Uint8Array = new Uint8Array(0)
@@ -621,6 +644,7 @@ export class Engine {
     this.plots = save.plots.slice(0, PLOT_SLOTS.length).map((ps, id) => {
       const site = new Site(id)
       site.phase = ps.phase
+      site.worked = ps.worked ?? 0
       site.dumpsters = (ps.dumpsters ?? [{ level: oldDumpsterLevel ?? 0, load: ps.dumpsterLoad ?? 0 }])
         .slice(0, MAX_DUMPSTERS)
         .map((d) => ({ level: d.level, load: d.load, queue: [] }))
@@ -670,6 +694,7 @@ export class Engine {
         rubble: p.rubble.length + this.workers.reduce((n, w) => n + (w.plot === p.id ? w.held : 0), 0),
         dumpsters: p.dumpsters.map((d) => ({ level: d.level, load: d.load })),
         ...(p.building.shape && p.phase !== 'empty' ? { custom: p.building } : {}),
+        ...(p.phase !== 'empty' ? { worked: Math.round(p.worked) } : {}),
       })),
     }
   }
@@ -781,7 +806,31 @@ export class Engine {
       level: levelForXp(this.xp),
       plots: this.plots.length,
       workers: this.workers.length,
+      sitesCleared: this.sitesCleared,
     }
+  }
+
+  // Building starts and finishes waiting to go up with the next cloud sync
+  // (the admin activity log and building stats). Kept in storage so a
+  // closed tab doesn't lose them.
+  private activity: ActivityEvent[] = loadActivity()
+
+  private logActivity(e: Omit<ActivityEvent, 'at'>) {
+    this.activity = [...this.activity, { ...e, at: Date.now() }].slice(-200)
+    storeActivity(this.activity)
+  }
+
+  takeActivity(): ActivityEvent[] {
+    const out = this.activity
+    this.activity = []
+    storeActivity(this.activity)
+    return out
+  }
+
+  // A sync failed: put them back in front of anything logged since.
+  returnActivity(events: ActivityEvent[]) {
+    this.activity = [...events, ...this.activity].slice(-200)
+    storeActivity(this.activity)
   }
 
   // ── Time away ─────────────────────────────────────────────────────────
@@ -857,6 +906,7 @@ export class Engine {
       const available = site.bricksLeft + site.rubble.length + site.dumpsterLoad
       let hauled = Math.min(Math.floor(pace * seconds), available)
       const total = hauled
+      site.worked += pace > 0 ? Math.min(seconds, total / pace) : seconds
       if (total <= 0) return
       for (const d of site.dumpsters) {
         const take = Math.min(hauled, d.load)
@@ -975,7 +1025,9 @@ export class Engine {
     this.scrap -= def.contractCost
     site.phase = 'demolishing'
     site.rubble = []
+    site.worked = 0
     site.loadBuilding(def)
+    this.logActivity({ kind: 'building_started', building: def.id, name: def.name })
     this.save()
     this.markDirty()
     return null
@@ -1137,6 +1189,7 @@ export class Engine {
   private checkCleared(site: Site) {
     if (site.phase === 'demolishing' && this.siteEmpty(site) && site.dumpsterLoad === 0 && !this.loadingAt(site)) {
       site.phase = 'cleared'
+      this.logActivity({ kind: 'building_finished', building: site.building.id, name: site.building.name, seconds: Math.round(site.worked) })
       this.save()
       this.markDirty()
     }
@@ -1194,6 +1247,7 @@ export class Engine {
     dt = Math.min(dt, 0.1)
     this.time += dt
     const u = this.upgrades
+    for (const site of this.plots) if (site.phase === 'demolishing') site.worked += dt
 
     this.rebalanceCrew()
 

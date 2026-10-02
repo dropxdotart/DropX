@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { requireAdminSession } from '../auth'
+import { audit, nameOf } from '../audit'
 
 // Redeem codes (see migration 008). Writes return results rather than
 // throwing, because production hides thrown server-action messages.
@@ -78,20 +79,26 @@ export async function createCode(input: CodeInput): Promise<Result> {
     })
   if (error) return { ok: false, message: error.code === '23505' ? 'That code already exists' : error.message }
   revalidatePath('/admin/codes')
+  await audit('Created code', clean.code, { kind: clean.kind, amount: clean.amount, upgrade: clean.upgrade, maxUses: clean.maxUses })
   return { ok: true }
 }
 
 export async function setCodeActive(id: string, active: boolean): Promise<Result> {
   await requireAdminSession()
+  const label = await nameOf('redeem_codes', id, 'code')
   const { error } = await createAdminClient().from('redeem_codes').update({ active }).eq('id', id)
-  return error ? { ok: false, message: error.message } : { ok: true }
+  if (error) return { ok: false, message: error.message }
+  await audit(active ? 'Turned code on' : 'Turned code off', label)
+  return { ok: true }
 }
 
 // Deleting a code also forgets who redeemed it.
 export async function deleteCode(id: string): Promise<Result> {
   await requireAdminSession()
+  const label = await nameOf('redeem_codes', id, 'code')
   const { error } = await createAdminClient().from('redeem_codes').delete().eq('id', id)
   if (error) return { ok: false, message: error.message }
   revalidatePath('/admin/codes')
+  await audit('Deleted code', label)
   return { ok: true }
 }

@@ -2,6 +2,8 @@
 
 import { createAdminClient } from '@/lib/supabase/admin'
 import { requireAdminSession } from '../auth'
+import { audit, playerTag } from '../audit'
+import { rewardText } from '@/lib/rewards'
 import { containsBannedWord, usernameProblem } from '@/lib/usernames'
 
 // Players and gifts (see migration 008). A gift or balance edit waits in
@@ -17,6 +19,8 @@ export type PlayerRow = {
   level: number
   plots: number
   workers: number
+  sites_cleared: number
+  play_seconds: number
   last_seen: string
   created_at: string
 }
@@ -34,7 +38,7 @@ export type GrantRow = {
 
 type Result = { ok: true } | { ok: false; message: string }
 
-const FIELDS = 'id, short_id, username, scrap, xp, level, plots, workers, last_seen, created_at'
+const FIELDS = 'id, short_id, username, scrap, xp, level, plots, workers, sites_cleared, play_seconds, last_seen, created_at'
 const UPGRADES = ['workers', 'fleet', 'tools', 'speed', 'yardSpeed', 'yardBonus']
 
 // Most recently active first; or players whose ID starts with, or whose
@@ -84,14 +88,18 @@ export async function sendGrant(
       message: grant.message.trim().slice(0, 140) || null,
       source: 'admin',
     })
-  return error ? { ok: false, message: error.message } : { ok: true }
+  if (error) return { ok: false, message: error.message }
+  await audit(rewardText(grant.kind, grant.amount, grant.upgrade), await playerTag(playerId), grant.message.trim() ? { message: grant.message.trim() } : null)
+  return { ok: true }
 }
 
 // Take back a gift that hasn't been delivered yet.
 export async function cancelGrant(id: number): Promise<Result> {
   await requireAdminSession()
   const { error } = await createAdminClient().from('player_grants').delete().eq('id', id).is('applied_at', null)
-  return error ? { ok: false, message: error.message } : { ok: true }
+  if (error) return { ok: false, message: error.message }
+  await audit('Cancelled a gift', null, { grant: id })
+  return { ok: true }
 }
 
 // Rename a player, or clear their name with null. Same rules as players
@@ -106,6 +114,7 @@ export async function adminSetUsername(playerId: string, name: string | null): P
   }
   const { error } = await admin.from('players').update({ username: name === null ? null : name.trim() }).eq('id', playerId)
   if (error) return { ok: false, message: error.code === '23505' ? 'That name is taken' : error.message }
+  await audit(name === null ? 'Cleared username' : 'Renamed player', await playerTag(playerId), name === null ? null : { name: name.trim() })
   return { ok: true }
 }
 
@@ -124,13 +133,16 @@ export async function addBannedWord(word: string): Promise<Result> {
   if (!/^[a-z0-9]{2,30}$/.test(w)) return { ok: false, message: 'Words are 2–30 letters or numbers' }
   const { error } = await createAdminClient().from('banned_words').insert({ word: w })
   if (error) return { ok: false, message: error.code === '23505' ? 'Already on the list' : error.message }
+  await audit('Banned a word', w)
   return { ok: true }
 }
 
 export async function removeBannedWord(word: string): Promise<Result> {
   await requireAdminSession()
   const { error } = await createAdminClient().from('banned_words').delete().eq('word', word)
-  return error ? { ok: false, message: error.message } : { ok: true }
+  if (error) return { ok: false, message: error.message }
+  await audit('Unbanned a word', word)
+  return { ok: true }
 }
 
 // Existing names that break the rules (e.g. a word banned after someone
@@ -157,5 +169,6 @@ export async function resetPlayer(playerId: string, message: string): Promise<Re
     .insert({ player_id: playerId, kind: 'reset', amount: 0, message: message.trim().slice(0, 140) || null, source: 'admin' })
   if (error) return { ok: false, message: error.message }
   await admin.from('players').update({ save: null, scrap: 0, xp: 0, level: 1, plots: 1, workers: 1 }).eq('id', playerId)
+  await audit('Reset progress', await playerTag(playerId), message.trim() ? { message: message.trim() } : null)
   return { ok: true }
 }

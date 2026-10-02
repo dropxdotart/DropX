@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { requireAdminSession } from '../auth'
+import { audit } from '../audit'
 
 // The ads admin is a media library: an upload (ad_media) can be assigned to
 // several ad types; each assignment is a row in `ads` with its own on/off
@@ -90,6 +91,7 @@ export async function saveMedia(input: {
     if (assignError) return fail(assignError.message)
   }
   revalidatePath('/admin/ads')
+  await audit('Uploaded ad', input.path, { kind: input.kind, placements: input.placements })
   return { ok: true }
 }
 
@@ -98,7 +100,9 @@ export async function saveMedia(input: {
 export async function setMediaActive(id: string, active: boolean): Promise<Result> {
   await requireAdminSession()
   const { error } = await createAdminClient().from('ad_media').update({ active }).eq('id', id)
-  return error ? fail(error.message) : { ok: true }
+  if (error) return fail(error.message)
+  await audit(active ? 'Turned ad on' : 'Turned ad off', id)
+  return { ok: true }
 }
 
 // Scheduling also switches it on, since a schedule on a hidden upload
@@ -110,7 +114,9 @@ export async function setMediaSchedule(id: string, startsAt: string | null, ends
     .from('ad_media')
     .update({ starts_at: startsAt, ends_at: endsAt, ...(startsAt || endsAt ? { active: true } : {}) })
     .eq('id', id)
-  return error ? fail(error.message) : { ok: true }
+  if (error) return fail(error.message)
+  await audit('Scheduled ad', id, { startsAt, endsAt })
+  return { ok: true }
 }
 
 export async function setMediaClickUrl(id: string, clickUrl: string): Promise<Result> {
@@ -118,7 +124,9 @@ export async function setMediaClickUrl(id: string, clickUrl: string): Promise<Re
   const url = clickUrl.trim()
   if (url && !/^https?:\/\//i.test(url)) return fail('Links must start with http:// or https://')
   const { error } = await createAdminClient().from('ad_media').update({ click_url: url || null }).eq('id', id)
-  return error ? fail(error.message) : { ok: true }
+  if (error) return fail(error.message)
+  await audit('Changed ad link', id, { url: url || null })
+  return { ok: true }
 }
 
 // ── Assignments (one per ad type) ────────────────────────────────────────
@@ -132,6 +140,7 @@ export async function assignPlacement(mediaId: string, placement: AdPlacement): 
     .select('id, media_id, placement, active, starts_at, ends_at')
     .single()
   if (error || !data) return { ok: false, message: error?.message ?? 'Could not add it' }
+  await audit('Added ad type', mediaId, { placement })
   return { ok: true, ad: data as Assignment }
 }
 
@@ -139,13 +148,17 @@ export async function assignPlacement(mediaId: string, placement: AdPlacement): 
 export async function unassignPlacement(adId: string): Promise<Result> {
   await requireAdminSession()
   const { error } = await createAdminClient().from('ads').delete().eq('id', adId)
-  return error ? fail(error.message) : { ok: true }
+  if (error) return fail(error.message)
+  await audit('Removed ad type', adId)
+  return { ok: true }
 }
 
 export async function setAdActive(adId: string, active: boolean): Promise<Result> {
   await requireAdminSession()
   const { error } = await createAdminClient().from('ads').update({ active }).eq('id', adId)
-  return error ? fail(error.message) : { ok: true }
+  if (error) return fail(error.message)
+  await audit(active ? 'Turned ad type on' : 'Turned ad type off', adId)
+  return { ok: true }
 }
 
 export async function setAdSchedule(adId: string, startsAt: string | null, endsAt: string | null): Promise<Result> {
@@ -155,7 +168,9 @@ export async function setAdSchedule(adId: string, startsAt: string | null, endsA
     .from('ads')
     .update({ starts_at: startsAt, ends_at: endsAt, ...(startsAt || endsAt ? { active: true } : {}) })
     .eq('id', adId)
-  return error ? fail(error.message) : { ok: true }
+  if (error) return fail(error.message)
+  await audit('Scheduled ad type', adId, { startsAt, endsAt })
+  return { ok: true }
 }
 
 // ── Deleting ─────────────────────────────────────────────────────────────
@@ -170,6 +185,7 @@ export async function deleteMedia(id: string, mediaUrl: string): Promise<DeleteR
   const { error } = await createAdminClient().from('ad_media').delete().eq('id', id)
   if (error) return { ok: false, stage: 'row', message: error.message }
   revalidatePath('/admin/ads')
+  await audit('Deleted ad', id)
   return removeAdFile(mediaUrl)
 }
 
@@ -282,5 +298,7 @@ export async function setUnlockSeconds(placement: 'interstitial' | 'rewarded', s
   const value = Math.round(seconds)
   if (!Number.isFinite(value) || value < 0 || value > 120) return fail('Pick between 0 and 120 seconds')
   const { error } = await createAdminClient().from('ad_settings').upsert({ placement, unlock_seconds: value })
-  return error ? fail(error.message) : { ok: true }
+  if (error) return fail(error.message)
+  await audit('Changed ad skip time', placement, { seconds: value })
+  return { ok: true }
 }
