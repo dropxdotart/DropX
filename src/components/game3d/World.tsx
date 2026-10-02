@@ -5,7 +5,7 @@ import { useFrame } from '@react-three/fiber'
 import { useGLTF } from '@react-three/drei'
 import * as THREE from 'three'
 import { LOT_HALF, ROAD_Z } from '@/lib/game/engine'
-import { BLOCK, MAP_BLOCKS, PLOT_SLOTS, SHORE_Z, isReservedBlock } from '@/lib/game/plots'
+import { BLOCK, HARBOUR_X, MAP_BLOCKS, PLOT_SLOTS, SHORE_Z, isReservedBlock } from '@/lib/game/plots'
 import { ROAD_LINES, ROAD_LINES_Z } from '@/lib/game/roads'
 import Prop from './Prop'
 import { Billboard } from './SiteProps'
@@ -159,10 +159,16 @@ function Shoreline() {
         <boxGeometry args={[span, 0.16, 1.4]} />
         <meshStandardMaterial color={quay} roughness={0.9} />
       </mesh>
-      <mesh position={[LAND_EDGE - 0.7, 0.03, (SHORE_Z + LAND_EDGE) / 2]} receiveShadow>
-        <boxGeometry args={[1.4, 0.16, LAND_EDGE - SHORE_Z]} />
-        <meshStandardMaterial color={quay} roughness={0.9} />
-      </mesh>
+      {/* Right edge: quay, open in the middle where the harbour joins on */}
+      {[
+        [SHORE_Z, -HARBOUR_HALF_Z],
+        [HARBOUR_HALF_Z, LAND_EDGE],
+      ].map(([z0, z1]) => (
+        <mesh key={z0} position={[LAND_EDGE - 0.7, 0.03, (z0 + z1) / 2]} receiveShadow>
+          <boxGeometry args={[1.4, 0.16, z1 - z0]} />
+          <meshStandardMaterial color={quay} roughness={0.9} />
+        </mesh>
+      ))}
       <mesh position={[-LAND_EDGE + 0.7, 0.03, (SHORE_Z + LAND_EDGE) / 2]} receiveShadow>
         <boxGeometry args={[1.4, 0.16, LAND_EDGE - SHORE_Z]} />
         <meshStandardMaterial color={quay} roughness={0.9} />
@@ -173,8 +179,8 @@ function Shoreline() {
           [-30, LAND_EDGE + 5],
           [-6, LAND_EDGE + 8],
           [19, LAND_EDGE + 5],
-          [LAND_EDGE + 6, 10],
-          [LAND_EDGE + 5, -25],
+          [HARBOUR_EDGE_X + 6, 10],
+          [HARBOUR_EDGE_X + 5, -25],
         ].map(([x, z], i) => (
           <mesh key={i} position={[x, 0.1, z]} castShadow>
             <cylinderGeometry args={[0.35, 0.45, 0.6, 10]} />
@@ -182,6 +188,91 @@ function Shoreline() {
           </mesh>
         ))}
       </group>
+    </group>
+  )
+}
+
+// ── Harbour district ─────────────────────────────────────────────────────
+
+// Big lots on a concrete quay off the east edge of the city, for the
+// biggest buildings: streets run out to it, cranes lean over the water
+// and shipping containers are stacked along the edge.
+const HARBOUR_HALF_Z = 1.5 * BLOCK + 1.5
+const HARBOUR_EDGE_X = HARBOUR_X + BLOCK / 2 + 3.5
+const CONTAINER_COLORS = ['#d64545', '#2f5f9e', '#ef7d2d', '#3fa064', '#f2c230']
+
+function Harbour() {
+  const deckX0 = EXTENT + ROAD_WIDTH / 2 - 0.5
+  const lines = [-1.5 * BLOCK, -0.5 * BLOCK, 0.5 * BLOCK, 1.5 * BLOCK]
+  const crossX = HARBOUR_X + BLOCK / 2
+  return (
+    <group>
+      {/* Quay deck */}
+      <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow position={[(deckX0 + HARBOUR_EDGE_X) / 2, -0.005, 0]}>
+        <planeGeometry args={[HARBOUR_EDGE_X - deckX0, HARBOUR_HALF_Z * 2]} />
+        <meshStandardMaterial color="#c4c0b6" roughness={0.95} />
+      </mesh>
+      {/* Edge kerb all round */}
+      {[
+        { p: [HARBOUR_EDGE_X - 0.5, 0.03, 0], s: [1, 0.2, HARBOUR_HALF_Z * 2] },
+        { p: [(deckX0 + HARBOUR_EDGE_X) / 2, 0.03, -HARBOUR_HALF_Z + 0.5], s: [HARBOUR_EDGE_X - deckX0, 0.2, 1] },
+        { p: [(deckX0 + HARBOUR_EDGE_X) / 2, 0.03, HARBOUR_HALF_Z - 0.5], s: [HARBOUR_EDGE_X - deckX0, 0.2, 1] },
+      ].map((k, i) => (
+        <mesh key={i} position={k.p as [number, number, number]} receiveShadow>
+          <boxGeometry args={k.s as [number, number, number]} />
+          <meshStandardMaterial color="#9a958b" />
+        </mesh>
+      ))}
+      {/* Streets out from the city, and one along the far side */}
+      {lines.map((z) => (
+        <mesh key={z} material={asphalt} position={[(deckX0 + crossX + ROAD_WIDTH / 2) / 2, 0.02, z]} receiveShadow>
+          <boxGeometry args={[crossX + ROAD_WIDTH / 2 - deckX0, 0.04, ROAD_WIDTH]} />
+        </mesh>
+      ))}
+      <mesh material={asphalt} position={[crossX, 0.021, 0]} receiveShadow>
+        <boxGeometry args={[ROAD_WIDTH, 0.04, lines[3] - lines[0] + ROAD_WIDTH]} />
+      </mesh>
+      {/* Gantry cranes leaning out over the water */}
+      {[-BLOCK, 0.35 * BLOCK].map((z) => (
+        <group key={z} position={[HARBOUR_EDGE_X - 1.6, 0, z]}>
+          {[-1.4, 1.4].map((dz) => (
+            <mesh key={dz} position={[0, 4, dz]} castShadow>
+              <boxGeometry args={[0.4, 8, 0.4]} />
+              <meshStandardMaterial color="#e0b020" />
+            </mesh>
+          ))}
+          <mesh position={[2.6, 8.2, 0]} castShadow>
+            <boxGeometry args={[9, 0.6, 3.4]} />
+            <meshStandardMaterial color="#f2c230" />
+          </mesh>
+          <mesh position={[-1.4, 8.6, 0]} castShadow>
+            <boxGeometry args={[1.8, 1.2, 2]} />
+            <meshStandardMaterial color="#5b6470" />
+          </mesh>
+          <mesh position={[5, 6.2, 0]}>
+            <boxGeometry args={[0.06, 4, 0.06]} />
+            <meshStandardMaterial color="#2b2b2e" />
+          </mesh>
+        </group>
+      ))}
+      {/* Shipping containers stacked along the water's edge */}
+      {Array.from({ length: 9 }, (_, i) => {
+        const z = -HARBOUR_HALF_Z + 3 + i * 7.6
+        const h = 1 + ((i * 7) % 3)
+        return Array.from({ length: h }, (_, k) => (
+          <mesh key={`${i}-${k}`} position={[HARBOUR_EDGE_X - 2.4, 0.55 + k * 1.05, z]} castShadow>
+            <boxGeometry args={[1.1, 1, 3]} />
+            <meshStandardMaterial color={CONTAINER_COLORS[(i + k * 2) % CONTAINER_COLORS.length]} roughness={0.7} />
+          </mesh>
+        ))
+      })}
+      {/* Bollards */}
+      {Array.from({ length: 12 }, (_, i) => (
+        <mesh key={i} position={[HARBOUR_EDGE_X - 0.6, 0.3, -HARBOUR_HALF_Z + 2 + i * 6.2]}>
+          <cylinderGeometry args={[0.18, 0.22, 0.4, 8]} />
+          <meshStandardMaterial color="#2b2b2e" />
+        </mesh>
+      ))}
     </group>
   )
 }
@@ -409,6 +500,7 @@ export default function World({ ownedPlots }: { ownedPlots: number }) {
       <Shoreline />
 
       <Roads />
+      <Harbour />
 
       {PLOT_SLOTS.map((slot) => (
         <group key={slot.id} position={[slot.x, 0, slot.z]}>

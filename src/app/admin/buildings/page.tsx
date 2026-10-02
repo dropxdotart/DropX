@@ -4,7 +4,6 @@ import { bricksFromCells, cellsFromBlueprint, decodeCells } from '@/lib/game/sha
 import { BUILDINGS, brickCount } from '@/lib/game/buildings'
 import Thumb from './Thumb'
 import DuplicateButton from './DuplicateButton'
-import AddressBuilder from './AddressBuilder'
 import { isAdminSession } from '../auth'
 import PasswordGate from '../PasswordGate'
 import { StatusBadge } from '../ads/AdInsights'
@@ -24,7 +23,6 @@ export default async function BuildingsAdminPage() {
             <Plus className="h-4 w-4" /> New building
           </Link>
         </div>
-        <AddressBuilder />
         <p className="text-sm text-muted-foreground">
           Your own buildings join the 8 built-in ones in the game&apos;s building picker while they&apos;re on.
         </p>

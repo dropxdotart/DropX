@@ -964,6 +964,7 @@ export class Engine {
       return site
     })
     this.syncWorkers()
+    if (!given) this.moveBigToHarbour()
 
     if (!given) this.beginCatchUp((Date.now() - save.lastSeen) / 1000)
   }
@@ -1438,6 +1439,7 @@ export class Engine {
     const def = getBuilding(id)
     if (def.id !== id || (def.shape && !def.available)) return "That building isn't available right now"
     if (levelForXp(this.xp) < def.requiredLevel) return `Reach level ${def.requiredLevel} first`
+    if (def.harbour && !PLOT_SLOTS[plot]?.harbour) return 'Too big for a city plot — build it on a harbour lot'
     const price = buildPrice(def.contractCost)
     if (this.scrap < price) return 'Not enough bricks for this contract'
     this.scrap -= price
@@ -1477,9 +1479,31 @@ export class Engine {
     const site = new Site(slot.id)
     this.plots.push(site)
     if (this.crewPlan) this.crewPlan.push(0)
+    this.moveBigToHarbour()
     this.save()
     this.markDirty()
     return null
+  }
+
+  // A harbour-sized building being demolished on a city plot (from before
+  // the harbour existed) moves to an empty harbour lot, progress and all.
+  private moveBigToHarbour() {
+    for (const lot of this.plots) {
+      if (!PLOT_SLOTS[lot.id]?.harbour || lot.phase !== 'empty') continue
+      const from = this.plots.find((p) => !PLOT_SLOTS[p.id]?.harbour && p.phase === 'demolishing' && p.building.harbour)
+      if (!from) return
+      lot.phase = 'demolishing'
+      lot.worked = from.worked
+      lot.loadBuilding(from.building, from.removed.slice())
+      for (const r of from.rubble) lot.spawnRubble(r.color, 0)
+      // The old plot is free again; its crew drops what they were doing.
+      for (const w of this.workers) if (w.plot === from.id) this.releaseTarget(w)
+      for (const w of this.workers) if (w.plot === from.id && !w.carrying) w.state = 'idle'
+      from.phase = 'empty'
+      from.rubble = []
+      from.clearBricks()
+      this.markDirty()
+    }
   }
 
   // ── Crew split ────────────────────────────────────────────────────────

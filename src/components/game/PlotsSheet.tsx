@@ -8,6 +8,7 @@ import { PLOT_SLOTS } from '@/lib/game/plots'
 import { formatNumber } from './format'
 
 export function plotName(id: number) {
+  if (PLOT_SLOTS[id]?.harbour) return `Harbour lot ${PLOT_SLOTS.filter((s) => s.harbour).findIndex((s) => s.id === id) + 1}`
   return id === 0 ? 'Home lot' : `Plot ${id + 1}`
 }
 

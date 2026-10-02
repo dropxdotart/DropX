@@ -19,6 +19,7 @@ export type BuildingDef = {
   available?: boolean
   endsAt?: string // a limited-time building's last moment to start it
   toughness?: number // bricks take this many times longer to work loose (default 1)
+  harbour?: boolean // too big for a city plot: only on a harbour lot
 }
 
 export const BUILDINGS: BuildingDef[] = [
@@ -27,9 +28,8 @@ export const BUILDINGS: BuildingDef[] = [
   { id: 'warehouse', name: 'Warehouse', blueprint: 2, requiredLevel: 5, contractCost: 2_500, brickValue: 5, bonus: 3_000 },
   { id: 'tower', name: 'Office Tower', blueprint: 3, requiredLevel: 8, contractCost: 20_000, brickValue: 12, bonus: 25_000 },
   { id: 'mall', name: 'Shopping Mall', blueprint: 4, requiredLevel: 11, contractCost: 120_000, brickValue: 30, bonus: 150_000 },
-  { id: 'stadium', name: 'Stadium', blueprint: 5, requiredLevel: 14, contractCost: 700_000, brickValue: 80, bonus: 900_000, toughness: 1.25 },
-  { id: 'ship', name: 'Cruise Ship', blueprint: 6, requiredLevel: 17, contractCost: 4_000_000, brickValue: 220, bonus: 5_000_000, toughness: 1.9 },
-  { id: 'station', name: 'Space Station', blueprint: 7, requiredLevel: 20, contractCost: 25_000_000, brickValue: 650, bonus: 30_000_000, toughness: 1.45 },
+  { id: 'stadium', name: 'Stadium', blueprint: 5, requiredLevel: 14, contractCost: 700_000, brickValue: 80, bonus: 900_000, toughness: 1.25, harbour: true },
+  { id: 'ship', name: 'Cruise Ship', blueprint: 6, requiredLevel: 17, contractCost: 4_000_000, brickValue: 220, bonus: 5_000_000, toughness: 1.9, harbour: true },
 ]
 
 // Admin-made buildings known to this game (from the server, the local
@@ -45,8 +45,11 @@ export function registerCustomBuildings(defs: BuildingDef[], replace = true) {
 // never offered in the picker.
 export const LEGACY_BUILDINGS: BuildingDef[] = [
   { id: 'mall-v1', name: 'Shopping Mall', blueprint: 8, requiredLevel: 11, contractCost: 120_000, brickValue: 30, bonus: 150_000 },
-  { id: 'stadium-v1', name: 'Stadium', blueprint: 9, requiredLevel: 14, contractCost: 700_000, brickValue: 80, bonus: 900_000 },
-  { id: 'ship-v1', name: 'Cruise Ship', blueprint: 10, requiredLevel: 17, contractCost: 4_000_000, brickValue: 220, bonus: 5_000_000 },
+  { id: 'stadium-v1', name: 'Stadium', blueprint: 9, requiredLevel: 14, contractCost: 700_000, brickValue: 80, bonus: 900_000, harbour: true },
+  { id: 'ship-v1', name: 'Cruise Ship', blueprint: 10, requiredLevel: 17, contractCost: 4_000_000, brickValue: 220, bonus: 5_000_000, harbour: true },
+  // Taken out of the picker 2026-10-02 (space belongs to a future world);
+  // kept so a save already demolishing one can finish it.
+  { id: 'station', name: 'Space Station', blueprint: 7, requiredLevel: 20, contractCost: 25_000_000, brickValue: 650, bonus: 30_000_000, toughness: 1.45 },
   { id: 'station-v1', name: 'Space Station', blueprint: 11, requiredLevel: 20, contractCost: 25_000_000, brickValue: 650, bonus: 30_000_000 },
 ]
 

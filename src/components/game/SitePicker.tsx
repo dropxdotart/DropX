@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { Lock, X } from 'lucide-react'
 import { brickCount, pickableBuildings } from '@/lib/game/buildings'
 import { timeLeft } from '@/lib/liveEvents'
+import { PLOT_SLOTS } from '@/lib/game/plots'
 import { buildPrice, type Engine, type Snapshot } from '@/lib/game/engine'
 import { formatNumber } from './format'
 import { plotName } from './PlotsSheet'
@@ -64,7 +65,8 @@ export default function SitePicker({
         <div className="space-y-2">
           {pickableBuildings().map((b) => {
             const bricks = brickCount(b)
-            const locked = snap.level < b.requiredLevel
+            const needsHarbour = !!b.harbour && !PLOT_SLOTS[plot]?.harbour
+            const locked = snap.level < b.requiredLevel || needsHarbour
             const affordable = snap.scrap >= buildPrice(b.contractCost)
             const payout = bricks * b.brickValue + b.bonus
             return (
@@ -87,7 +89,11 @@ export default function SitePicker({
                   <p className="text-xs leading-tight text-[#5b6f93]">
                     {formatNumber(bricks)} bricks · pays ~🧱{formatNumber(payout)}
                   </p>
-                  {locked && <p className="text-xs font-bold text-[#c2410c]">Unlocks at level {b.requiredLevel}</p>}
+                  {needsHarbour ? (
+                    <p className="text-xs font-bold text-[#2d7ff9]">⚓ Too big for this plot — build on a harbour lot</p>
+                  ) : (
+                    locked && <p className="text-xs font-bold text-[#c2410c]">Unlocks at level {b.requiredLevel}</p>
+                  )}
                 </div>
                 <button
                   disabled={locked || !affordable}

@@ -11,7 +11,12 @@ export type PlotSlot = {
   z: number
   cost: number
   requiredLevel: number
+  harbour?: boolean // a big lot in the harbour district (for the biggest buildings)
 }
+
+// The harbour district: big lots on the quay off the east edge of the city,
+// with open water around them so the biggest buildings have room.
+export const HARBOUR_X = (MAP_BLOCKS + 1) * BLOCK
 
 // Ordered by unlock. Diagonal neighbours first so new plots appear around
 // the map (left/right/behind/in front of home on screen), not in a row.
@@ -21,6 +26,9 @@ export const PLOT_SLOTS: PlotSlot[] = [
   { id: 2, x: -BLOCK, z: BLOCK, cost: 60_000, requiredLevel: 7 },
   { id: 3, x: -BLOCK, z: -BLOCK, cost: 500_000, requiredLevel: 10 },
   { id: 4, x: BLOCK, z: BLOCK, cost: 4_000_000, requiredLevel: 13 },
+  { id: 5, x: (MAP_BLOCKS + 1) * BLOCK, z: 0, cost: 8_000_000, requiredLevel: 14, harbour: true },
+  { id: 6, x: (MAP_BLOCKS + 1) * BLOCK, z: -BLOCK, cost: 30_000_000, requiredLevel: 16, harbour: true },
+  { id: 7, x: (MAP_BLOCKS + 1) * BLOCK, z: BLOCK, cost: 100_000_000, requiredLevel: 18, harbour: true },
 ]
 
 export function plotSlot(id: number): PlotSlot {

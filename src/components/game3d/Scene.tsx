@@ -6,7 +6,7 @@ import { Html, OrthographicCamera, useProgress } from '@react-three/drei'
 import * as THREE from 'three'
 import { getBuilding, sizeFor } from '@/lib/game/buildings'
 import { BRICK, DUMPSTER_SLOTS, LOT_HALF, stats, type Engine, type Snapshot } from '@/lib/game/engine'
-import { BLOCK, MAP_BLOCKS, PLOT_SLOTS, YARD_BLOCK } from '@/lib/game/plots'
+import { BLOCK, HARBOUR_X, MAP_BLOCKS, PLOT_SLOTS, YARD_BLOCK } from '@/lib/game/plots'
 import { STATIONS, dumpstersAffordable, fleetAffordable, upgradeReady, getStation, tierFor, truckLevel, type StationId } from '@/lib/game/stations'
 import { formatNumber } from '@/components/game/format'
 import Building from './Building'
@@ -300,7 +300,8 @@ export default function Scene({
     const c = center.current
     c.addScaledVector(GROUND_RIGHT, -dx / zoom)
     c.addScaledVector(GROUND_FORWARD, dy / (zoom * CAMERA_DIR.y))
-    c.x = THREE.MathUtils.clamp(c.x, -PAN_LIMIT, PAN_LIMIT)
+    // The harbour district sticks out on the right.
+    c.x = THREE.MathUtils.clamp(c.x, -PAN_LIMIT, HARBOUR_X + BLOCK / 2)
     c.z = THREE.MathUtils.clamp(c.z, -PAN_LIMIT, PAN_LIMIT)
   }
   const onPointerUp = (e: React.PointerEvent) => {
