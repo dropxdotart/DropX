@@ -1,12 +1,13 @@
 'use server'
 
 import { createAdminClient } from '@/lib/supabase/admin'
+import { usernameProblem } from '@/lib/usernames'
 
 // The game's link to its player record (see migration 008). Players never
 // sign in: the device's random player id is the key, and only the game on
 // that device knows it. Everything runs with the service role here.
 
-export type RewardKind = 'bricks' | 'set_bricks' | 'boost' | 'upgrade'
+export type RewardKind = 'bricks' | 'set_bricks' | 'boost' | 'upgrade' | 'reset'
 export type Grant = { kind: RewardKind; amount: number; upgrade: string | null; message: string | null; source: string }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -50,8 +51,8 @@ export async function syncPlayer(
   id: string,
   summary: PlayerSummary,
   save: unknown
-): Promise<{ shortId: string | null; grants: Grant[] }> {
-  if (!UUID.test(id)) return { shortId: null, grants: [] }
+): Promise<{ shortId: string | null; username: string | null; grants: Grant[] }> {
+  if (!UUID.test(id)) return { shortId: null, username: null, grants: [] }
   const shortId = await ensurePlayer(id)
   const admin = createAdminClient()
   const num = (n: number) => (Number.isFinite(n) ? n : 0)
@@ -76,7 +77,24 @@ export async function syncPlayer(
   const grants = (data ?? [])
     .sort((a, b) => a.created_at.localeCompare(b.created_at))
     .map(({ kind, amount, upgrade, message, source }) => ({ kind, amount, upgrade, message, source }))
-  return { shortId, grants }
+  // The current name (an admin may have changed or cleared it).
+  const { data: me } = await admin.from('players').select('username').eq('id', id).maybeSingle()
+  return { shortId, username: me?.username ?? null, grants }
+}
+
+// Sets this player's username: 3–16 letters/numbers/_, no banned words,
+// and nobody else's (ignoring case).
+export async function setUsername(id: string, name: string): Promise<{ ok: true; username: string } | { ok: false; message: string }> {
+  if (!UUID.test(id)) return { ok: false, message: 'Something went wrong — reopen the game and try again' }
+  const clean = name.trim()
+  const admin = createAdminClient()
+  const { data: banned } = await admin.from('banned_words').select('word')
+  const problem = usernameProblem(clean, (banned ?? []).map((b) => b.word))
+  if (problem) return { ok: false, message: problem }
+  await ensurePlayer(id)
+  const { error } = await admin.from('players').update({ username: clean }).eq('id', id)
+  if (error) return { ok: false, message: error.code === '23505' ? 'That name is taken' : 'Something went wrong — try again' }
+  return { ok: true, username: clean }
 }
 
 // Checks and uses a redeem code. On success returns the reward for the game

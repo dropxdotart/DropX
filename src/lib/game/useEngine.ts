@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useSyncExternalStore } from 'react'
-import { getEngine, type Engine, type Snapshot } from './engine'
+import { getEngine, PENDING_GRANTS_KEY, type Engine, type Snapshot } from './engine'
 import { syncPlayer } from '@/app/playerActions'
 import { playerId } from '@/lib/player'
 
@@ -12,7 +12,9 @@ const SHORT_ID_KEY = 'rubble-short-id'
 // balance edits an admin left for them.
 async function syncCloud(engine: Engine) {
   try {
-    const { shortId, grants } = await syncPlayer(playerId(), engine.cloudSummary(), engine.saveData())
+    const { shortId, username, grants } = await syncPlayer(playerId(), engine.cloudSummary(), engine.saveData())
+    engine.setUsername(username)
+    engine.markSynced()
     if (shortId && shortId !== engine.shortId) {
       engine.setShortId(shortId)
       try {
@@ -20,6 +22,18 @@ async function syncCloud(engine: Engine) {
       } catch {
         // fine — it comes back on the next sync
       }
+    }
+    // A reset reloads the game: gifts sent after it wait in storage and are
+    // applied to the fresh game; anything before it is moot.
+    const lastReset = grants.map((g) => g.kind).lastIndexOf('reset')
+    if (lastReset >= 0) {
+      try {
+        localStorage.setItem(PENDING_GRANTS_KEY, JSON.stringify(grants.slice(lastReset + 1)))
+      } catch {
+        // storage unavailable — those gifts are lost
+      }
+      engine.applyReward(grants[lastReset], grants[lastReset].message, 'admin')
+      return
     }
     for (const g of grants) engine.applyReward(g, g.message, g.source)
     engine.notify()

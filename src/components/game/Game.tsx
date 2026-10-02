@@ -16,6 +16,7 @@ import LoadingScreen from './LoadingScreen'
 import BonusTab from './BonusTab'
 import PlotsSheet, { plotName } from './PlotsSheet'
 import ProfileSheet from './ProfileSheet'
+import UsernameForm from './UsernameForm'
 import type { StationFocus } from '@/components/game3d/Scene'
 import { formatNumber } from './format'
 
@@ -24,12 +25,31 @@ const Scene = dynamic(() => import('@/components/game3d/Scene'), { ssr: false })
 
 type Pop = { id: number; text: string; x: number; y: number }
 
+const NAME_PROMPT_KEY = 'rubble-name-prompted'
+
 export default function Game() {
   const game = useEngine()
   const [mapOpen, setMapOpen] = useState(false)
   const [bonusOpen, setBonusOpen] = useState(false)
   const [plotsOpen, setPlotsOpen] = useState(false)
   const [profileOpen, setProfileOpen] = useState(false)
+  // First play: ask for a username once (skippable; they can set it later
+  // in Profile).
+  const [namePrompted, setNamePrompted] = useState(() => {
+    try {
+      return typeof window !== 'undefined' && localStorage.getItem(NAME_PROMPT_KEY) === '1'
+    } catch {
+      return true
+    }
+  })
+  const dismissNamePrompt = () => {
+    setNamePrompted(true)
+    try {
+      localStorage.setItem(NAME_PROMPT_KEY, '1')
+    } catch {
+      // fine — it may ask again next time
+    }
+  }
   const [selected, setSelected] = useState<StationFocus | null>(null)
   // The plot nearest the middle of the screen: BREAK and the building card
   // act on it. `flyTo` glides the camera to a plot when its nonce changes.
@@ -366,6 +386,19 @@ export default function Game() {
         <SitePicker engine={engine} snap={snap} plot={picker.plot} justCleared={picker.cleared} onClose={() => setPicker(null)} />
       )}
       {profileOpen && <ProfileSheet engine={engine} snap={snap} onClose={() => setProfileOpen(false)} />}
+      {loadingGone && snap.synced && !snap.username && !namePrompted && !snap.notice && (
+        <div className="pointer-events-auto fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-6">
+          <div className="w-full max-w-xs rounded-3xl bg-white p-5 shadow-[0_6px_0_rgba(0,0,0,0.15)]">
+            <p className="text-center text-4xl">👷</p>
+            <p className="mt-1 text-center font-display text-2xl text-[#1d3a6e]">Pick a username</p>
+            <p className="mb-3 text-center text-sm text-[#5b6f93]">What should the crew call you?</p>
+            <UsernameForm engine={engine} initial="" submitLabel="Go!" onDone={dismissNamePrompt} />
+            <button onClick={dismissNamePrompt} className="mt-3 w-full text-center text-sm text-[#5b6f93]">
+              Maybe later
+            </button>
+          </div>
+        </div>
+      )}
       {/* Gifts, balance edits and redeemed codes, one at a time */}
       {snap.notice && (
         <div className="pointer-events-auto fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-6">

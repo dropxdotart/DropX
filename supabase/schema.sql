@@ -287,3 +287,16 @@ $$;
 
 revoke execute on function redeem_code(uuid, text) from public, anon, authenticated;
 grant execute on function redeem_code(uuid, text) to service_role;
+
+alter table players add column username text;
+create unique index players_username_unique on players (lower(username)) where username is not null;
+
+create table banned_words (
+  word text primary key, -- stored lowercase
+  created_at timestamptz not null default now()
+);
+
+alter table banned_words enable row level security;
+revoke all on banned_words from anon, authenticated;
+
+alter type reward_kind add value if not exists 'reset';

@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
 import { rewardText, UPGRADE_OPTIONS } from '@/lib/rewards'
-import { cancelGrant, listGrants, listPlayers, sendGrant, type GrantRow, type PlayerRow } from './actions'
+import { adminSetUsername, cancelGrant, listGrants, listPlayers, resetPlayer, sendGrant, type GrantRow, type PlayerRow } from './actions'
 
 function fmt(n: number) {
   return Math.round(n).toLocaleString()
@@ -23,8 +23,31 @@ function ago(iso: string) {
 
 // One player's panel: set their balance, send a gift, and see what's
 // been sent (pending gifts can be cancelled before they're delivered).
-function PlayerDetail({ player }: { player: PlayerRow }) {
+function PlayerDetail({
+  player,
+  onRenamed,
+  onReset,
+}: {
+  player: PlayerRow
+  onRenamed: (name: string | null) => void
+  onReset: () => void
+}) {
   const [grants, setGrants] = useState<GrantRow[] | null>(null)
+  const [name, setName] = useState(player.username ?? '')
+  const [renaming, setRenaming] = useState(false)
+
+  const rename = async (next: string | null) => {
+    setRenaming(true)
+    const result = await adminSetUsername(player.id, next).catch(() => ({ ok: false as const, message: 'Something went wrong' }))
+    setRenaming(false)
+    if (!result.ok) {
+      toast.error(result.message)
+      return
+    }
+    toast.success(next === null ? 'Name cleared' : 'Name changed')
+    if (next === null) setName('')
+    onRenamed(next === null ? null : next.trim())
+  }
   const [balance, setBalance] = useState('')
   const [kind, setKind] = useState<'bricks' | 'boost' | 'upgrade'>('bricks')
   const [amount, setAmount] = useState('')
@@ -56,6 +79,19 @@ function PlayerDetail({ player }: { player: PlayerRow }) {
 
   return (
     <div className="space-y-4">
+      <div className="space-y-1.5">
+        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Username</p>
+        <div className="flex gap-2">
+          <Input value={name} onChange={(e) => setName(e.target.value.replace(/[^A-Za-z0-9_]/g, ''))} placeholder="No name" maxLength={16} />
+          <Button disabled={renaming || !name.trim() || name.trim() === player.username} onClick={() => rename(name)}>
+            Save
+          </Button>
+          <Button variant="secondary" disabled={renaming || !player.username} onClick={() => rename(null)}>
+            Clear
+          </Button>
+        </div>
+      </div>
+
       <div className="space-y-1.5">
         <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Set balance</p>
         <div className="flex gap-2">
@@ -102,6 +138,34 @@ function PlayerDetail({ player }: { player: PlayerRow }) {
           {busy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
           Send gift
         </Button>
+      </div>
+
+      <div className="space-y-1.5 rounded-lg border border-red-200 bg-red-50/60 p-2.5">
+        <p className="text-xs font-semibold uppercase tracking-wide text-red-700">Danger zone</p>
+        <div className="flex items-center justify-between gap-2">
+          <p className="text-xs text-red-800">Wipe their progress back to a fresh start. Keeps their name and ID.</p>
+          <Button
+            variant="secondary"
+            disabled={busy}
+            className="shrink-0 text-red-700"
+            onClick={async () => {
+              const who = player.username ?? player.short_id
+              if (!confirm(`Reset ${who}? All their bricks, plots, workers and upgrades go back to the start. This can't be undone.`)) return
+              setBusy(true)
+              const result = await resetPlayer(player.id, '').catch(() => ({ ok: false as const, message: 'Something went wrong' }))
+              setBusy(false)
+              if (!result.ok) {
+                toast.error(result.message)
+                return
+              }
+              toast.success(`${who} will reset next time their game syncs`)
+              onReset()
+              load()
+            }}
+          >
+            Reset progress
+          </Button>
+        </div>
       </div>
 
       <div className="space-y-1.5">
@@ -172,10 +236,9 @@ export default function PlayerManager({ initialPlayers }: { initialPlayers: Play
       >
         <Input
           value={search}
-          onChange={(e) => setSearch(e.target.value.toUpperCase())}
-          placeholder="Search by player ID"
-          className="font-mono uppercase"
-          autoCapitalize="characters"
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search by name or player ID"
+          autoCapitalize="off"
         />
         <Button type="submit" variant="secondary" aria-label="Search">
           {searching ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
@@ -190,7 +253,10 @@ export default function PlayerManager({ initialPlayers }: { initialPlayers: Play
             <div key={p.id} className="rounded-xl border border-border bg-card">
               <button type="button" onClick={() => setOpen(isOpen ? null : p.id)} className="flex w-full items-center gap-3 p-3 text-left">
                 <div className="min-w-0 flex-1">
-                  <p className="font-mono text-base font-semibold tracking-wider">{p.short_id}</p>
+                  <p className="text-base font-semibold">
+                    {p.username ?? <span className="font-normal italic text-muted-foreground">No name</span>}{' '}
+                    <span className="font-mono text-xs font-normal tracking-wider text-muted-foreground">{p.short_id}</span>
+                  </p>
                   <p className="text-xs tabular-nums text-muted-foreground">
                     Lv {p.level} · 🧱 {fmt(p.scrap)} · {p.plots} plot{p.plots === 1 ? '' : 's'} · {p.workers} workers · {ago(p.last_seen)}
                   </p>
@@ -199,7 +265,15 @@ export default function PlayerManager({ initialPlayers }: { initialPlayers: Play
               </button>
               {isOpen && (
                 <div className="border-t border-border p-3">
-                  <PlayerDetail player={p} />
+                  <PlayerDetail
+                    player={p}
+                    onRenamed={(username) => setPlayers((prev) => prev.map((x) => (x.id === p.id ? { ...x, username } : x)))}
+                    onReset={() =>
+                      setPlayers((prev) =>
+                        prev.map((x) => (x.id === p.id ? { ...x, scrap: 0, xp: 0, level: 1, plots: 1, workers: 1 } : x))
+                      )
+                    }
+                  />
                 </div>
               )}
             </div>

@@ -30,6 +30,10 @@ export { BRICK, DUMPSTER, DUMPSTER_SLOTS, LOT_HALF, MAX_DUMPSTERS, ROAD_Z, TRUCK
 
 const SAVE_KEY = 'rubble-save-v5'
 const LEGACY_SAVE_KEY = 'rubble-save-v4'
+// Set when an admin reset wipes the save, so the fresh game can say so;
+// gifts sent after the reset wait here to be applied to the fresh game.
+const RESET_NOTICE_KEY = 'rubble-reset-notice'
+export const PENDING_GRANTS_KEY = 'rubble-pending-grants'
 const MAX_OFFLINE_SECONDS = 8 * 60 * 60
 const LOAD_SECONDS = 0.8
 const BREAK_FALL_SECONDS = 0.7
@@ -79,7 +83,7 @@ export function dumpsterBuyCost(owned: number): number | null {
   return owned < MAX_DUMPSTERS ? DUMPSTER_BUY_COSTS[owned] : null
 }
 
-export type RewardKind = 'bricks' | 'set_bricks' | 'boost' | 'upgrade'
+export type RewardKind = 'bricks' | 'set_bricks' | 'boost' | 'upgrade' | 'reset'
 export type Reward = { kind: RewardKind; amount: number; upgrade: string | null }
 export type Notice = { title: string; detail: string; message: string | null }
 
@@ -224,6 +228,8 @@ export type Snapshot = {
   boostLeft: number
   notice: Notice | null
   shortId: string | null
+  username: string | null
+  synced: boolean
 }
 
 type PlotSave = {
@@ -534,6 +540,26 @@ export class Engine {
   // ── Persistence ───────────────────────────────────────────────────────
 
   load() {
+    this.loadSave()
+    try {
+      const resetMessage = localStorage.getItem(RESET_NOTICE_KEY)
+      if (resetMessage !== null) {
+        localStorage.removeItem(RESET_NOTICE_KEY)
+        this.notices.push({ title: 'Fresh start', detail: 'Your progress was reset', message: resetMessage || null })
+      }
+      const pending = localStorage.getItem(PENDING_GRANTS_KEY)
+      if (pending) {
+        localStorage.removeItem(PENDING_GRANTS_KEY)
+        for (const g of JSON.parse(pending) as (Reward & { message: string | null; source: string })[]) {
+          this.applyReward(g, g.message, g.source)
+        }
+      }
+    } catch {
+      // nothing pending
+    }
+  }
+
+  private loadSave() {
     let save: SaveData | null = null
     try {
       const raw = localStorage.getItem(SAVE_KEY)
@@ -591,7 +617,11 @@ export class Engine {
     this.offlineEarnings = this.catchUp(away)
   }
 
+  // Once a reset starts, nothing may write the old progress back.
+  private frozen = false
+
   save() {
+    if (this.frozen) return
     try {
       localStorage.setItem(SAVE_KEY, JSON.stringify(this.saveData()))
     } catch {
@@ -625,12 +655,27 @@ export class Engine {
 
   // Shown one at a time by the HUD (see Snapshot.notice).
   notices: Notice[] = []
-  // The player's public id from the cloud (null until the first sync).
+  // The player's public id and username from the cloud (null until the
+  // first sync / until they pick a name).
   shortId: string | null = null
+  username: string | null = null
 
   // Applies a reward from an admin gift, a balance edit or a redeem code,
   // and queues a notice telling the player what they got.
   applyReward(r: Reward, message: string | null, source: string) {
+    if (r.kind === 'reset') {
+      // Wipe the save and start over (keeping the player id and username).
+      this.frozen = true
+      try {
+        localStorage.removeItem(SAVE_KEY)
+        localStorage.removeItem(LEGACY_SAVE_KEY)
+        localStorage.setItem(RESET_NOTICE_KEY, message ?? '')
+      } catch {
+        // storage unavailable — nothing saved to wipe
+      }
+      window.location.reload()
+      return
+    }
     const amount = Math.max(0, Number(r.amount) || 0)
     let what = ''
     switch (r.kind) {
@@ -661,6 +706,22 @@ export class Engine {
     }
     this.notices.push({ title: source === 'code' ? 'Code redeemed!' : 'You got a gift!', detail: what, message })
     this.save()
+    this.markDirty()
+  }
+
+  // True once the cloud has answered at least once (so the HUD knows
+  // whether "no username" really means none, for the first-play prompt).
+  synced = false
+
+  markSynced() {
+    if (this.synced) return
+    this.synced = true
+    this.markDirty()
+  }
+
+  setUsername(name: string | null) {
+    if (name === this.username) return
+    this.username = name
     this.markDirty()
   }
 
@@ -1454,6 +1515,8 @@ export class Engine {
         boostLeft: Math.max(0, Math.ceil(this.boostUntil - this.time)),
         notice: this.notices[0] ?? null,
         shortId: this.shortId,
+        username: this.username,
+        synced: this.synced,
         bonusDrop: this.bonusDrop
           ? { amount: this.bonusDrop.amount, secondsLeft: Math.ceil(this.bonusDrop.expiresAt - this.time) }
           : null,

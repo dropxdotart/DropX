@@ -14,6 +14,7 @@ export function rewardText(kind: string, amount: number, upgrade: string | null)
   if (kind === 'bricks') return `🧱 ${n} bricks`
   if (kind === 'set_bricks') return `Set bricks to 🧱 ${n}`
   if (kind === 'boost') return `⚡ ${amount} min crew boost`
+  if (kind === 'reset') return '↺ Progress reset'
   const label = UPGRADE_OPTIONS.find((u) => u.value === upgrade)?.label ?? upgrade ?? 'upgrade'
   return `${n}× free ${label}`
 }

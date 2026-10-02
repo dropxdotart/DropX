@@ -1,10 +1,11 @@
 'use client'
 
 import { useState } from 'react'
-import { Copy, Loader2, X } from 'lucide-react'
+import { Copy, Loader2, Pencil, X } from 'lucide-react'
 import type { Engine, Snapshot } from '@/lib/game/engine'
 import { redeemCode } from '@/app/playerActions'
 import { playerId } from '@/lib/player'
+import UsernameForm from './UsernameForm'
 
 // The player's profile: their public ID (to give support) and a box to
 // redeem codes. Settings will live here later too.
@@ -13,6 +14,7 @@ export default function ProfileSheet({ engine, snap, onClose }: { engine: Engine
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
+  const [editingName, setEditingName] = useState(false)
 
   const redeem = async () => {
     if (!code.trim() || busy) return
@@ -57,6 +59,26 @@ export default function ProfileSheet({ engine, snap, onClose }: { engine: Engine
           <button onClick={onClose} className="rounded-full bg-[#eef2f8] p-2" aria-label="Close">
             <X className="h-5 w-5 text-[#1d3a6e]" />
           </button>
+        </div>
+
+        <div className="mb-3 rounded-2xl bg-[#eef2f8] p-3">
+          <p className="text-xs text-[#5b6f93]">Username</p>
+          {editingName ? (
+            <div className="mt-1.5">
+              <UsernameForm engine={engine} initial={snap.username ?? ''} onDone={() => setEditingName(false)} />
+            </div>
+          ) : (
+            <div className="mt-1 flex items-center justify-between gap-2">
+              <p className={`font-display text-2xl ${snap.username ? 'text-[#1d3a6e]' : 'text-[#9aa6ba]'}`}>{snap.username ?? 'Not set'}</p>
+              <button
+                onClick={() => setEditingName(true)}
+                disabled={!snap.synced}
+                className="flex items-center gap-1 rounded-xl bg-white px-3 py-1.5 font-display text-sm text-[#1d3a6e] disabled:opacity-50"
+              >
+                <Pencil className="h-4 w-4" /> {snap.username ? 'Change' : 'Set name'}
+              </button>
+            </div>
+          )}
         </div>
 
         <div className="rounded-2xl bg-[#eef2f8] p-3">
