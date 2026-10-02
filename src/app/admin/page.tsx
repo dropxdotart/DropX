@@ -3,7 +3,9 @@ import Link from 'next/link'
 import PasswordGate from './PasswordGate'
 
 const TOOLS = [
-  { href: '/admin/ads', label: 'Ads', description: 'Upload and manage rewarded/interstitial/banner creative' },
+  { href: '/admin/ads', label: 'Ads', description: 'Upload ads, pick where they run, see their stats' },
+  { href: '/admin/codes', label: 'Redeem codes', description: 'Create codes that give bricks, boosts or free upgrades' },
+  { href: '/admin/players', label: 'Players', description: 'Look up players, set balances, send gifts' },
 ]
 
 export default async function AdminIndexPage() {

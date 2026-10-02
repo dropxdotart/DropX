@@ -79,6 +79,20 @@ export function dumpsterBuyCost(owned: number): number | null {
   return owned < MAX_DUMPSTERS ? DUMPSTER_BUY_COSTS[owned] : null
 }
 
+export type RewardKind = 'bricks' | 'set_bricks' | 'boost' | 'upgrade'
+export type Reward = { kind: RewardKind; amount: number; upgrade: string | null }
+export type Notice = { title: string; detail: string; message: string | null }
+
+// Upgrades a code or gift can hand out for free, as players see them.
+export const REWARD_UPGRADE_LABELS: Partial<Record<UpgradeKey, string>> = {
+  workers: 'worker',
+  fleet: 'truck',
+  tools: 'Better tools',
+  speed: 'Walking speed',
+  yardSpeed: 'Faster unloading',
+  yardBonus: 'Better prices',
+}
+
 export type TruckUpgrade = 'load' | 'speed'
 export const TRUCK_UPGRADE_INFO: Record<TruckUpgrade, { label: string; base: number; growth: number }> = {
   load: { label: 'Bigger truck', base: 35, growth: 1.5 },
@@ -208,6 +222,8 @@ export type Snapshot = {
   bonusDrop: { amount: number; secondsLeft: number } | null
   // Seconds of crew boost left (0 = off).
   boostLeft: number
+  notice: Notice | null
+  shortId: string | null
 }
 
 type PlotSave = {
@@ -219,7 +235,7 @@ type PlotSave = {
   dumpsters?: { level: number; load: number }[]
 }
 
-type SaveData = {
+export type SaveData = {
   scrap: number
   xp: number
   upgrades: Upgrades
@@ -576,7 +592,17 @@ export class Engine {
   }
 
   save() {
-    const data: SaveData = {
+    try {
+      localStorage.setItem(SAVE_KEY, JSON.stringify(this.saveData()))
+    } catch {
+      // storage full / private mode — the game still runs, just won't persist
+    }
+  }
+
+  // The save as plain data: written to localStorage and synced to the
+  // player's cloud record.
+  saveData(): SaveData {
+    return {
       scrap: this.scrap,
       xp: this.xp,
       upgrades: this.upgrades,
@@ -593,10 +619,70 @@ export class Engine {
         dumpsters: p.dumpsters.map((d) => ({ level: d.level, load: d.load })),
       })),
     }
-    try {
-      localStorage.setItem(SAVE_KEY, JSON.stringify(data))
-    } catch {
-      // storage full / private mode — the game still runs, just won't persist
+  }
+
+  // ── Gifts & codes ─────────────────────────────────────────────────────
+
+  // Shown one at a time by the HUD (see Snapshot.notice).
+  notices: Notice[] = []
+  // The player's public id from the cloud (null until the first sync).
+  shortId: string | null = null
+
+  // Applies a reward from an admin gift, a balance edit or a redeem code,
+  // and queues a notice telling the player what they got.
+  applyReward(r: Reward, message: string | null, source: string) {
+    const amount = Math.max(0, Number(r.amount) || 0)
+    let what = ''
+    switch (r.kind) {
+      case 'bricks':
+        this.scrap += amount
+        what = `+🧱${Math.round(amount).toLocaleString()} bricks`
+        break
+      case 'set_bricks':
+        this.scrap = amount
+        what = `Your bricks were set to 🧱${Math.round(amount).toLocaleString()}`
+        break
+      case 'boost':
+        // Minutes of crew boost, on top of any boost already running.
+        this.boostUntil = Math.max(this.boostUntil, this.time) + amount * 60
+        what = `⚡ ${amount} min crew boost`
+        break
+      case 'upgrade': {
+        const key = r.upgrade as UpgradeKey | null
+        if (!key || !(key in this.upgrades)) return
+        const n = Math.round(amount)
+        this.upgrades = { ...this.upgrades, [key]: this.upgrades[key] + n }
+        this.syncWorkers()
+        what = `${n} free ${REWARD_UPGRADE_LABELS[key] ?? UPGRADE_INFO[key].label}${n > 1 ? ' upgrades' : ''}`
+        break
+      }
+      default:
+        return
+    }
+    this.notices.push({ title: source === 'code' ? 'Code redeemed!' : 'You got a gift!', detail: what, message })
+    this.save()
+    this.markDirty()
+  }
+
+  setShortId(id: string | null) {
+    if (id === this.shortId) return
+    this.shortId = id
+    this.markDirty()
+  }
+
+  dismissNotice() {
+    this.notices.shift()
+    this.markDirty()
+  }
+
+  // What the player's cloud record shows in the admin.
+  cloudSummary() {
+    return {
+      scrap: this.scrap,
+      xp: this.xp,
+      level: levelForXp(this.xp),
+      plots: this.plots.length,
+      workers: this.workers.length,
     }
   }
 
@@ -650,7 +736,7 @@ export class Engine {
 
   // ── Player actions ────────────────────────────────────────────────────
 
-  private boostUntil = -Infinity
+  boostUntil = -Infinity
   private lastBoostSecond = -1
 
   boostActive() {
@@ -662,7 +748,9 @@ export class Engine {
   }
 
   boost() {
-    this.boostUntil = this.time + BOOST_SECONDS
+    // Tops up to at least a few seconds; never shortens a longer boost
+    // (e.g. minutes from a gift or code).
+    this.boostUntil = Math.max(this.boostUntil, this.time + BOOST_SECONDS)
     this.markDirty()
   }
 
@@ -1364,6 +1452,8 @@ export class Engine {
         offlineEarnings: this.offlineEarnings,
         sitesCleared: this.sitesCleared,
         boostLeft: Math.max(0, Math.ceil(this.boostUntil - this.time)),
+        notice: this.notices[0] ?? null,
+        shortId: this.shortId,
         bonusDrop: this.bonusDrop
           ? { amount: this.bonusDrop.amount, secondsLeft: Math.ceil(this.bonusDrop.expiresAt - this.time) }
           : null,

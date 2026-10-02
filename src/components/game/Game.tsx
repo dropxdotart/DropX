@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import dynamic from 'next/dynamic'
-import { ArrowBigUpDash, Map as MapIcon, Minus, Plus, X } from 'lucide-react'
+import { ArrowBigUpDash, Map as MapIcon, Minus, Plus, UserRound, X } from 'lucide-react'
 import { useEngine } from '@/lib/game/useEngine'
 import { getBuilding, xpForLevel } from '@/lib/game/buildings'
 import BannerAd from './BannerAd'
@@ -15,6 +15,7 @@ import SitePicker from './SitePicker'
 import LoadingScreen from './LoadingScreen'
 import BonusTab from './BonusTab'
 import PlotsSheet, { plotName } from './PlotsSheet'
+import ProfileSheet from './ProfileSheet'
 import type { StationFocus } from '@/components/game3d/Scene'
 import { formatNumber } from './format'
 
@@ -28,6 +29,7 @@ export default function Game() {
   const [mapOpen, setMapOpen] = useState(false)
   const [bonusOpen, setBonusOpen] = useState(false)
   const [plotsOpen, setPlotsOpen] = useState(false)
+  const [profileOpen, setProfileOpen] = useState(false)
   const [selected, setSelected] = useState<StationFocus | null>(null)
   // The plot nearest the middle of the screen: BREAK and the building card
   // act on it. `flyTo` glides the camera to a plot when its nonce changes.
@@ -172,24 +174,30 @@ export default function Game() {
               <p className="font-display text-2xl leading-none text-white">🧱 {formatNumber(snap.scrap)}</p>
               <p className="mt-1 font-display text-sm leading-none text-[#7dff7a]">+{formatNumber(snap.incomePerMinute)} / min</p>
             </div>
-            <div className="flex items-center gap-1.5 rounded-full bg-black/55 py-1 pl-1 pr-2.5 backdrop-blur-sm">
-              <span className="flex h-6 w-6 items-center justify-center rounded-full bg-[#ffc93c] font-display text-xs text-[#5a3d00]">
-                {snap.level}
-              </span>
-              <div className="h-2 w-20 overflow-hidden rounded-full bg-white/25">
-                <div className="h-full bg-[#ffc93c]" style={{ width: `${Math.min(100, levelProgress * 100)}%` }} />
+            <div className="flex items-center gap-1.5">
+              <div className="flex items-center gap-1.5 rounded-full bg-black/55 py-1 pl-1 pr-2.5 backdrop-blur-sm">
+                <span className="flex h-6 w-6 items-center justify-center rounded-full bg-[#ffc93c] font-display text-xs text-[#5a3d00]">
+                  {snap.level}
+                </span>
+                <div className="h-2 w-20 overflow-hidden rounded-full bg-white/25">
+                  <div className="h-full bg-[#ffc93c]" style={{ width: `${Math.min(100, levelProgress * 100)}%` }} />
+                </div>
               </div>
+              {/* Profile: player ID and redeem codes */}
+              <button
+                onClick={() => setProfileOpen(true)}
+                aria-label="Profile and codes"
+                className="pointer-events-auto flex h-8 w-8 items-center justify-center rounded-full bg-black/55 backdrop-blur-sm active:scale-95"
+              >
+                <UserRound className="h-4.5 w-4.5 text-white" />
+              </button>
             </div>
-            {/* Crew boost: tap rubble on the ground to trigger it. */}
+            {/* Crew boost timer (tapping the building tops it up). */}
             {snap.boostLeft > 0 ? (
               <div className="inline-flex items-center gap-1 rounded-full bg-[#ffd23c] px-2.5 py-1 font-display text-xs text-[#5a3d00] shadow-[0_2px_0_#c99a00]">
                 ⚡ Crew boost · {snap.boostLeft}s
               </div>
-            ) : (
-              <div className="inline-flex items-center gap-1 rounded-full bg-black/55 px-2.5 py-1 font-display text-xs text-[#ffd23c]">
-                ⚡ Tap the building to boost
-              </div>
-            )}
+            ) : null}
           </div>
           <div className="pointer-events-auto min-w-[165px] rounded-2xl bg-white px-3 py-2 shadow-[0_3px_0_rgba(0,0,0,0.15)]">
             {snap.plots.length > 1 && (
@@ -356,6 +364,27 @@ export default function Game() {
       )}
       {picker && (
         <SitePicker engine={engine} snap={snap} plot={picker.plot} justCleared={picker.cleared} onClose={() => setPicker(null)} />
+      )}
+      {profileOpen && <ProfileSheet engine={engine} snap={snap} onClose={() => setProfileOpen(false)} />}
+      {/* Gifts, balance edits and redeemed codes, one at a time */}
+      {snap.notice && (
+        <div className="pointer-events-auto fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-6">
+          <div className="w-full max-w-xs rounded-3xl border-4 border-white bg-[#2f8fe8] p-5 text-center text-white shadow-[0_6px_0_#1d5fa8]">
+            <p className="text-5xl">🎁</p>
+            <p className="mt-2 font-display text-2xl leading-tight">{snap.notice.title}</p>
+            <p className="mt-2 font-display text-xl">{snap.notice.detail}</p>
+            {snap.notice.message && <p className="mt-2 text-sm text-white/90">“{snap.notice.message}”</p>}
+            <button
+              onClick={() => {
+                engine.dismissNotice()
+                engine.notify()
+              }}
+              className="mt-4 w-full rounded-2xl bg-[#3fbf4a] py-2.5 font-display text-lg shadow-[0_4px_0_#2a8a33] active:translate-y-1 active:shadow-none"
+            >
+              Nice!
+            </button>
+          </div>
+        </div>
       )}
       <BonusTab engine={engine} snap={snap} open={bonusOpen && !!snap.bonusDrop} onOpenChange={setBonusOpen} />
       <InterstitialAd trigger={snap.sitesCleared} />
