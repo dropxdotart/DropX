@@ -3,7 +3,7 @@
 import { useMemo, useRef, type ReactNode } from 'react'
 import { useFrame, type ThreeEvent } from '@react-three/fiber'
 import * as THREE from 'three'
-import { BRICK, DUMPSTER_SLOTS, LOT_HALF, TRUCK_STOP, stats, type Engine, type Site } from '@/lib/game/engine'
+import { BRICK, DUMPSTER_SLOTS, LOT_HALF, stats, type Engine, type Site } from '@/lib/game/engine'
 import { dumpsterLevel, getStation, tierFor, type StationId } from '@/lib/game/stations'
 import Prop from './Prop'
 import { pointer } from './drag'
@@ -329,8 +329,8 @@ export function Fleet({
   )
 }
 
-// The pickup sign at each plot's truck stop — always there to tap, since
-// the trucks are usually off driving.
+// The truck depot sign by the Brick Yard's parking bays (local to the yard
+// block) — always there to tap, since trucks are usually off driving.
 export function TruckDepot({
   affordable,
   onSelect,
@@ -341,7 +341,7 @@ export function TruckDepot({
   return (
     <Hotspot
       id="truck"
-      position={[TRUCK_STOP.x + 2.6, 0, TRUCK_STOP.z + 1.7]}
+      position={[-7.1, 0, -0.5]}
       hitSize={[1.2, 2.2, 0.8]}
       arrowHeight={2.4}
       affordable={affordable}

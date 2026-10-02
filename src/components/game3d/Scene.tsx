@@ -24,6 +24,9 @@ const GROUND_RIGHT = new THREE.Vector3(1, 0, -1).normalize()
 const GROUND_FORWARD = new THREE.Vector3(-1, 0, -1).normalize()
 const PAN_LIMIT = MAP_BLOCKS * BLOCK
 const DRAG_THRESHOLD = 8
+// How far pinch/wheel can zoom out (wider city view) and in.
+const MIN_ZOOM = 0.45
+const MAX_ZOOM = 2
 
 // `truck` set = one specific truck (the camera follows it as it drives);
 // `index` = which of the plot's dumpsters.
@@ -57,6 +60,7 @@ function CameraRig({
   engine,
   center,
   zoomRef,
+  zoomMul,
   focus,
   snap,
   onFocusPlot,
@@ -64,6 +68,7 @@ function CameraRig({
   engine: Engine
   center: React.RefObject<THREE.Vector3>
   zoomRef: React.RefObject<number>
+  zoomMul: React.RefObject<number>
   focus: StationFocus | null
   snap: Snapshot
   onFocusPlot: (plot: number) => void
@@ -89,7 +94,8 @@ function CameraRig({
     if (followed) {
       target.set(followed.x, -1.5, followed.z)
     } else if (focus) {
-      const base = focus.id === 'yard' ? YARD_BLOCK : PLOT_SLOTS[focus.plot]
+      // The yard and the truck depot sign sit on the Brick Yard's block.
+      const base = focus.id === 'yard' || focus.id === 'truck' ? YARD_BLOCK : PLOT_SLOTS[focus.plot]
       const p = focus.id === 'dumpster' ? DUMPSTER_SLOTS[focus.index ?? 0] : getStation(focus.id).position
       target.set(base.x + p.x, -1.5, base.z + p.z)
     } else {
@@ -99,7 +105,7 @@ function CameraRig({
     // Follow the finger exactly while dragging; glide otherwise.
     if (pointer.dragged && !focus) lookAt.current.copy(target)
     else lookAt.current.lerp(target, k)
-    camera.zoom = THREE.MathUtils.lerp(camera.zoom, focus ? baseZoom * 2.4 : baseZoom, k)
+    camera.zoom = THREE.MathUtils.lerp(camera.zoom, focus ? baseZoom * 2.4 : baseZoom * zoomMul.current, k)
     zoomRef.current = camera.zoom
     camera.position.copy(CAMERA_DIR).multiplyScalar(60).add(lookAt.current)
     camera.lookAt(lookAt.current)
@@ -206,7 +212,6 @@ export default function Scene({
   onSelectStation,
   onSelectTruck,
   onBreakTap,
-  onRubbleTap,
   onFocusPlot,
   onPlotAction,
   onLoadProgress,
@@ -219,8 +224,7 @@ export default function Scene({
   flyTo: { plot: number; nonce: number }
   onSelectStation: (id: StationId, plot: number, index?: number) => void
   onSelectTruck: (truck: number) => void
-  onBreakTap: (plot: number, x: number, y: number) => void
-  onRubbleTap: (x: number, y: number) => void
+  onBreakTap: (plot: number, x: number, y: number, brick?: number) => void
   onFocusPlot: (plot: number) => void
   onPlotAction: (plot: number) => void
   onLoadProgress: (progress: number) => void
@@ -228,6 +232,8 @@ export default function Scene({
 }) {
   const center = useRef(new THREE.Vector3(0, 0, 1.5))
   const zoomRef = useRef(20)
+  // Pinch / wheel zoom on top of the automatic framing (1 = default).
+  const zoomMul = useRef(1)
   const drag = useRef<{ x: number; y: number; id: number } | null>(null)
 
   useEffect(() => {
@@ -249,15 +255,40 @@ export default function Scene({
   let shown = 0
   const visibleWorkers = engine.workers.filter(() => shown++ < MAX_VISIBLE_WORKERS)
 
-  // Drag anywhere to pan around the city. Taps still reach the scene; a
-  // pointer that moved past the threshold marks itself as a drag so the
-  // click handlers ignore it.
+  // One finger (or the mouse) drags to pan; two fingers pinch to zoom, and
+  // the mouse wheel zooms on desktop. Taps still reach the scene: a pointer
+  // that moved past the threshold, or any pinch, marks itself as a drag so
+  // the click handlers ignore it.
+  const pointers = useRef(new Map<number, { x: number; y: number }>())
+  const pinchDist = useRef(0)
+
+  const zoomBy = (factor: number) => {
+    zoomMul.current = THREE.MathUtils.clamp(zoomMul.current * factor, MIN_ZOOM, MAX_ZOOM)
+  }
+
   const onPointerDown = (e: React.PointerEvent) => {
+    pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY })
+    if (pointers.current.size === 2) {
+      // Second finger down: switch from panning to pinching.
+      const [a, b] = [...pointers.current.values()]
+      pinchDist.current = Math.hypot(a.x - b.x, a.y - b.y)
+      drag.current = null
+      pointer.dragged = true
+      return
+    }
     if (!e.isPrimary) return
     pointer.dragged = false
     drag.current = { x: e.clientX, y: e.clientY, id: e.pointerId }
   }
   const onPointerMove = (e: React.PointerEvent) => {
+    if (pointers.current.has(e.pointerId)) pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY })
+    if (pointers.current.size === 2) {
+      const [a, b] = [...pointers.current.values()]
+      const dist = Math.hypot(a.x - b.x, a.y - b.y)
+      if (pinchDist.current > 0 && !focus) zoomBy(dist / pinchDist.current)
+      pinchDist.current = dist
+      return
+    }
     const d = drag.current
     if (!d || e.pointerId !== d.id || focus) return
     const dx = e.clientX - d.x
@@ -273,16 +304,24 @@ export default function Scene({
     c.x = THREE.MathUtils.clamp(c.x, -PAN_LIMIT, PAN_LIMIT)
     c.z = THREE.MathUtils.clamp(c.z, -PAN_LIMIT, PAN_LIMIT)
   }
-  const onPointerUp = () => {
+  const onPointerUp = (e: React.PointerEvent) => {
+    pointers.current.delete(e.pointerId)
+    pinchDist.current = 0
+    if (pointers.current.size > 0) return
     drag.current = null
     // Leave `dragged` set until the click that follows this pointerup has
     // been seen, then clear it.
     setTimeout(() => (pointer.dragged = false), 0)
   }
+  const onWheel = (e: React.WheelEvent) => {
+    if (!focus) zoomBy(Math.exp(-e.deltaY * 0.0015))
+  }
 
   return (
     <div
       className="absolute inset-0"
+      style={{ touchAction: 'none' }}
+      onWheel={onWheel}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
@@ -294,7 +333,7 @@ export default function Scene({
         <BoostGlow engine={engine} />
         <color attach="background" args={['#9fd4ef']} />
         <OrthographicCamera makeDefault near={0.1} far={400} zoom={20} position={[40, 38, 40]} />
-        <CameraRig engine={engine} center={center} zoomRef={zoomRef} focus={focus} snap={snap} onFocusPlot={onFocusPlot} />
+        <CameraRig engine={engine} center={center} zoomRef={zoomRef} zoomMul={zoomMul} focus={focus} snap={snap} onFocusPlot={onFocusPlot} />
 
         <hemisphereLight args={['#e8f4ff', '#6f8f4a', 0.9]} />
         <directionalLight
@@ -316,7 +355,7 @@ export default function Scene({
             const select = (id: StationId) => onSelectStation(id, site.id)
             return (
               <group key={site.id} position={[slot.x, 0, slot.z]}>
-                <Building engine={engine} site={site} onBreakTap={onBreakTap} onRubbleTap={onRubbleTap} />
+                <Building engine={engine} site={site} onBreakTap={onBreakTap} />
                 {site.dumpsters.map((_, i) => (
                   <DumpsterStation
                     key={i}
@@ -326,7 +365,6 @@ export default function Scene({
                     onSelect={(id) => onSelectStation(id, site.id, i)}
                   />
                 ))}
-                <TruckDepot affordable={station.truck.affordable} onSelect={select} />
                 {site.id === 0 && (
                   <>
                     <CrewStation {...station.crew} onSelect={select} />
@@ -344,6 +382,8 @@ export default function Scene({
           })}
           <group position={[YARD_BLOCK.x, 0, YARD_BLOCK.z]}>
             <BrickYard {...station.yard} onSelect={(id) => onSelectStation(id, 0)} />
+            {/* Truck upgrades live by the yard's parking bays */}
+            <TruckDepot affordable={station.truck.affordable} onSelect={(id) => onSelectStation(id, 0)} />
           </group>
           <Fleet engine={engine} tiers={snap.trucks.map((t) => tierFor(truckLevel(t)))} onSelect={onSelectTruck} />
           <PlotLabels snap={snap} onPlotAction={onPlotAction} />

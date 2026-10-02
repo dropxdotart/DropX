@@ -126,13 +126,53 @@
   }
 }
 
-/* BREAK! cooldown: the ring draws itself back to full as the cooldown runs. */
-@keyframes cooldown-ring {
+/* Tapping the building: a quick ring and a few brick shards flying out
+   from the finger. */
+.tap-ring {
+  position: absolute;
+  left: -14px;
+  top: -14px;
+  width: 28px;
+  height: 28px;
+  border: 3px solid #ffffff;
+  border-radius: 9999px;
+  animation: tap-ring 0.35s ease-out forwards;
+}
+@keyframes tap-ring {
   from {
-    stroke-dashoffset: 100;
+    transform: scale(0.3);
+    opacity: 0.95;
   }
   to {
-    stroke-dashoffset: 0;
+    transform: scale(1.6);
+    opacity: 0;
+  }
+}
+.tap-shard {
+  position: absolute;
+  left: -3px;
+  top: -3px;
+  width: 7px;
+  height: 5px;
+  border-radius: 1px;
+  background: #c4553a;
+  box-shadow: 0 1px 0 #7a2f20;
+  animation: tap-shard 0.45s cubic-bezier(0.2, 0.7, 0.4, 1) forwards;
+}
+@keyframes tap-shard {
+  from {
+    transform: rotate(var(--a)) translateX(0) rotate(0deg);
+    opacity: 1;
+  }
+  to {
+    transform: rotate(var(--a)) translateX(var(--d)) rotate(160deg);
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .tap-ring,
+  .tap-shard {
+    animation-duration: 0.01s;
   }
 }
 

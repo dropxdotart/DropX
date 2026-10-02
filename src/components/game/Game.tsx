@@ -5,7 +5,6 @@ import dynamic from 'next/dynamic'
 import { ArrowBigUpDash, Map as MapIcon, Minus, Plus, X } from 'lucide-react'
 import { useEngine } from '@/lib/game/useEngine'
 import { getBuilding, xpForLevel } from '@/lib/game/buildings'
-import { BREAK_COOLDOWN_SECONDS } from '@/lib/game/engine'
 import BannerAd from './BannerAd'
 import InterstitialAd from './InterstitialAd'
 import StationPanel from './StationPanel'
@@ -36,10 +35,8 @@ export default function Game() {
   const [flyTo, setFlyTo] = useState({ plot: 0, nonce: 0 })
   const [picker, setPicker] = useState<{ plot: number; cleared: { name: string; bonus: number } | null } | null>(null)
   const [pops, setPops] = useState<Pop[]>([])
-  // Bumped on every successful BREAK so the cooldown ring's CSS animation
-  // restarts; `cooling` dims the button until the cooldown has passed.
-  const [cooldownRun, setCooldownRun] = useState(0)
-  const [cooling, setCooling] = useState(false)
+  // Little bursts where you tap the building (instead of CRACK! text).
+  const [bursts, setBursts] = useState<{ id: number; x: number; y: number }[]>([])
   // null until the 3D scene's JS has arrived and starts reporting; the
   // loading screen fades out at 100 (or after a safety timeout).
   const [loadProgress, setLoadProgress] = useState<number | null>(null)
@@ -98,26 +95,25 @@ export default function Game() {
     setTimeout(() => setPops((prev) => prev.filter((p) => p.id !== id)), 800)
   }
 
-  // BREAK button and tapping a building both land here (shared cooldown).
-  const doBreak = (plotId: number, x: number, y: number) => {
-    const broke = engine.breakTap(plotId)
+  // Tapping the building: break a brick with a small burst under the
+  // finger (the BREAK button shows CRACK! text instead).
+  const tapBuilding = (plotId: number, x: number, y: number, brick?: number) => {
+    const broke = brick === undefined ? engine.breakTap(plotId) : engine.breakBrickAt(plotId, brick)
     if (broke === 0) return
-    setCooldownRun((n) => n + 1)
-    setCooling(true)
-    setTimeout(() => setCooling(false), BREAK_COOLDOWN_SECONDS * 1000)
-    pop('CRACK!', x + (Math.random() - 0.5) * 40, y)
+    // Every tap on the building also tops the crew boost back up.
+    engine.boost()
+    engine.notify()
+    const id = Date.now() + Math.random()
+    setBursts((prev) => [...prev.slice(-10), { id, x, y }])
+    setTimeout(() => setBursts((prev) => prev.filter((b) => b.id !== id)), 500)
   }
 
   const handleBreak = (e: React.PointerEvent<HTMLButtonElement>) => {
+    if (engine.breakTap(plot.id) === 0) return
     const rect = e.currentTarget.getBoundingClientRect()
-    doBreak(plot.id, rect.left + rect.width / 2 + (Math.random() - 0.5) * 20, rect.top)
+    pop('CRACK!', rect.left + rect.width / 2 + (Math.random() - 0.5) * 60, rect.top)
   }
 
-  const handleRubbleTap = (x: number, y: number) => {
-    engine.boost()
-    engine.notify()
-    pop('⚡ BOOST!', x, y - 20)
-  }
 
   return (
     <div className="fixed inset-0 select-none overflow-hidden bg-[#9fd4ef]">
@@ -139,8 +135,7 @@ export default function Game() {
             // The depot sign opens the fleet, following truck 1.
             setSelected(id === 'truck' ? { id, plot: plotId, truck: 0 } : { id, plot: plotId, index })
           }}
-          onBreakTap={doBreak}
-          onRubbleTap={handleRubbleTap}
+          onBreakTap={tapBuilding}
           onSelectTruck={(truck) => {
             setMapOpen(false)
             setSelected({ id: 'truck', plot: plot.id, truck })
@@ -148,6 +143,18 @@ export default function Game() {
         />
       </div>
 
+      {bursts.map((b) => (
+        <span key={b.id} className="pointer-events-none fixed z-30" style={{ left: b.x, top: b.y }} aria-hidden>
+          <span className="tap-ring" />
+          {[0, 1, 2, 3, 4, 5].map((n) => (
+            <span
+              key={n}
+              className="tap-shard"
+              style={{ '--a': `${n * 60 + 15}deg`, '--d': `${22 + (n % 3) * 6}px` } as React.CSSProperties}
+            />
+          ))}
+        </span>
+      ))}
       {pops.map((p) => (
         <span
           key={p.id}
@@ -180,7 +187,7 @@ export default function Game() {
               </div>
             ) : (
               <div className="inline-flex items-center gap-1 rounded-full bg-black/55 px-2.5 py-1 font-display text-xs text-[#ffd23c]">
-                ⚡ Tap rubble to boost
+                ⚡ Tap the building to boost
               </div>
             )}
           </div>
@@ -279,26 +286,9 @@ export default function Game() {
           <button
             onPointerDown={handleBreak}
             disabled={plot.phase !== 'demolishing' || plot.bricksLeft === 0}
-            className={`pointer-events-auto relative mb-1 flex h-24 w-24 flex-col items-center justify-center rounded-full border-4 border-white bg-[#ff6b1a] font-display text-white shadow-[0_6px_0_#c94e0a] transition-[filter] active:translate-y-1.5 active:shadow-none disabled:bg-[#b9c2cf] disabled:shadow-[0_6px_0_#97a1ae] ${cooling ? 'brightness-75' : ''}`}
+            className={`pointer-events-auto relative mb-1 flex h-24 w-24 flex-col items-center justify-center rounded-full border-4 border-white bg-[#ff6b1a] font-display text-white shadow-[0_6px_0_#c94e0a] active:translate-y-1.5 active:shadow-none disabled:bg-[#b9c2cf] disabled:shadow-[0_6px_0_#97a1ae]`}
           >
             <span className="text-2xl leading-none">BREAK!</span>
-            {cooling && (
-              <svg key={cooldownRun} className="pointer-events-none absolute -inset-[7px] -rotate-90" viewBox="0 0 100 100">
-                <circle
-                  cx="50"
-                  cy="50"
-                  r="47"
-                  fill="none"
-                  stroke="#ffffff"
-                  strokeWidth="6"
-                  strokeLinecap="round"
-                  pathLength={100}
-                  strokeDasharray="100"
-                  className="animate-[cooldown-ring_linear_forwards]"
-                  style={{ animationDuration: `${BREAK_COOLDOWN_SECONDS}s` }}
-                />
-              </svg>
-            )}
           </button>
 
           <button onClick={() => setPlotsOpen(true)} className="pointer-events-auto relative flex flex-col items-center gap-1">

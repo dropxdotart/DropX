@@ -33,7 +33,6 @@ const LEGACY_SAVE_KEY = 'rubble-save-v4'
 const MAX_OFFLINE_SECONDS = 8 * 60 * 60
 const LOAD_SECONDS = 0.8
 const BREAK_FALL_SECONDS = 0.7
-export const BREAK_COOLDOWN_SECONDS = 0.5
 // Tapping rubble gives the whole crew a short speed burst. No cooldown:
 // every tap tops it back up to the full few seconds, so you can spam it.
 export const BOOST_SECONDS = 3
@@ -651,7 +650,6 @@ export class Engine {
 
   // ── Player actions ────────────────────────────────────────────────────
 
-  private lastBreakAt = -Infinity
   private boostUntil = -Infinity
   private lastBoostSecond = -1
 
@@ -669,29 +667,45 @@ export class Engine {
   }
 
 
-  // Enforced here rather than only in the button so auto-clickers or rapid
-  // taps can't bypass it.
-  breakCooldownLeft(): number {
-    return Math.max(0, BREAK_COOLDOWN_SECONDS - (performance.now() - this.lastBreakAt) / 1000)
+  private breakBrick(site: Site, i: number) {
+    const pos = site.brickWorld(i)
+    site.removeBrick(i)
+    const r = site.spawnRubble(site.bricks[i].color, this.time + BREAK_FALL_SECONDS, pos)
+    site.events.push({ type: 'brickBroken', index: i, toX: r.x, toZ: r.z })
+    site.events.push({ type: 'rubbleSpawned', id: r.id })
+    this.markDirty()
   }
 
+  // The BREAK button: one brick off the top of the building. No cooldown.
   breakTap(plot: number) {
     const site = this.plots[plot]
-    if (!site || site.phase !== 'demolishing' || this.breakCooldownLeft() > 0) return 0
-    this.lastBreakAt = performance.now()
+    if (!site || site.phase !== 'demolishing') return 0
     let broke = 0
     for (let n = 0; n < stats.bricksPerTap(); n++) {
       const i = site.pickTopBrick(null)
       if (i < 0) break
-      const pos = site.brickWorld(i)
-      site.removeBrick(i)
-      const r = site.spawnRubble(site.bricks[i].color, this.time + BREAK_FALL_SECONDS, pos)
-      site.events.push({ type: 'brickBroken', index: i, toX: r.x, toZ: r.z })
-      site.events.push({ type: 'rubbleSpawned', id: r.id })
+      this.breakBrick(site, i)
       broke++
     }
-    if (broke) this.markDirty()
     return broke
+  }
+
+  // Tapping the building: knock out the brick where you tapped. Bricks only
+  // leave from the top of their column (nothing ever floats), so it's the
+  // top of the tapped column — tap the same spot to carve down. If a worker
+  // already has that one, the nearest free top brick goes instead.
+  breakBrickAt(plot: number, index: number) {
+    const site = this.plots[plot]
+    if (!site || site.phase !== 'demolishing' || !site.bricks[index]) return 0
+    const c = site.brickColumn[index]
+    let i = site.columnTop[c] >= 0 ? site.columns[c][site.columnTop[c]] : -1
+    if (i < 0 || site.claimed[i]) {
+      const p = site.brickWorld(index)
+      i = site.pickTopBrick({ x: p.x, z: p.z })
+    }
+    if (i < 0) return 0
+    this.breakBrick(site, i)
+    return 1
   }
 
   buyUpgrade(key: UpgradeKey): boolean {

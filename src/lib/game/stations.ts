@@ -2,7 +2,6 @@ import {
   DUMPSTER,
   LOT_HALF,
   MILESTONES,
-  TRUCK_STOP,
   stats,
   truckUpgradeCost,
   upgradeCost,
@@ -99,7 +98,8 @@ export const STATIONS: StationDef[] = [
     name: 'Trucks',
     emoji: '🚛',
     upgrades: ['fleet'],
-    position: { x: TRUCK_STOP.x, z: TRUCK_STOP.z },
+    // The depot sign by the Brick Yard's parking (relative to YARD_BLOCK).
+    position: { x: -7.1, z: -0.5 },
     level: (u) => 1 + u.fleet,
     tierNames: ['Flatbed', 'Box Truck', 'Garbage Truck', 'Mega Hauler'],
     effects: (u) => [

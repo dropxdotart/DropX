@@ -5,7 +5,7 @@ import { useFrame, type ThreeEvent } from '@react-three/fiber'
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js'
 import * as THREE from 'three'
 import { BRICK_COLORS } from '@/lib/game/blueprints'
-import { BRICK, LOT_HALF, type Engine, type Site } from '@/lib/game/engine'
+import { BRICK, type Engine, type Site } from '@/lib/game/engine'
 import { pointer } from './drag'
 
 const MAX_BRICKS = 2200
@@ -48,24 +48,18 @@ function hash(n: number) {
 
 // Draws one plot's building, flying bricks, rubble and dust, in that plot's
 // local coordinates (the parent group sits on the plot's block).
-// Tap targets: the building itself breaks a brick (like BREAK), and a tap
-// near rubble on the ground boosts the crew. Rubble bricks are tiny on a
-// phone, so the ground layer finds the nearest pile to the tap instead.
-const RUBBLE_TAP_RADIUS = 1.4
 
 export default function Building({
   engine,
   site,
   onBreakTap,
-  onRubbleTap,
 }: {
   engine: Engine
   site: Site
-  onBreakTap: (plot: number, x: number, y: number) => void
-  onRubbleTap: (x: number, y: number) => void
+  // `brick` = the brick under the finger, when the tap hit one.
+  onBreakTap: (plot: number, x: number, y: number, brick?: number) => void
 }) {
   const hitBox = useRef<THREE.Mesh>(null)
-  const ground = useRef<THREE.Mesh>(null)
   const brickMesh = useRef<THREE.InstancedMesh>(null)
   const flyMesh = useRef<THREE.InstancedMesh>(null)
   const rubbleMesh = useRef<THREE.InstancedMesh>(null)
@@ -307,30 +301,14 @@ export default function Building({
     }
   })
 
-  // Is there rubble on the ground near where this tap's ray meets it?
-  const rubbleUnderTap = (e: ThreeEvent<MouseEvent>) => {
-    const hit = e.intersections.find((i) => i.object === ground.current)
-    if (!hit || !ground.current?.parent) return false
-    // The ground point in this plot's coordinates (the Building group's space).
-    const p = ground.current.parent.worldToLocal(hit.point.clone())
-    return site.rubble.some((r) => r.readyAt <= engine.time && (r.x - p.x) ** 2 + (r.z - p.z) ** 2 < RUBBLE_TAP_RADIUS ** 2)
-  }
-
-  // From the camera's angle the building's tap box overlaps the ground
-  // around it, which is where rubble lands: a tap low on the box with
-  // rubble underneath boosts; anywhere else on the building breaks a brick.
+  // Tapping the building breaks the brick under the finger (and boosts the
+  // crew — see Game). The tap box is a little bigger than the building, so
+  // find the actual brick behind the finger along the same ray.
   const tapBuilding = (e: ThreeEvent<MouseEvent>) => {
     e.stopPropagation()
     if (pointer.dragged || site.phase !== 'demolishing') return
-    const low = e.point.y < 0.6
-    if (low && rubbleUnderTap(e)) onRubbleTap(e.nativeEvent.clientX, e.nativeEvent.clientY)
-    else onBreakTap(site.id, e.nativeEvent.clientX, e.nativeEvent.clientY)
-  }
-
-  const tapGround = (e: ThreeEvent<MouseEvent>) => {
-    if (pointer.dragged || !rubbleUnderTap(e)) return
-    e.stopPropagation()
-    onRubbleTap(e.nativeEvent.clientX, e.nativeEvent.clientY)
+    const hit = e.intersections.find((i) => i.object === brickMesh.current && i.instanceId !== undefined)
+    onBreakTap(site.id, e.nativeEvent.clientX, e.nativeEvent.clientY, hit?.instanceId)
   }
 
   return (
@@ -339,13 +317,17 @@ export default function Building({
         <boxGeometry args={[1, 1, 1]} />
         <meshBasicMaterial transparent opacity={0} depthWrite={false} />
       </mesh>
-      {/* Invisible ground layer for rubble taps */}
-      <mesh ref={ground} rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.06, 0]} onClick={tapGround}>
-        <planeGeometry args={[LOT_HALF * 2, LOT_HALF * 2]} />
-        <meshBasicMaterial transparent opacity={0} depthWrite={false} />
-      </mesh>
       <group ref={shakeGroup}>
-        <instancedMesh ref={brickMesh} args={[brickGeometry, brickMaterial, MAX_BRICKS]} castShadow receiveShadow frustumCulled={false} />
+        {/* onClick also makes the bricks part of the tap ray, so taps can
+            find the exact brick under the finger (see tapBuilding). */}
+        <instancedMesh
+          ref={brickMesh}
+          args={[brickGeometry, brickMaterial, MAX_BRICKS]}
+          castShadow
+          receiveShadow
+          frustumCulled={false}
+          onClick={tapBuilding}
+        />
       </group>
       <instancedMesh ref={flyMesh} args={[brickGeometry, brickMaterial, MAX_FLYING]} castShadow frustumCulled={false} />
       <instancedMesh ref={rubbleMesh} args={[brickGeometry, brickMaterial, MAX_RUBBLE]} castShadow receiveShadow frustumCulled={false} />
