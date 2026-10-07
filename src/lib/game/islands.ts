@@ -33,12 +33,12 @@ export const ISLANDS: Island[] = [
     index: 0,
     name: 'Houses island',
     emoji: '🏡',
-    i0: -6,
-    i1: -4,
-    j0: -1,
-    j1: 1,
+    i0: -1,
+    i1: 1,
+    j0: 4,
+    j1: 6,
     unlock: null,
-    yard: { x: -5 * BLOCK, z: -1 * BLOCK, theme: 'timber', name: 'Timber Yard' },
+    yard: { x: 0, z: 4 * BLOCK, theme: 'timber', name: 'Timber Yard' },
   },
   {
     id: 'city',
@@ -57,12 +57,12 @@ export const ISLANDS: Island[] = [
     index: 2,
     name: 'Industrial island',
     emoji: '🏭',
-    i0: -1,
-    i1: 1,
-    j0: 4,
-    j1: 6,
+    i0: -6,
+    i1: -4,
+    j0: -1,
+    j1: 1,
     unlock: { level: 15, cost: 20_000_000, buildMinutes: 60 },
-    yard: { x: 0, z: 4 * BLOCK, theme: 'smelter', name: 'Steel Smelter' },
+    yard: { x: -5 * BLOCK, z: -1 * BLOCK, theme: 'smelter', name: 'Steel Smelter' },
   },
 ]
 
@@ -76,11 +76,14 @@ export const HARBOUR_X = HARBOUR.i * BLOCK
 
 // Bridges between islands: the road they carry and the island they open.
 export type Bridge = { to: IslandId; axis: 'x' | 'z'; line: number; from: number; until: number }
+// On screen "up" is the map's north-west, so each new island sits higher
+// up: Houses at the bottom (south), the City above it, Industrial above
+// that (west).
 export const BRIDGES: Bridge[] = [
-  // Houses → City along the road in front of the middle row.
-  { to: 'city', axis: 'z', line: R, from: -4 * BLOCK + R, until: -3 * BLOCK + R },
-  // City → Industrial down a cross street.
-  { to: 'industrial', axis: 'x', line: R, from: 2 * BLOCK + R, until: 3 * BLOCK + R },
+  // Houses → City up a cross street.
+  { to: 'city', axis: 'x', line: R, from: 2 * BLOCK + R, until: 3 * BLOCK + R },
+  // City → Industrial along the road in front of the middle row.
+  { to: 'industrial', axis: 'z', line: R, from: -4 * BLOCK + R, until: -3 * BLOCK + R },
 ]
 
 // ── Road network ─────────────────────────────────────────────────────────

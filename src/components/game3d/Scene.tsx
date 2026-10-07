@@ -22,12 +22,12 @@ const CAMERA_DIR = new THREE.Vector3(1, 0.95, 1).normalize()
 // Screen-right and screen-up as directions on the ground, for drag-to-pan.
 const GROUND_RIGHT = new THREE.Vector3(1, 0, -1).normalize()
 const GROUND_FORWARD = new THREE.Vector3(-1, 0, -1).normalize()
-// The camera can roam over every island (west: Houses; south: Industrial).
+// The camera can roam over every island (south: Houses; west: Industrial).
 const PAN_X = [-6.5 * BLOCK, HARBOUR_X + BLOCK / 2]
 const PAN_Z = [-2.5 * BLOCK, 6.5 * BLOCK]
 const DRAG_THRESHOLD = 8
 // How far pinch/wheel can zoom out (wider city view) and in.
-const MIN_ZOOM = 0.55
+const MIN_ZOOM = 0.4
 const MAX_ZOOM = 2
 
 // `truck` set = one specific truck (the camera follows it as it drives);
