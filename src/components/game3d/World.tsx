@@ -9,6 +9,7 @@ import { BLOCK, BRIDGES, HARBOUR, HARBOUR_X, ISLANDS, ROADS, islandRect, type Is
 import { PLOT_SLOTS, isReservedBlock } from '@/lib/game/plots'
 import Prop from './Prop'
 import { Billboard } from './SiteProps'
+import { BlockDressing, Streets, Waterside } from './Scenery'
 
 // The world: islands on one grid of blocks, roads between the blocks and
 // bridges between the islands. Owned plots get a construction lot, plots
@@ -518,6 +519,7 @@ function FillerBlock({ bx, bz, seed, island }: { bx: number; bz: number; seed: n
 
   return (
     <group position={[bx, 0, bz]}>
+      <BlockDressing kind={kind} seed={seed} />
       {items.map((it, i) => (
         <Prop key={i} url={it.url} size={it.size} position={it.pos} rotationY={it.rot} />
       ))}
@@ -704,6 +706,8 @@ export default function World({
       <Billboard position={[PLOT_SLOTS[0].x - 6, 0, PLOT_SLOTS[0].z - 11.5 - 2.2]} rotationY={Math.PI / 8} />
       <Billboard position={[PLOT_SLOTS[0].x - 11.5 - 2.2, 0, PLOT_SLOTS[0].z - 1]} rotationY={Math.PI / 2 - Math.PI / 8} />
 
+      <Streets open={open} />
+      <Waterside open={open} />
       <Traffic segs={segs} />
     </group>
   )

@@ -14,6 +14,7 @@ import Building from './Building'
 import Worker, { vestMaterial } from './Worker'
 import World from './World'
 import BonusDrop from './BonusDrop'
+import { Sky } from './Scenery'
 import { BrickYard, CrewStation, DumpsterStation, Fleet, ToolStation, TruckDepot } from './Stations'
 import { pointer } from './drag'
 
@@ -348,22 +349,11 @@ export default function Scene({
       <Canvas shadows dpr={[1, 2]} gl={{ antialias: true }} style={{ touchAction: 'none' }}>
         <EngineTicker engine={engine} />
         <BoostGlow engine={engine} />
-        <color attach="background" args={['#9fd4ef']} />
         <OrthographicCamera makeDefault near={0.1} far={400} zoom={20} position={[40, 38, 40]} />
         <CameraRig engine={engine} center={center} zoomRef={zoomRef} zoomMul={zoomMul} focus={focus} snap={snap} onFocusPlot={onFocusPlot} />
 
-        <hemisphereLight args={['#e8f4ff', '#6f8f4a', 0.9]} />
-        <directionalLight
-          position={[18, 30, 12]}
-          intensity={2.2}
-          castShadow
-          shadow-mapSize={[2048, 2048]}
-          shadow-camera-left={-40}
-          shadow-camera-right={40}
-          shadow-camera-top={40}
-          shadow-camera-bottom={-40}
-          shadow-bias={-0.0005}
-        />
+        {/* Sun and sky: day and night follow the player's clock, with rain now and then */}
+        <Sky />
 
         <Suspense fallback={null}>
           <World
@@ -407,7 +397,10 @@ export default function Scene({
             return (
               <group key={s.id} position={[s.yard.x, 0, s.yard.z]}>
                 <BrickYard
+                  engine={engine}
+                  yard={s.index}
                   theme={s.yard.theme}
+                  setting={s.yard.setting}
                   tier={tierFor(getStation('yard').level(u))}
                   affordable={getStation('yard').upgrades.some((k) => upgradeReady(k, snap, s.index))}
                   size={stats.yardSize(u)}

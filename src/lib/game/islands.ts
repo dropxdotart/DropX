@@ -24,7 +24,10 @@ export type Island = {
   j1: number
   // Reached over a bridge the player builds (null: you start here).
   unlock: { level: number; cost: number; buildMinutes: number } | null
-  yard: { x: number; z: number; theme: YardTheme; name: string }
+  // The island's yard: its block, look and setting. 'shore' and 'pier'
+  // yards grow back (north) over the water; an 'inland' one is hemmed in
+  // by streets, so it stays within its block.
+  yard: { x: number; z: number; theme: YardTheme; name: string; setting: 'shore' | 'inland' | 'pier'; maxSize: number }
 }
 
 export const ISLANDS: Island[] = [
@@ -38,7 +41,8 @@ export const ISLANDS: Island[] = [
     j0: 4,
     j1: 8,
     unlock: null,
-    yard: { x: 0, z: 4 * BLOCK, theme: 'timber', name: 'Timber Yard' },
+    // In town, next to the home lot.
+    yard: { x: BLOCK, z: 7 * BLOCK, theme: 'timber', name: 'Timber & Recycling Yard', setting: 'inland', maxSize: 3 },
   },
   {
     id: 'city',
@@ -50,7 +54,8 @@ export const ISLANDS: Island[] = [
     j0: -2,
     j1: 2,
     unlock: { level: 8, cost: 50_000, buildMinutes: 10 },
-    yard: { x: 0, z: -2 * BLOCK, theme: 'brick', name: 'Brick Yard' },
+    // On the north-east waterfront corner.
+    yard: { x: 2 * BLOCK, z: -2 * BLOCK, theme: 'brick', name: 'Brick & Concrete Yard', setting: 'shore', maxSize: 10 },
   },
   {
     id: 'industrial',
@@ -62,7 +67,8 @@ export const ISLANDS: Island[] = [
     j0: -1,
     j1: 1,
     unlock: { level: 15, cost: 20_000_000, buildMinutes: 60 },
-    yard: { x: -5 * BLOCK, z: -1 * BLOCK, theme: 'smelter', name: 'Steel Smelter' },
+    // Out on a pier off the north shore, reached by a dock road.
+    yard: { x: -4 * BLOCK, z: -2 * BLOCK, theme: 'smelter', name: 'Steel Smelter', setting: 'pier', maxSize: 10 },
   },
 ]
 
@@ -117,6 +123,9 @@ export const ROADS: Segment[] = [
     island: 'city' as const,
   })),
   { axis: 'x', line: HARBOUR.i * BLOCK + R, from: -2 * BLOCK + R, until: 1 * BLOCK + R, harbour: true, island: 'city' },
+  // The Industrial island's dock road along its north shore, out to the
+  // smelter's pier.
+  { axis: 'z', line: -1 * BLOCK - R, from: -5 * BLOCK + R, until: -4 * BLOCK + R, island: 'industrial' },
   ...BRIDGES.map((b) => ({ axis: b.axis, line: b.line, from: b.from, until: b.until, bridge: b.to })),
 ]
 

@@ -5,9 +5,11 @@ import { useFrame, type ThreeEvent } from '@react-three/fiber'
 import * as THREE from 'three'
 import { BRICK, DUMPSTER_SLOTS, LOT_HALF, stats, type Engine, type Site } from '@/lib/game/engine'
 import { dumpsterLevel, getStation, tierFor, type StationId } from '@/lib/game/stations'
-import type { YardTheme } from '@/lib/game/islands'
+import type { Island, YardTheme } from '@/lib/game/islands'
+type YardSetting = Island['yard']['setting']
 import { bayLocal, dockLocalX, yardBackZ, yardCapacity, yardHalfWidth } from '@/lib/game/roads'
 import Prop from './Prop'
+import { BrickWorks, SmelterWorks, TimberWorks, UnloadFX, YardGround } from './YardWorks'
 import { pointer } from './drag'
 import { Logo } from './SiteProps'
 import { brickGeometry, brickMaterial } from './Building'
@@ -386,161 +388,12 @@ function yardFence(size: number) {
   return out
 }
 
-// ── The three yard themes (the buildings and piles; the fence, gates,
-// docks and bays are shared) ──────────────────────────────────────────────
-
-type Piles = [number, number][]
-
-// City: the Brick Yard — a scrap heap growing into a recycling plant.
-function BrickWorks({ tier, piles }: { tier: number; piles: Piles }) {
-  return (
-    <>
-      {piles.map(([x, z], i) => (
-        <mesh key={i} position={[x, 0.45, z]} castShadow>
-          <coneGeometry args={[1.1, 0.9 + tier * 0.3, 7]} />
-          <meshStandardMaterial color="#b4553c" roughness={0.95} />
-        </mesh>
-      ))}
-      {tier === 0 ? (
-        <>
-          {/* Scrap heap: a shed and a weigh station */}
-          <Box size={[5, 2.4, 3.5]} position={[2, 1.2, -5]} color="#8d6e4c" />
-          <Box size={[5.4, 0.25, 3.9]} position={[2, 2.5, -5]} color="#5a5f6b" />
-        </>
-      ) : (
-        <>
-          {/* Plant hall */}
-          <Box size={[8, 3 + tier, 5]} position={[1.5, (3 + tier) / 2, -4.8]} color={tier >= 3 ? '#e8edf3' : '#cfd5dd'} />
-          <Box size={[8.4, 0.3, 5.4]} position={[1.5, 3 + tier + 0.15, -4.8]} color="#ff6b1a" />
-          <Box size={[3, 2.2, 0.15]} position={[1.5, 1.1, -2.25]} color="#3a3a3e" />
-          <Logo size={1.6} position={[-1.4, 2 + tier * 0.5, -2.25]} />
-          {tier >= 2 && (
-            <>
-              {/* Chimney + dockside crane */}
-              <Box size={[0.9, 6 + tier, 0.9]} position={[5, (6 + tier) / 2, -6.5]} color="#7d8794" />
-              <Box size={[0.9, 0.3, 0.9]} position={[5, 6 + tier, -6.5]} color="#e23f3f" />
-              <Box size={[0.5, 5, 0.5]} position={[-6, 2.5, -7]} color="#f2c230" />
-              <Box size={[0.4, 0.4, 6]} position={[-6, 5, -9.5]} color="#f2c230" />
-            </>
-          )}
-        </>
-      )}
-    </>
-  )
-}
-
-// Houses island: the Timber Yard — log piles, wooden sheds and a wood
-// chipper; a sawmill hall at higher levels.
-function TimberWorks({ tier, piles }: { tier: number; piles: Piles }) {
-  const logs = (x: number, z: number, rows: number, key: string) =>
-    Array.from({ length: rows }, (_, r) =>
-      Array.from({ length: 3 - (r % 2) }, (_, k) => (
-        <mesh key={`${key}-${r}-${k}`} position={[x - 0.7 + k * 0.7 + (r % 2) * 0.35, 0.3 + r * 0.55, z]} rotation={[Math.PI / 2, 0, 0]} castShadow>
-          <cylinderGeometry args={[0.3, 0.3, 2.4, 8]} />
-          <meshStandardMaterial color={k % 2 ? '#8a5a30' : '#a06a3a'} />
-        </mesh>
-      ))
-    )
-  return (
-    <>
-      {piles.map(([x, z], i) => logs(x, z, 2 + Math.min(2, tier), `p${i}`))}
-      {/* Wooden sheds */}
-      <Box size={[4.5, 2.4, 3.4]} position={[0, 1.2, -5]} color="#a06a3a" />
-      <Box size={[5, 0.25, 3.9]} position={[0, 2.5, -5]} color="#2f6b3a" />
-      {tier >= 1 && (
-        <>
-          <Box size={[3.6, 2.8, 3.4]} position={[4.3, 1.4, -5.2]} color="#8a5a30" />
-          <Box size={[4, 0.25, 3.8]} position={[4.3, 2.9, -5.2]} color="#2f6b3a" />
-        </>
-      )}
-      {/* The wood chipper: green body, orange chute */}
-      <group position={[-1.8, 0, -1.8]}>
-        <Box size={[1.6, 1.1, 1.2]} position={[0, 0.55, 0]} color="#3fa064" />
-        <Box size={[0.5, 1.4, 0.5]} position={[0.5, 1.5, 0]} color="#ef7d2d" />
-        <mesh position={[-0.9, 0.35, 0]} castShadow>
-          <coneGeometry args={[0.7, 0.6, 7]} />
-          <meshStandardMaterial color="#c9a46a" />
-        </mesh>
-      </group>
-      {tier >= 2 && (
-        <>
-          {/* Sawmill hall with a roof saw-tooth */}
-          <Box size={[8, 3 + tier, 2.4]} position={[1.5, (3 + tier) / 2, -7.4]} color="#c08550" />
-          {[0, 1, 2, 3].map((k) => (
-            <Box key={k} size={[1.8, 0.8, 2.6]} position={[-1.2 + k * 2, 3.4 + tier, -7.4]} color="#2f6b3a" />
-          ))}
-        </>
-      )}
-    </>
-  )
-}
-
-// Industrial island: the Steel Smelter — scrap-metal piles, a blast
-// furnace with a glowing band, a conveyor and smokestacks.
-function SmelterWorks({ tier, piles }: { tier: number; piles: Piles }) {
-  const smoke = useRef<THREE.Group>(null)
-  useFrame(({ clock }) => {
-    const g = smoke.current
-    if (!g) return
-    const t = clock.getElapsedTime()
-    g.children.forEach((c, i) => {
-      const k = ((t * 0.35 + i / g.children.length) % 1 + 1) % 1
-      c.position.y = k * 4
-      c.position.x = Math.sin(t + i) * 0.3 + k * 0.8
-      c.scale.setScalar(0.5 + k * 1.3)
-    })
-  })
-  return (
-    <>
-      {piles.map(([x, z], i) => (
-        <mesh key={i} position={[x, 0.45, z]} castShadow>
-          <dodecahedronGeometry args={[1 + tier * 0.15, 0]} />
-          <meshStandardMaterial color={i % 2 ? '#6f7b88' : '#4f5761'} roughness={0.6} metalness={0.4} />
-        </mesh>
-      ))}
-      {/* Blast furnace */}
-      <mesh position={[1.5, (4 + tier) / 2, -5]} castShadow>
-        <cylinderGeometry args={[1.8, 2.2, 4 + tier, 14]} />
-        <meshStandardMaterial color="#5b6470" metalness={0.3} />
-      </mesh>
-      <mesh position={[1.5, 1.6, -5]}>
-        <cylinderGeometry args={[2.25, 2.25, 0.5, 14]} />
-        <meshStandardMaterial color="#ff8a1a" emissive="#ff5a00" emissiveIntensity={1.2} />
-      </mesh>
-      {/* Conveyor from the furnace toward the barge */}
-      <mesh position={[-2.6, 2.2, -6.8]} rotation={[0.35, 0, 0]} castShadow>
-        <boxGeometry args={[1, 0.25, 6]} />
-        <meshStandardMaterial color="#3a3a3e" />
-      </mesh>
-      {/* Smokestacks */}
-      {[4.8, 6.2].slice(0, 1 + Math.min(1, tier)).map((x, k) => (
-        <group key={x} position={[x, 0, -6.6]}>
-          <Box size={[0.8, 7 + tier + k, 0.8]} position={[0, (7 + tier + k) / 2, 0]} color="#7d8794" />
-          <Box size={[0.85, 0.35, 0.85]} position={[0, 7 + tier + k - 0.6, 0]} color="#e23f3f" />
-        </group>
-      ))}
-      <group ref={smoke} position={[4.8, 7.4 + tier, -6.6]}>
-        {[0, 1, 2, 3].map((k) => (
-          <mesh key={k}>
-            <sphereGeometry args={[0.45, 8, 6]} />
-            <meshStandardMaterial color="#9aa0a8" transparent opacity={0.55} />
-          </mesh>
-        ))}
-      </group>
-    </>
-  )
-}
-
-function YardLook({ theme, tier, size, docks }: { theme: YardTheme; tier: number; size: number; docks: number }) {
+function YardLook({ theme, setting, tier, size, docks }: { theme: YardTheme; setting: YardSetting; tier: number; size: number; docks: number }) {
   const hw = yardHalfWidth(size)
   const back = yardBackZ(size)
   const fence = useMemo(() => yardFence(size), [size])
   const bays = useMemo(() => Array.from({ length: yardCapacity(size) }, (_, i) => bayLocal(i)), [size])
   const pierDepth = Math.max(0, BLOCK_BACK_Z - back)
-  const piles: [number, number][] = [
-    [-4.6, -6],
-    [-5.6, -3.4],
-  ]
   const ground = theme === 'smelter' ? '#8f9297' : theme === 'timber' ? '#c2a374' : tier >= 2 ? '#b7bcc4' : '#c8ab7e'
   return (
     <group>
@@ -550,6 +403,15 @@ function YardLook({ theme, tier, size, docks }: { theme: YardTheme; tier: number
         position={[0, 0.02, (YARD_FRONT_Z + Math.max(back, BLOCK_BACK_Z)) / 2]}
         color={ground}
       />
+      {/* A pier yard stands over the water on posts all the way */}
+      {setting === 'pier' && (
+        <>
+          <Box size={[hw * 2 + 1, 0.3, YARD_FRONT_Z - BLOCK_BACK_Z + 4]} position={[0, -0.12, (YARD_FRONT_Z + BLOCK_BACK_Z) / 2 + 2]} color="#8d7a5e" />
+          {Array.from({ length: 7 }, (_, k) => BLOCK_BACK_Z + k * 3.6).flatMap((z) =>
+            [-hw - 0.2, hw + 0.2].map((x) => <Box key={`p${x},${z}`} size={[0.4, 1.6, 0.4]} position={[x, -0.7, z]} color="#5f4f3a" />)
+          )}
+        </>
+      )}
       {pierDepth > 0 && (
         <>
           <Box size={[hw * 2, 0.2, pierDepth]} position={[0, 0.0, BLOCK_BACK_Z - pierDepth / 2]} color="#9a8466" />
@@ -601,15 +463,10 @@ function YardLook({ theme, tier, size, docks }: { theme: YardTheme; tier: number
           <Box size={[0.1, 0.02, 2.6]} position={[1.2, 0, 0]} color="#f4f1ea" />
         </group>
       ))}
-      {theme === 'timber' ? (
-        <TimberWorks tier={tier} piles={piles} />
-      ) : theme === 'smelter' ? (
-        <SmelterWorks tier={tier} piles={piles} />
-      ) : (
-        <BrickWorks tier={tier} piles={piles} />
-      )}
-      {/* A barge moored past the beach behind the yard, loaded up */}
-      <group position={[0, 0, Math.min(-21.5, back - 5)]}>
+      <YardGround theme={theme} />
+      {theme === 'timber' ? <TimberWorks tier={tier} /> : theme === 'smelter' ? <SmelterWorks tier={tier} /> : <BrickWorks tier={tier} />}
+      {/* A barge moored behind the yard, loaded up (not for an inland yard) */}
+      <group position={[0, 0, Math.min(-21.5, back - 5)]} visible={setting !== 'inland'}>
         <Box size={[9, 0.9, 3.2]} position={[0, 0.2, 0]} color="#5b6470" />
         <Box size={[9.2, 0.15, 3.4]} position={[0, 0.7, 0]} color={theme === 'timber' ? '#3fa064' : theme === 'smelter' ? '#3a3a3e' : '#ff6b1a'} />
         {tier >= 1 &&
@@ -692,7 +549,10 @@ function ConstructionSite({ size }: { size: number }) {
 }
 
 export function BrickYard({
+  engine,
+  yard,
   theme,
+  setting,
   tier,
   size,
   docks,
@@ -700,7 +560,10 @@ export function BrickYard({
   affordable,
   onSelect,
 }: {
+  engine: Engine
+  yard: number
   theme: YardTheme
+  setting: YardSetting
   tier: number
   size: number
   docks: number
@@ -710,7 +573,8 @@ export function BrickYard({
 }) {
   return (
     <>
-      <YardLook theme={theme} tier={tier} size={size} docks={docks} />
+      <YardLook theme={theme} setting={setting} tier={tier} size={size} docks={docks} />
+      <UnloadFX engine={engine} yard={yard} theme={theme} />
       {building && <ConstructionSite size={size} />}
       {/* Tap the plant itself (not the open yard, where trucks drive). */}
       <Hotspot id="yard" position={[1.5, 0, -4.8]} hitSize={[9, 5, 6]} arrowHeight={5 + tier} affordable={affordable} onSelect={onSelect}>

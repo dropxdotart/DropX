@@ -13,6 +13,7 @@ import {
   type UpgradeKey,
   type Upgrades,
 } from './engine'
+import { ISLANDS } from './islands'
 
 // The tappable, upgradable things on the site. Each one opens its own
 // upgrade panel and changes its look at milestone levels.
@@ -175,7 +176,7 @@ export function upgradeReady(key: UpgradeKey, snap: Snapshot, yard = 0): boolean
 // The upgrades as one yard sees them (its own size, docks, speed, bonus).
 export function yardUpgrades(snap: Snapshot, yard: number): Upgrades {
   const l = snap.islands[yard]?.yard ?? { size: 0, docks: 0, speed: 0, bonus: 0 }
-  return { ...snap.upgrades, yardSize: l.size, yardDocks: l.docks, yardSpeed: l.speed, yardBonus: l.bonus }
+  return { ...snap.upgrades, yardSize: l.size, yardDocks: l.docks, yardSpeed: l.speed, yardBonus: l.bonus, yardMax: ISLANDS[yard]?.yard.maxSize }
 }
 
 // Anything to buy for the fleet: another truck, or any truck's upgrade.

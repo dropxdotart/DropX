@@ -81,11 +81,12 @@ export type Upgrades = {
   workers: number
   fleet: number
   yardSize: number // Brick Yard expansions (size = 1 + this)
+  yardMax?: number // the size this yard can't grow past (set per yard)
   yardDocks: number // extra unloading docks (docks = 1 + this)
   yardSpeed: number
   yardBonus: number
 }
-export type UpgradeKey = keyof Upgrades
+export type UpgradeKey = Exclude<keyof Upgrades, 'yardMax'>
 
 export const UPGRADE_INFO: Record<UpgradeKey, { label: string; base: number; growth: number }> = {
   tools: { label: 'Better tools', base: 15, growth: 1.5 },
@@ -261,7 +262,7 @@ export function upgradeLock(key: UpgradeKey, u: Upgrades, level: number, truckCa
     if (level < need) return `Lv ${need}`
   }
   if (key === 'yardSize') {
-    if (stats.yardSize(u) >= YARD_MAX_SIZE) return 'Max size'
+    if (stats.yardSize(u) >= (u.yardMax ?? YARD_MAX_SIZE)) return 'Max size'
     const need = yardExpandLevel(u.yardSize)
     if (level < need) return `Lv ${need}`
   }
@@ -287,8 +288,8 @@ export const stats = {
   dumpsterCapacity: (level: number) => 8 + 6 * level,
   truckCount: (u: Upgrades) => 1 + u.fleet,
   // The Brick Yard's size sets how many trucks you can buy (2 bays a size).
-  yardSize: (u: Upgrades) => Math.min(YARD_MAX_SIZE, 1 + u.yardSize),
-  yardCapacity: (u: Upgrades) => yardCapacity(Math.min(YARD_MAX_SIZE, 1 + u.yardSize)),
+  yardSize: (u: Upgrades) => Math.min(u.yardMax ?? YARD_MAX_SIZE, 1 + u.yardSize),
+  yardCapacity: (u: Upgrades) => yardCapacity(Math.min(u.yardMax ?? YARD_MAX_SIZE, 1 + u.yardSize)),
   docks: (u: Upgrades) => Math.min(MAX_DOCKS, 1 + u.yardDocks),
   // Per truck, from that truck's own levels.
   truckCargo: (loadLevel: number) => Math.max(1, Math.round((8 + 6 * loadLevel) * T('truckLoad'))),
@@ -822,7 +823,7 @@ export class Engine {
   // The upgrades as seen from one yard (its own yard levels).
   yardU(y: number): Upgrades {
     const l = this.yardLevels[y] ?? { size: 0, docks: 0, speed: 0, bonus: 0 }
-    return { ...this.upgrades, yardSize: l.size, yardDocks: l.docks, yardSpeed: l.speed, yardBonus: l.bonus }
+    return { ...this.upgrades, yardSize: l.size, yardDocks: l.docks, yardSpeed: l.speed, yardBonus: l.bonus, yardMax: ISLANDS[y]?.yard.maxSize }
   }
 
   // Parking bays across every open yard.
