@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { bricksFromCells, cellsFromBlueprint, decodeCells, encodeCells, SHAPE_LIMITS, type BuilderParams, type Shape } from '@/lib/game/shapes'
 import { BUILDINGS } from '@/lib/game/buildings'
+import type { IslandId } from '@/lib/game/islands'
 import { requireAdminSession } from '../auth'
 import { audit, nameOf } from '../audit'
 
@@ -14,6 +15,7 @@ export type CustomBuilding = {
   id: string
   name: string
   emoji: string
+  island: IslandId
   shape: Shape
   params: BuilderParams | null
   required_level: number
@@ -29,6 +31,7 @@ export type CustomBuilding = {
 export type BuildingInput = {
   name: string
   emoji: string
+  island: IslandId
   shape: Shape
   params: BuilderParams | null
   requiredLevel: number
@@ -39,7 +42,7 @@ export type BuildingInput = {
 
 type Result = { ok: true } | { ok: false; message: string }
 
-const FIELDS = 'id, name, emoji, shape, params, required_level, contract_cost, brick_value, bonus, active, starts_at, ends_at, updated_at'
+const FIELDS = 'id, name, emoji, island, shape, params, required_level, contract_cost, brick_value, bonus, active, starts_at, ends_at, updated_at'
 
 export async function listBuildings(): Promise<CustomBuilding[]> {
   await requireAdminSession()
@@ -75,6 +78,7 @@ export async function saveBuilding(id: string | null, input: BuildingInput): Pro
   const row = {
     name: input.name.trim(),
     emoji: input.emoji.trim(),
+    island: ['houses', 'city', 'industrial'].includes(input.island) ? input.island : 'city',
     shape: input.shape,
     params: input.params,
     required_level: input.requiredLevel,
@@ -138,6 +142,7 @@ export async function duplicateBuilding(source: string): Promise<{ ok: true; id:
     row = {
       name: `${builtIn.name} (copy)`,
       emoji: '🏢',
+      island: builtIn.island ?? 'city',
       shape: { size, data: encodeCells(cells) },
       params: null,
       required_level: builtIn.requiredLevel,
@@ -148,7 +153,7 @@ export async function duplicateBuilding(source: string): Promise<{ ok: true; id:
   } else {
     const { data: b } = await admin
       .from('custom_buildings')
-      .select('name, emoji, shape, params, required_level, contract_cost, brick_value, bonus')
+      .select('name, emoji, island, shape, params, required_level, contract_cost, brick_value, bonus')
       .eq('id', source)
       .maybeSingle()
     if (!b) return { ok: false, message: 'That building is gone' }

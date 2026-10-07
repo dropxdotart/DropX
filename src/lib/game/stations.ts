@@ -165,9 +165,17 @@ export function dumpstersAffordable(plot: PlotSnap | undefined, scrap: number): 
 
 // A station upgrade that can be bought now: affordable and not locked
 // (yard full, level too low…).
-export function upgradeReady(key: UpgradeKey, snap: Snapshot): boolean {
-  if (key === 'yardSize' && snap.yardBuild) return false // already building
-  return snap.scrap >= upgradeCost(key, snap.upgrades[key]) && !upgradeLock(key, snap.upgrades, snap.level)
+// For a yard upgrade, `yard` is the island whose yard it is.
+export function upgradeReady(key: UpgradeKey, snap: Snapshot, yard = 0): boolean {
+  if (key === 'yardSize' && snap.yardBuild) return false // one expansion at a time
+  const u = yardUpgrades(snap, yard)
+  return snap.scrap >= upgradeCost(key, u[key]) && !upgradeLock(key, u, snap.level, snap.truckCapacity)
+}
+
+// The upgrades as one yard sees them (its own size, docks, speed, bonus).
+export function yardUpgrades(snap: Snapshot, yard: number): Upgrades {
+  const l = snap.islands[yard]?.yard ?? { size: 0, docks: 0, speed: 0, bonus: 0 }
+  return { ...snap.upgrades, yardSize: l.size, yardDocks: l.docks, yardSpeed: l.speed, yardBonus: l.bonus }
 }
 
 // Anything to buy for the fleet: another truck, or any truck's upgrade.

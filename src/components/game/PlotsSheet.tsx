@@ -3,13 +3,87 @@
 import { useState } from 'react'
 import { ChevronRight, Lock, X } from 'lucide-react'
 import { getBuilding } from '@/lib/game/buildings'
-import { buildPrice, type Engine, type PlotSnap, type Snapshot } from '@/lib/game/engine'
+import { BRIDGE_AD_SHARE, buildPrice, type Engine, type PlotSnap, type Snapshot } from '@/lib/game/engine'
 import { PLOT_SLOTS } from '@/lib/game/plots'
+import { ISLANDS, type Island, type IslandId } from '@/lib/game/islands'
+import RewardedAdButton from './RewardedAdButton'
 import { formatNumber } from './format'
 
+const SHORT: Record<IslandId, string> = { houses: 'Houses', city: 'City', industrial: 'Industrial' }
+
 export function plotName(id: number) {
-  if (PLOT_SLOTS[id]?.harbour) return `Harbour lot ${PLOT_SLOTS.filter((s) => s.harbour).findIndex((s) => s.id === id) + 1}`
-  return id === 0 ? 'Home lot' : `Plot ${id + 1}`
+  const slot = PLOT_SLOTS[id]
+  if (!slot) return `Plot ${id + 1}`
+  if (slot.harbour) return `Harbour lot ${PLOT_SLOTS.filter((s) => s.harbour).findIndex((s) => s.id === id) + 1}`
+  if (id === 0) return 'Home lot'
+  const n = PLOT_SLOTS.filter((s) => s.island === slot.island && !s.harbour).findIndex((s) => s.id === id) + 1
+  return `${SHORT[slot.island]} plot ${n}`
+}
+
+// 1h 5m · 14m · 40s
+function duration(seconds: number) {
+  const sec = Math.max(0, Math.round(seconds))
+  if (sec < 60) return `${sec}s`
+  const m = Math.ceil(sec / 60)
+  return m < 60 ? `${m}m` : m % 60 ? `${Math.floor(m / 60)}h ${m % 60}m` : `${m / 60}h`
+}
+
+// Building the bridge that opens an island: cost and level, or (while it's
+// going up) the time left with an ad to speed it along.
+function BridgeCard({ engine, snap, island }: { engine: Engine; snap: Snapshot; island: Island }) {
+  const [error, setError] = useState<string | null>(null)
+  const unlock = island.unlock!
+  const build = snap.bridgeBuild?.to === island.id ? snap.bridgeBuild : null
+  if (build)
+    return (
+      <div className="rounded-2xl bg-[#fff4d6] p-3">
+        <div className="flex items-center justify-between gap-3">
+          <div className="min-w-0 flex-1">
+            <p className="font-display text-base leading-tight text-[#1d3a6e]">🌉 Building the bridge</p>
+            <p className="text-xs text-[#5b6f93]">{duration(build.secondsLeft)} left</p>
+            <div className="mt-1.5 h-2 overflow-hidden rounded-full bg-[#f1dca0]">
+              <div className="h-full rounded-full bg-[#ff6b1a]" style={{ width: `${Math.round((1 - build.secondsLeft / Math.max(1, build.totalSeconds)) * 100)}%` }} />
+            </div>
+          </div>
+          <RewardedAdButton
+            onReward={() => {
+              engine.speedUpBridge()
+              engine.notify()
+            }}
+            className="shrink-0 rounded-xl bg-[#3fbf4a] px-3 py-2 font-display text-sm text-white shadow-[0_3px_0_#2a8a33] active:translate-y-[3px] active:shadow-none disabled:opacity-70"
+          >
+            ▶ −{duration(build.totalSeconds * BRIDGE_AD_SHARE)}
+          </RewardedAdButton>
+        </div>
+      </div>
+    )
+  const lock = engine.bridgeLock(island.id)
+  const tooLow = snap.level < unlock.level
+  return (
+    <div className="rounded-2xl border-2 border-dashed border-[#c9d3e3] p-3">
+      <div className="flex items-center justify-between gap-3">
+        <div className="min-w-0">
+          <p className="font-display text-base leading-tight text-[#1d3a6e]">🌉 Build the bridge</p>
+          <p className="text-xs text-[#5b6f93]">
+            Opens the {island.name}: new plots, buildings and the {island.yard.name} · takes {duration(unlock.buildMinutes * 60)}
+          </p>
+          {tooLow && <p className="text-xs font-bold text-[#c2410c]">Unlocks at level {unlock.level}</p>}
+        </div>
+        <button
+          disabled={!!lock}
+          onClick={() => {
+            const err = engine.buildBridge(island.id)
+            setError(err)
+            engine.notify()
+          }}
+          className="shrink-0 rounded-xl bg-[#ff6b1a] px-3 py-2 font-display text-sm text-white shadow-[0_3px_0_#c94e0a] active:translate-y-[3px] active:shadow-none disabled:bg-[#b9c2cf] disabled:shadow-[0_3px_0_#97a1ae]"
+        >
+          🧱 {formatNumber(buildPrice(unlock.cost))}
+        </button>
+      </div>
+      {error && <p className="mt-1 text-xs font-bold text-[#c23030]">{error}</p>}
+    </div>
+  )
 }
 
 function status(p: PlotSnap) {
@@ -17,57 +91,6 @@ function status(p: PlotSnap) {
   if (p.phase === 'empty') return { text: 'Empty — pick a building', color: 'text-[#2d7ff9]' }
   const pct = Math.round((1 - p.bricksLeft / Math.max(1, p.bricksTotal)) * 100)
   return { text: `${getBuilding(p.buildingId).name} · ${pct}% · 👷 ${p.crew}`, color: 'text-[#5b6f93]' }
-}
-
-// Splitting the crew between plots being demolished: a slider each, or
-// Auto (more workers where there's more left to do).
-function CrewPanel({ engine, snap }: { engine: Engine; snap: Snapshot }) {
-  const active = snap.plots.filter((p) => p.phase === 'demolishing')
-  if (active.length < 2) return null
-  const total = snap.plots.reduce((n, p) => n + p.crew, 0)
-  return (
-    <div className="mb-3 rounded-2xl bg-[#eef2f8] p-3">
-      <div className="mb-2 flex items-center justify-between">
-        <p className="font-display text-lg text-[#1d3a6e]">👷 Crew · {total}</p>
-        <button
-          onClick={() => {
-            engine.setCrewAuto()
-            engine.notify()
-          }}
-          className={`rounded-full px-3 py-1 font-display text-xs ${snap.crewAuto ? 'bg-[#2d7ff9] text-white' : 'bg-white text-[#1d3a6e]'}`}
-        >
-          {snap.crewAuto ? '✓ Auto · by work left' : 'Auto'}
-        </button>
-      </div>
-      <div className="space-y-2.5">
-        {active.map((p) => (
-          <div key={p.id}>
-            <div className="flex items-baseline justify-between text-xs">
-              <span className="font-display text-sm text-[#1d3a6e]">
-                {plotName(p.id)} <span className="font-sans text-xs text-[#5b6f93]">· {getBuilding(p.buildingId).name}</span>
-              </span>
-              <span className="font-display text-sm tabular-nums text-[#1d3a6e]">
-                {p.crewTarget}
-                {p.crew !== p.crewTarget && <span className="text-xs text-[#5b6f93]"> ({p.crew} there)</span>}
-              </span>
-            </div>
-            <input
-              type="range"
-              min={0}
-              max={total}
-              value={p.crewTarget}
-              onChange={(e) => {
-                engine.setCrew(p.id, Number(e.target.value))
-                engine.notify()
-              }}
-              className="w-full accent-[#ff6b1a]"
-              aria-label={`Workers on ${plotName(p.id)}`}
-            />
-          </div>
-        ))}
-      </div>
-    </div>
-  )
 }
 
 // The Plots button's sheet: every plot in the city. Owned ones fly the
@@ -100,9 +123,16 @@ export default function PlotsSheet({
           </button>
         </div>
         {error && <p className="mb-2 rounded-xl bg-[#ffe3e3] p-2 text-center text-sm text-[#c23030]">{error}</p>}
-        <CrewPanel engine={engine} snap={snap} />
-        <div className="space-y-2">
-          {PLOT_SLOTS.map((slot) => {
+        <div className="space-y-4">
+          {ISLANDS.map((island) => {
+            const open = snap.islands[island.index]?.open
+            return (
+              <div key={island.id} className="space-y-2">
+                <p className="font-display text-sm uppercase tracking-wide text-[#5b6f93]">
+                  {island.emoji} {island.name}
+                </p>
+                {!open && <BridgeCard engine={engine} snap={snap} island={island} />}
+                {PLOT_SLOTS.filter((slot) => slot.island === island.id).map((slot) => {
             const owned = snap.plots[slot.id]
             if (owned) {
               const st = status(owned)
@@ -135,10 +165,12 @@ export default function PlotsSheet({
                 </span>
                 <div className="min-w-0 flex-1">
                   <p className="font-display text-base leading-tight text-[#1d3a6e]">{plotName(slot.id)}</p>
-                  <p className="text-xs text-[#5b6f93]">{next ? 'For sale' : 'Buy the plots before it first'}</p>
+                  <p className="text-xs text-[#5b6f93]">
+                    {!open ? 'Build the bridge first' : next ? 'For sale' : 'Buy the plots before it first'}
+                  </p>
                   {locked && <p className="text-xs font-bold text-[#c2410c]">Unlocks at level {slot.requiredLevel}</p>}
                 </div>
-                {next && (
+                {next && open && (
                   <button
                     disabled={locked || snap.scrap < buildPrice(slot.cost)}
                     onClick={() => {
@@ -152,6 +184,9 @@ export default function PlotsSheet({
                     🧱 {formatNumber(buildPrice(slot.cost))}
                   </button>
                 )}
+              </div>
+            )
+                })}
               </div>
             )
           })}

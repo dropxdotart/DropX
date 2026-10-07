@@ -3,7 +3,8 @@
 import { X } from 'lucide-react'
 import { upgradeCost, upgradeLock, UPGRADE_INFO, YARD_AD_SHARE, type Engine, type Snapshot } from '@/lib/game/engine'
 import RewardedAdButton from './RewardedAdButton'
-import { getStation, nextMilestone, tierFor, type StationId } from '@/lib/game/stations'
+import { getStation, nextMilestone, tierFor, yardUpgrades, type StationId } from '@/lib/game/stations'
+import { ISLANDS } from '@/lib/game/islands'
 import { formatNumber } from './format'
 
 // 1h 5m · 14m · 40s
@@ -21,15 +22,18 @@ export default function StationPanel({
   engine,
   snap,
   id,
+  yard = 0,
   onClose,
 }: {
   engine: Engine
   snap: Snapshot
   id: StationId
+  yard?: number // for the yard station: which island's yard
   onClose: () => void
 }) {
   const station = getStation(id)
-  const u = snap.upgrades
+  const isYard = id === 'yard'
+  const u = isYard ? yardUpgrades(snap, yard) : snap.upgrades
   const level = station.level(u)
   const tier = tierFor(level)
   const milestone = nextMilestone(level)
@@ -43,7 +47,7 @@ export default function StationPanel({
           <div className="flex items-center gap-3">
             <span className="flex h-12 w-12 items-center justify-center rounded-xl bg-[#eef2f8] text-2xl">{station.emoji}</span>
             <div>
-              <p className="font-display text-2xl leading-none text-[#1d3a6e]">{station.name}</p>
+              <p className="font-display text-2xl leading-none text-[#1d3a6e]">{isYard ? ISLANDS[yard].yard.name : station.name}</p>
               <p className="mt-1 text-sm text-[#5b6f93]">
                 Lv {level} · {station.tierNames[tier]}
               </p>
@@ -67,9 +71,10 @@ export default function StationPanel({
         <div className="mt-3 space-y-2">
           {station.upgrades.map((key) => {
             const cost = upgradeCost(key, u[key])
-            const lock = upgradeLock(key, u, snap.level)
+            const otherBuild = key === 'yardSize' && snap.yardBuild && snap.yardBuild.yard !== yard
+            const lock = otherBuild ? 'Busy' : upgradeLock(key, u, snap.level, snap.truckCapacity)
             const affordable = snap.scrap >= cost && !lock
-            const build = key === 'yardSize' ? snap.yardBuild : null
+            const build = key === 'yardSize' && snap.yardBuild?.yard === yard ? snap.yardBuild : null
             if (build)
               return (
                 <div key={key} className="rounded-2xl bg-[#fff4d6] p-3">
@@ -120,7 +125,7 @@ export default function StationPanel({
                   <button
                     disabled={!affordable}
                     onClick={() => {
-                      engine.buyUpgrade(key)
+                      engine.buyUpgrade(key, yard)
                       engine.notify()
                     }}
                     className="shrink-0 rounded-xl bg-[#3fbf4a] px-3 py-2 font-display text-sm text-white shadow-[0_3px_0_#2a8a33] active:translate-y-[3px] active:shadow-none disabled:bg-[#b9c2cf] disabled:shadow-[0_3px_0_#97a1ae]"

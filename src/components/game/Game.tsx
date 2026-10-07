@@ -2,12 +2,13 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import dynamic from 'next/dynamic'
-import { ArrowBigUpDash, Map as MapIcon, Minus, Plus, UserRound, X } from 'lucide-react'
+import { ArrowBigUpDash, Map as MapIcon, UserRound, X } from 'lucide-react'
 import { useEngine } from '@/lib/game/useEngine'
 import { getBuilding, xpForLevel } from '@/lib/game/buildings'
 import BannerAd from './BannerAd'
 import InterstitialAd from './InterstitialAd'
 import StationPanel from './StationPanel'
+import CrewSheet from './CrewSheet'
 import { eventInfo, eventTitle, timeLeft } from '@/lib/liveEvents'
 import TruckPanel from './TruckPanel'
 import DumpsterPanel from './DumpsterPanel'
@@ -20,6 +21,7 @@ import ProfileSheet from './ProfileSheet'
 import UsernameForm from './UsernameForm'
 import type { StationFocus } from '@/components/game3d/Scene'
 import { formatNumber } from './format'
+import { PLOT_SLOTS, islandIndex } from '@/lib/game/plots'
 
 // three.js needs `window`/WebGL, so the scene only ever renders client-side.
 const Scene = dynamic(() => import('@/components/game3d/Scene'), { ssr: false })
@@ -34,6 +36,7 @@ export default function Game() {
   const [bonusOpen, setBonusOpen] = useState(false)
   const [plotsOpen, setPlotsOpen] = useState(false)
   const [profileOpen, setProfileOpen] = useState(false)
+  const [crewOpen, setCrewOpen] = useState(false)
   // First play: ask for a username once (skippable; they can set it later
   // in Profile).
   const [namePrompted, setNamePrompted] = useState(() => {
@@ -85,7 +88,6 @@ export default function Game() {
   const levelStart = xpForLevel(snap.level)
   const levelEnd = xpForLevel(snap.level + 1)
   const levelProgress = (snap.xp - levelStart) / (levelEnd - levelStart)
-  const activePlots = snap.plots.filter((p) => p.phase === 'demolishing').length
   const plotNeedsYou = snap.plots.some((p) => p.phase !== 'demolishing')
 
   const goToPlot = (id: number) => {
@@ -161,7 +163,7 @@ export default function Game() {
           onBreakTap={tapBuilding}
           onSelectTruck={(truck) => {
             setMapOpen(false)
-            setSelected({ id: 'truck', plot: plot.id, truck })
+            setSelected({ id: 'truck', plot: engine.trucks[truck]?.home ?? 0, truck })
           }}
         />
       </div>
@@ -225,7 +227,8 @@ export default function Game() {
               <p className="font-display text-[10px] uppercase leading-none tracking-wider text-[#5b6f93]">{plotName(plot.id)}</p>
             )}
             {plot.phase === 'demolishing' ? (
-              <>
+              // Tap for the crew: who's working where.
+              <button onClick={() => setCrewOpen(true)} className="block w-full text-left" aria-label="Crew">
                 <p className="font-display text-base leading-tight text-[#1d3a6e]">{building.name}</p>
                 <div className="mt-1.5 h-4 overflow-hidden rounded-full bg-[#1d3a6e]">
                   <div className="h-full bg-[#2d7ff9] transition-[width] duration-300" style={{ width: `${progress * 100}%` }} />
@@ -234,7 +237,7 @@ export default function Game() {
                   {formatNumber(plot.bricksLeft)} bricks left
                   {plot.rubbleLeft > 0 && ` · ${formatNumber(plot.rubbleLeft)} on ground`}
                 </p>
-              </>
+              </button>
             ) : (
               <button onClick={() => onPlotAction(plot.id)} className="block w-full text-left">
                 <p className="font-display text-base leading-tight text-[#1d3a6e]">
@@ -244,43 +247,6 @@ export default function Game() {
                   {plot.phase === 'cleared' ? 'Tap to claim your bonus' : 'Tap to pick a building'}
                 </p>
               </button>
-            )}
-            {/* Crew split: only matters once two plots are being demolished. */}
-            {activePlots > 1 && plot.phase === 'demolishing' && (
-              <div className="mt-1.5 flex items-center justify-between gap-1 border-t border-[#e3e8f0] pt-1.5">
-                <button
-                  onClick={() => {
-                    engine.adjustCrew(plot.id, -1)
-                    engine.notify()
-                  }}
-                  className="rounded-lg bg-[#eef2f8] p-1"
-                  aria-label="Move a worker away"
-                >
-                  <Minus className="h-3.5 w-3.5 text-[#1d3a6e]" />
-                </button>
-                <span className="font-display text-sm text-[#1d3a6e]">👷 {plot.crew}</span>
-                <button
-                  onClick={() => {
-                    engine.adjustCrew(plot.id, 1)
-                    engine.notify()
-                  }}
-                  className="rounded-lg bg-[#eef2f8] p-1"
-                  aria-label="Bring a worker here"
-                >
-                  <Plus className="h-3.5 w-3.5 text-[#1d3a6e]" />
-                </button>
-                {!snap.crewAuto && (
-                  <button
-                    onClick={() => {
-                      engine.setCrewAuto()
-                      engine.notify()
-                    }}
-                    className="rounded-lg bg-[#2d7ff9] px-1.5 py-0.5 font-display text-[10px] text-white"
-                  >
-                    AUTO
-                  </button>
-                )}
-              </div>
             )}
           </div>
         </div>
@@ -389,9 +355,11 @@ export default function Game() {
             setMapOpen(false)
             // Tool rack and crew trailer live on the home lot; dumpsters and
             // trucks are on every plot, so use the one you're looking at.
-            if (id === 'truck') setSelected({ id, plot: plot.id, truck: 0 })
+            // Yard and trucks: the yard on the island you're looking at.
+            const island = islandIndex(PLOT_SLOTS[plot.id]?.island ?? 'houses')
+            if (id === 'truck') setSelected({ id, plot: island, truck: 0 })
             else if (id === 'dumpster') setSelected({ id, plot: plot.id, index: 0 })
-            else setSelected({ id, plot: id === 'tools' || id === 'crew' || id === 'yard' ? 0 : plot.id })
+            else setSelected({ id, plot: id === 'yard' ? island : id === 'tools' || id === 'crew' ? 0 : plot.id })
           }}
           onClose={() => setMapOpen(false)}
         />
@@ -415,7 +383,7 @@ export default function Game() {
           onClose={() => setSelected(null)}
         />
       ) : (
-        selected && <StationPanel engine={engine} snap={snap} id={selected.id} onClose={() => setSelected(null)} />
+        selected && <StationPanel engine={engine} snap={snap} id={selected.id} yard={selected.plot} onClose={() => setSelected(null)} />
       )}
       {plotsOpen && (
         <PlotsSheet
@@ -436,6 +404,7 @@ export default function Game() {
       {picker && (
         <SitePicker engine={engine} snap={snap} plot={picker.plot} justCleared={picker.cleared} onClose={() => setPicker(null)} />
       )}
+      {crewOpen && <CrewSheet engine={engine} snap={snap} focus={plot.id} onClose={() => setCrewOpen(false)} />}
       {profileOpen && <ProfileSheet engine={engine} snap={snap} onClose={() => setProfileOpen(false)} />}
       {loadingGone && snap.synced && !snap.username && !namePrompted && !snap.notice && (
         <div className="pointer-events-auto fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-6">

@@ -1,6 +1,7 @@
 import { type Brick, type BrickColor } from './blueprints'
 import { BUILDINGS, brickCount, bricksFor, getBuilding, legacyOf, levelForXp, registerCustomBuildings, sizeFor, xpForLevel, type BuildingDef } from './buildings'
 import { PLOT_SLOTS } from './plots'
+import { ISLANDS, islandAt, type IslandId } from './islands'
 import {
   dockPoint,
   MAX_DOCKS,
@@ -15,8 +16,8 @@ import {
   planRoute,
   plotStop,
   routeLength,
-  YARD_GATE_IN,
-  YARD_GATE_OUT,
+  yardGateIn,
+  yardGateOut,
   yardEnterPath,
   yardExitPath,
   type Point,
@@ -37,7 +38,8 @@ import { eventDetail, eventInfo, eventTitle, type LiveEventKind } from '../liveE
 import { cleanTuning, DEFAULT_TUNING, type TuneKey, type Tuning } from '../tuning'
 export { BRICK, DUMPSTER, DUMPSTER_SLOTS, LOT_HALF, MAX_DUMPSTERS, ROAD_Z, TRUCK_STOP } from './layout'
 
-const SAVE_KEY = 'rubble-save-v5'
+// v6: the island world (a fresh start, pre-launch).
+const SAVE_KEY = 'rubble-save-v6'
 const LEGACY_SAVE_KEY = 'rubble-save-v4'
 // Set when an admin reset wipes the save, so the fresh game can say so;
 // gifts sent after the reset wait here to be applied to the fresh game.
@@ -249,8 +251,10 @@ export function yardExpandLevel(n: number): number {
 }
 
 // Why an upgrade can't be bought right now (besides the price), if so.
-export function upgradeLock(key: UpgradeKey, u: Upgrades, level: number): string | null {
-  if (key === 'fleet' && stats.truckCount(u) >= stats.yardCapacity(u)) return 'Yard full'
+// `truckCapacity`: parking bays across all the player's yards (trucks need
+// somewhere to park). For yard upgrades, `u` carries that yard's levels.
+export function upgradeLock(key: UpgradeKey, u: Upgrades, level: number, truckCapacity?: number): string | null {
+  if (key === 'fleet' && stats.truckCount(u) >= (truckCapacity ?? stats.yardCapacity(u))) return 'Yards full'
   if (key === 'yardDocks') {
     if (stats.docks(u) >= MAX_DOCKS) return 'Max docks'
     const need = DOCK_LEVELS[u.yardDocks]
@@ -334,7 +338,9 @@ export type Truck = {
   path: Point[]
   dest: { kind: 'plot'; plot: number } | { kind: 'yard' } | { kind: 'park' }
   at: RoadSpot // the plot stop it's at, when out on the road
-  inYard: 'bay' | 'parked' | null // inside the fenced Brick Yard
+  home: number // the island whose yard it parks at
+  yard: number // the island whose yard it's in / heading to
+  inYard: 'bay' | 'parked' | null // inside that yard's fence
   dock: number // the unloading dock it's heading to / using
   stuck: number // seconds spent waiting behind another truck
   squeeze: number // seconds left of squeezing past (after waiting too long)
@@ -380,6 +386,7 @@ export type Snapshot = {
   plots: PlotSnap[]
   trucks: TruckSnap[]
   crewAuto: boolean
+  crewMode: 'work' | 'even' | 'custom'
   incomePerMinute: number
   offlineEarnings: number
   sitesCleared: number
@@ -392,7 +399,10 @@ export type Snapshot = {
   shortId: string | null
   username: string | null
   ban: Ban | null
-  yardBuild: { toSize: number; secondsLeft: number; totalSeconds: number } | null
+  yardBuild: { yard: number; toSize: number; secondsLeft: number; totalSeconds: number } | null
+  islands: { id: IslandId; open: boolean; yard: YardLevels }[]
+  truckCapacity: number
+  bridgeBuild: { to: IslandId; secondsLeft: number; totalSeconds: number } | null
   events: LiveEvent[]
   banners: Broadcast[]
   synced: boolean
@@ -416,16 +426,29 @@ export type SaveData = {
   xp: number
   upgrades: Upgrades
   plots: PlotSave[]
-  trucks?: { load: number; speed: number }[]
+  trucks?: { load: number; speed: number; home?: number }[]
   crewPlan: number[] | null
   sitesCleared: number
   lastSeen: number
   yardBuild?: YardBuild | null
+  yards?: YardLevels[]
+  bridges?: IslandId[]
+  bridgeBuild?: BridgeBuild | null
 }
 
 // A yard expansion under construction: real-world times (ms), so it keeps
 // building while the game is closed. `level` is the yardSize it finishes at.
-export type YardBuild = { level: number; startedAt: number; endsAt: number }
+export type YardBuild = { yard: number; level: number; startedAt: number; endsAt: number }
+
+// Each island's yard has its own upgrade levels.
+export type YardLevels = { size: number; docks: number; speed: number; bonus: number }
+export const YARD_KEYS = ['yardSize', 'yardDocks', 'yardSpeed', 'yardBonus'] as const
+const YARD_FIELD: Record<(typeof YARD_KEYS)[number], keyof YardLevels> = { yardSize: 'size', yardDocks: 'docks', yardSpeed: 'speed', yardBonus: 'bonus' }
+export const isYardKey = (k: UpgradeKey): k is (typeof YARD_KEYS)[number] => (YARD_KEYS as readonly string[]).includes(k)
+
+// A bridge to the next island being built (real-world times, ms).
+export type BridgeBuild = { to: IslandId; startedAt: number; endsAt: number }
+export const BRIDGE_AD_SHARE = 0.25
 
 // How long building the yard up to each size takes (sizes 2–10).
 const YARD_BUILD_MINUTES = [5, 15, 30, 60, 120, 180, 240, 300, 360]
@@ -782,16 +805,62 @@ export class Engine {
     return this.trucks.some((t) => t.state === 'loading' && t.dest.kind === 'plot' && t.dest.plot === site.id)
   }
 
-  // A truck the yard has no bay for parks at the kerb out front.
-  private kerbIndex(truck: { id: number }): number | null {
-    const cap = stats.yardCapacity(this.upgrades)
-    return truck.id >= cap ? truck.id - cap : null
+  // ── Islands and yards ─────────────────────────────────────────────────
+
+  yardLevels: YardLevels[] = ISLANDS.map(() => ({ size: 0, docks: 0, speed: 0, bonus: 0 }))
+  bridges: IslandId[] = []
+  bridgeBuild: BridgeBuild | null = null
+
+  islandOpen(id: IslandId) {
+    return ISLANDS.find((s) => s.id === id)?.unlock === null || this.bridges.includes(id)
   }
 
-  private newTruck(id: number, levels?: { load: number; speed: number }): Truck {
-    const kerb = this.kerbIndex({ id })
-    const road = kerb === null ? null : kerbSpot(kerb)
-    const spot = road ? { x: road.x, z: road.line - KERB_INSET } : parkingSpot(id)
+  openYards(): number[] {
+    return ISLANDS.filter((s) => this.islandOpen(s.id)).map((s) => s.index)
+  }
+
+  // The upgrades as seen from one yard (its own yard levels).
+  yardU(y: number): Upgrades {
+    const l = this.yardLevels[y] ?? { size: 0, docks: 0, speed: 0, bonus: 0 }
+    return { ...this.upgrades, yardSize: l.size, yardDocks: l.docks, yardSpeed: l.speed, yardBonus: l.bonus }
+  }
+
+  // Parking bays across every open yard.
+  truckCapacity() {
+    return this.openYards().reduce((n, y) => n + stats.yardCapacity(this.yardU(y)), 0)
+  }
+
+  // A truck's bay number at its home yard (by order among that yard's trucks).
+  private parkRank(truck: { id: number; home: number }) {
+    return this.trucks.filter((t) => t.home === truck.home && t.id < truck.id).length
+  }
+
+  // A truck its home yard has no bay for parks at the kerb out front.
+  private kerbIndex(truck: { id: number; home: number }): number | null {
+    const cap = stats.yardCapacity(this.yardU(truck.home))
+    const rank = this.parkRank(truck)
+    return rank >= cap ? rank - cap : null
+  }
+
+  // Where a new truck lives: the first open yard with a free bay.
+  private homeForNewTruck(): number {
+    const open = this.openYards()
+    for (const y of open) if (this.trucks.filter((t) => t.home === y).length < stats.yardCapacity(this.yardU(y))) return y
+    return open[open.length - 1] ?? 0
+  }
+
+  // The yard to unload at: the one on the island the truck is on (if it's
+  // open), else its home yard.
+  private unloadYard(truck: Truck): number {
+    const here = islandAt(truck.x, truck.z)
+    return here && this.islandOpen(here.id) ? here.index : truck.home
+  }
+
+  private newTruck(id: number, levels?: { load: number; speed: number; home?: number }): Truck {
+    const home = levels?.home ?? this.homeForNewTruck()
+    const kerb = this.kerbIndex({ id, home })
+    const road = kerb === null ? null : kerbSpot(home, kerb)
+    const spot = road ? { x: road.x, z: road.line - KERB_INSET } : parkingSpot(home, this.parkRank({ id, home }))
     return {
       id,
       load: levels?.load ?? 0,
@@ -802,7 +871,9 @@ export class Engine {
       heading: road ? Math.PI / 2 : 0,
       path: [],
       dest: { kind: 'park' },
-      at: road ?? YARD_GATE_OUT,
+      at: road ?? yardGateOut(home),
+      home,
+      yard: home,
       inYard: road ? null : 'parked',
       dock: 0,
       stuck: 0,
@@ -933,14 +1004,15 @@ export class Engine {
       ...upgrades
     } = save.upgrades as Upgrades & { truck?: number; dumpster?: number }
     this.upgrades = { ...this.upgrades, ...upgrades }
-    // Saves from before the yard could grow: make it big enough for the
-    // trucks they already have.
-    if (upgrades.yardSize === undefined) {
-      const trucks = save.trucks?.length ?? 1
-      this.upgrades.yardSize = Math.min(YARD_MAX_SIZE - 1, Math.max(0, Math.ceil(trucks / 2) - 1))
-    }
     this.sitesCleared = save.sitesCleared ?? 0
-    this.yardBuild = save.yardBuild ?? null
+    this.yardBuild = save.yardBuild && typeof save.yardBuild.yard === 'number' ? save.yardBuild : null
+    this.bridges = save.bridges ?? []
+    this.bridgeBuild = save.bridgeBuild ?? null
+    if (save.yards) this.yardLevels = ISLANDS.map((_, i) => ({ ...{ size: 0, docks: 0, speed: 0, bonus: 0 }, ...(save.yards![i] ?? {}) }))
+    if (this.yardBuild || this.bridgeBuild) {
+      this.checkYardBuild()
+      this.checkBridgeBuild()
+    }
     this.crewPlan = save.crewPlan ?? null
     this.trucks = (save.trucks ?? [{ load: oldTruckLevel ?? 0, speed: 0 }]).map((t, id) => this.newTruck(id, t))
     this.plots = save.plots.slice(0, PLOT_SLOTS.length).map((ps, id) => {
@@ -992,7 +1064,10 @@ export class Engine {
       sitesCleared: this.sitesCleared,
       lastSeen: Date.now(),
       yardBuild: this.yardBuild,
-      trucks: this.trucks.map((t) => ({ load: t.load, speed: t.speed })),
+      yards: this.yardLevels,
+      bridges: this.bridges,
+      bridgeBuild: this.bridgeBuild,
+      trucks: this.trucks.map((t) => ({ load: t.load, speed: t.speed, home: t.home })),
       plots: this.plots.map((p) => ({
         phase: p.phase,
         buildingId: p.building.id,
@@ -1076,7 +1151,12 @@ export class Engine {
         if (!key || !(key in this.upgrades)) return
         const n = Math.round(amount)
         const label = REWARD_UPGRADE_LABELS[key] ?? UPGRADE_INFO[key].label
-        this.upgrades = { ...this.upgrades, [key]: Math.max(0, this.upgrades[key] + n) }
+        if (isYardKey(key)) {
+          // Yard upgrades go to the newest island's yard.
+          const y = this.openYards().at(-1) ?? 0
+          const f = YARD_FIELD[key]
+          this.yardLevels[y][f] = Math.max(0, this.yardLevels[y][f] + n)
+        } else this.upgrades = { ...this.upgrades, [key]: Math.max(0, this.upgrades[key] + n) }
         this.syncWorkers()
         this.trimCrew()
         what = taken ? `${-n} ${label}${n < -1 ? ' upgrades' : ''} removed` : `${n} free ${label}${n > 1 ? ' upgrades' : ''}`
@@ -1394,10 +1474,60 @@ export class Engine {
     const b = this.yardBuild
     if (!b || Date.now() < b.endsAt) return
     this.yardBuild = null
-    if (this.upgrades.yardSize < b.level) this.upgrades = { ...this.upgrades, yardSize: b.level }
-    const size = stats.yardSize(this.upgrades)
+    const l = this.yardLevels[b.yard]
+    if (l && l.size < b.level) l.size = b.level
+    const size = stats.yardSize(this.yardU(b.yard))
     if (!this.frozen)
-      this.notices.push({ title: 'Brick Yard expanded!', detail: `Room for ${yardCapacity(size)} trucks now`, message: null, emoji: '🏗️', button: 'Nice!' })
+      this.notices.push({ title: `${ISLANDS[b.yard].yard.name} expanded!`, detail: `Room for ${yardCapacity(size)} trucks there now`, message: null, emoji: '🏗️', button: 'Nice!' })
+    this.save()
+    this.markDirty()
+  }
+
+  // ── Bridges (to the next island) ──────────────────────────────────────
+
+  // Why the bridge to an island can't be started now, if so.
+  bridgeLock(to: IslandId): string | null {
+    const s = ISLANDS.find((i) => i.id === to)
+    if (!s?.unlock) return 'Already open'
+    if (this.islandOpen(to)) return 'Already built'
+    const prev = ISLANDS[s.index - 1]
+    if (prev && !this.islandOpen(prev.id)) return `Open the ${prev.name} first`
+    if (this.bridgeBuild) return 'A bridge is already being built'
+    if (levelForXp(this.xp) < s.unlock.level) return `Lv ${s.unlock.level}`
+    if (this.scrap < buildPrice(s.unlock.cost)) return 'Not enough bricks'
+    return null
+  }
+
+  buildBridge(to: IslandId): string | null {
+    const why = this.bridgeLock(to)
+    if (why) return why
+    const s = ISLANDS.find((i) => i.id === to)!
+    this.scrap -= buildPrice(s.unlock!.cost)
+    const now = Date.now()
+    this.bridgeBuild = { to, startedAt: now, endsAt: now + s.unlock!.buildMinutes * 60_000 }
+    this.save()
+    this.markDirty()
+    return null
+  }
+
+  private checkBridgeBuild() {
+    const b = this.bridgeBuild
+    if (!b || Date.now() < b.endsAt) return
+    this.bridgeBuild = null
+    if (!this.bridges.includes(b.to)) this.bridges = [...this.bridges, b.to]
+    const s = ISLANDS.find((i) => i.id === b.to)!
+    if (!this.frozen) this.notices.push({ title: `Bridge open!`, detail: `The ${s.name} is open — new plots, buildings and the ${s.yard.name}`, message: null, emoji: '🌉', button: "Let's go!" })
+    this.save()
+    this.markDirty()
+  }
+
+  // A watched ad: a quarter of the bridge's full build time off.
+  speedUpBridge() {
+    const b = this.bridgeBuild
+    if (!b) return
+    const s = ISLANDS.find((i) => i.id === b.to)!
+    b.endsAt -= (s.unlock?.buildMinutes ?? 0) * 60_000 * BRIDGE_AD_SHARE
+    this.checkBridgeBuild()
     this.save()
     this.markDirty()
   }
@@ -1412,17 +1542,26 @@ export class Engine {
     this.markDirty()
   }
 
-  buyUpgrade(key: UpgradeKey): boolean {
-    const cost = upgradeCost(key, this.upgrades[key])
-    if (this.scrap < cost || upgradeLock(key, this.upgrades, levelForXp(this.xp))) return false
+  // `yard`: which island's yard, for yard upgrades.
+  buyUpgrade(key: UpgradeKey, yard = 0): boolean {
+    const u = isYardKey(key) ? this.yardU(yard) : this.upgrades
+    if (isYardKey(key) && !this.islandOpen(ISLANDS[yard]?.id ?? 'houses')) return false
+    const cost = upgradeCost(key, u[key])
+    if (this.scrap < cost || upgradeLock(key, u, levelForXp(this.xp), this.truckCapacity())) return false
     if (key === 'yardSize') {
-      // Expansions are built over time, not instantly.
+      // Expansions are built over time, not instantly (one at a time).
       if (this.yardBuild) return false
       this.scrap -= cost
       const now = Date.now()
-      const level = this.upgrades.yardSize + 1
-      this.yardBuild = { level, startedAt: now, endsAt: now + yardBuildSeconds(level + 1) * 1000 }
+      const level = u.yardSize + 1
+      this.yardBuild = { yard, level, startedAt: now, endsAt: now + yardBuildSeconds(level + 1) * 1000 }
       this.save()
+      this.markDirty()
+      return true
+    }
+    if (isYardKey(key)) {
+      this.scrap -= cost
+      this.yardLevels[yard][YARD_FIELD[key]]++
       this.markDirty()
       return true
     }
@@ -1440,6 +1579,7 @@ export class Engine {
     if (def.id !== id || (def.shape && !def.available)) return "That building isn't available right now"
     if (levelForXp(this.xp) < def.requiredLevel) return `Reach level ${def.requiredLevel} first`
     if (def.harbour && !PLOT_SLOTS[plot]?.harbour) return 'Too big for a city plot — build it on a harbour lot'
+    if ((def.island ?? 'city') !== PLOT_SLOTS[plot]?.island) return 'That building belongs on another island'
     const price = buildPrice(def.contractCost)
     if (this.scrap < price) return 'Not enough bricks for this contract'
     this.scrap -= price
@@ -1472,6 +1612,7 @@ export class Engine {
   buyPlot(): string | null {
     const slot = PLOT_SLOTS[this.plots.length]
     if (!slot) return 'No more plots for sale'
+    if (!this.islandOpen(slot.island)) return `Build the bridge to the ${ISLANDS.find((s) => s.id === slot.island)!.name} first`
     if (levelForXp(this.xp) < slot.requiredLevel) return `Reach level ${slot.requiredLevel} first`
     const price = buildPrice(slot.cost)
     if (this.scrap < price) return 'Not enough bricks'
@@ -1603,6 +1744,26 @@ export class Engine {
     this.markDirty()
   }
 
+  // Even split across the plots being demolished (a manual plan, so it
+  // stays even rather than following work left).
+  setCrewEven() {
+    const active = this.plots.filter((p) => p.phase === 'demolishing').map((p) => p.id)
+    const total = this.workers.length
+    const plan = this.plots.map(() => 0)
+    active.forEach((id, n) => (plan[id] = Math.floor(total / active.length) + (n < total % active.length ? 1 : 0)))
+    this.crewPlan = plan
+    this.markDirty()
+  }
+
+  // Which quick choice the current split matches (for the crew sheet).
+  crewMode(): 'work' | 'even' | 'custom' {
+    if (!this.crewPlan) return 'work'
+    const active = this.plots.filter((p) => p.phase === 'demolishing').map((p) => p.id)
+    const want = this.desiredCrew()
+    const vals = active.map((id) => want[id])
+    return Math.max(...vals) - Math.min(...vals) <= 1 ? 'even' : 'custom'
+  }
+
   setCrewAuto() {
     this.crewPlan = null
     this.markDirty()
@@ -1652,7 +1813,8 @@ export class Engine {
 
   // Bricks per second the whole fleet can haul, lapping every plot.
   private fleetRate(): number {
-    const stops = [YARD_GATE_OUT, ...this.plots.map((p) => plotStop(p.id)), YARD_GATE_IN]
+    const y = this.trucks[0]?.home ?? 0
+    const stops = [yardGateOut(y), ...this.plots.map((p) => plotStop(p.id)), yardGateIn(y)]
     // Plus the drive through the yard: in, to the bay, and back out.
     let length = 20
     for (let i = 0; i < stops.length - 1; i++) {
@@ -1660,7 +1822,7 @@ export class Engine {
       length += routeLength(planRoute(from, stops[i + 1]), { x: from.x, z: from.line })
     }
     return this.trucks.reduce((rate, t) => {
-      const lap = length / stats.truckSpeed(t.speed) + this.plots.length * LOAD_SECONDS + stats.unloadSeconds(this.upgrades)
+      const lap = length / stats.truckSpeed(t.speed) + this.plots.length * LOAD_SECONDS + stats.unloadSeconds(this.yardU(t.home))
       return rate + stats.truckCargo(t.load) / lap
     }, 0)
   }
@@ -1820,6 +1982,7 @@ export class Engine {
     this.time += dt
     const u = this.upgrades
     if (this.yardBuild) this.checkYardBuild()
+    if (this.bridgeBuild) this.checkBridgeBuild()
     for (const site of this.plots) if (site.phase === 'demolishing') site.worked += dt
 
     this.rebalanceCrew()
@@ -2064,15 +2227,13 @@ export class Engine {
 
   private lastDeparture = -Infinity
 
-  // Builds the route: out of the yard by the OUT gate if it's inside, along
-  // the roads, and in by the IN gate to the bay (and on to a parking bay).
-  // The dock with the shortest line (trucks already heading to or using it).
-  private pickDock(truck: Truck): number {
-    const n = stats.docks(this.upgrades)
+  // The dock at yard `y` with the shortest line (trucks heading to or using it).
+  private pickDock(truck: Truck, y: number): number {
+    const n = stats.docks(this.yardU(y))
     let best = 0
     let bestLine = Infinity
     for (let k = 0; k < n; k++) {
-      const line = this.trucks.filter((t) => t !== truck && t.dest.kind === 'yard' && t.dock === k).length
+      const line = this.trucks.filter((t) => t !== truck && t.dest.kind === 'yard' && t.yard === y && t.dock === k).length
       if (line < bestLine) {
         best = k
         bestLine = line
@@ -2081,33 +2242,43 @@ export class Engine {
     return best
   }
 
+  // Builds the route: out of the yard it's in by the OUT gate (unless it's
+  // staying in that yard), along the roads and over bridges, and in by the
+  // IN gate of the yard it's going to — to a dock, or on to a parking bay
+  // (or the kerb, if its home yard is full).
   private driveTo(truck: Truck, dest: Truck['dest']) {
     const path: Point[] = []
-    if (dest.kind === 'yard') truck.dock = this.pickDock(truck)
+    const target = dest.kind === 'yard' ? this.unloadYard(truck) : dest.kind === 'park' ? truck.home : -1
     let from: RoadSpot | null = truck.inYard ? null : truck.at
     const kerb = this.kerbIndex(truck)
+    const rank = this.parkRank(truck)
     if (truck.inYard) {
+      const cur = truck.yard
       // Back-row bays reach the bay line by the side lane first.
-      const out = truck.inYard === 'parked' ? unparkPath(truck.id) : []
-      if (dest.kind === 'plot' || (dest.kind === 'park' && kerb !== null)) {
-        path.push(...out, ...yardExitPath(out.length ? out[out.length - 1] : { x: truck.x, z: truck.z }))
-        from = YARD_GATE_OUT
+      const out = truck.inYard === 'parked' ? unparkPath(cur, rank) : []
+      const staysIn = target === cur && (dest.kind === 'yard' || (dest.kind === 'park' && kerb === null))
+      if (!staysIn) {
+        path.push(...out, ...yardExitPath(cur, out.length ? out[out.length - 1] : { x: truck.x, z: truck.z }))
+        from = yardGateOut(cur)
       } else if (dest.kind === 'park') {
-        if (truck.inYard === 'bay') path.push(...parkPath(truck.id))
+        if (truck.inYard === 'bay') path.push(...parkPath(cur, rank))
       } else {
-        path.push(...out, dockPoint(truck.dock))
+        truck.dock = this.pickDock(truck, cur)
+        path.push(...out, dockPoint(cur, truck.dock))
       }
     }
     if (from) {
       if (dest.kind === 'plot') path.push(...planRoute(from, plotStop(dest.plot)))
       else if (dest.kind === 'park' && kerb !== null) {
-        const spot = kerbSpot(kerb)
+        const spot = kerbSpot(truck.home, kerb)
         path.push(...planRoute(from, spot), ...kerbPath(spot))
       } else {
-        path.push(...planRoute(from, YARD_GATE_IN), ...yardEnterPath(dest.kind === 'yard' ? truck.dock : 0))
-        if (dest.kind === 'park') path.push(...parkPath(truck.id))
+        if (dest.kind === 'yard') truck.dock = this.pickDock(truck, target)
+        path.push(...planRoute(from, yardGateIn(target)), ...yardEnterPath(target, dest.kind === 'yard' ? truck.dock : 0))
+        if (dest.kind === 'park') path.push(...parkPath(target, rank))
       }
     }
+    if (target >= 0) truck.yard = target
     truck.path = path
     truck.dest = dest
     truck.state = 'driving'
@@ -2166,7 +2337,7 @@ export class Engine {
         case 'unloading':
           truck.timer -= dt
           if (truck.timer <= 0) {
-            this.pay(truck.cargo, truck.cargoValue * (1 + stats.priceBonus(this.upgrades)))
+            this.pay(truck.cargo, truck.cargoValue * (1 + stats.priceBonus(this.yardU(truck.yard))))
             truck.cargo = 0
             truck.cargoValue = 0
             if (truck.lap >= this.plots.length) truck.lap = 0
@@ -2236,13 +2407,13 @@ export class Engine {
     } else if (truck.dest.kind === 'yard') {
       truck.inYard = 'bay'
       truck.state = 'unloading'
-      truck.timer = stats.unloadSeconds(this.upgrades)
+      truck.timer = stats.unloadSeconds(this.yardU(truck.yard))
     } else {
       const kerb = this.kerbIndex(truck)
       if (kerb === null) truck.inYard = 'parked'
       else {
         truck.inYard = null
-        truck.at = kerbSpot(kerb)
+        truck.at = kerbSpot(truck.home, kerb)
       }
       truck.state = 'parked'
     }
@@ -2301,6 +2472,7 @@ export class Engine {
         })),
         trucks: this.trucks.map((t) => ({ id: t.id, load: t.load, speed: t.speed, cargo: t.cargo, state: t.state })),
         crewAuto: this.crewPlan === null,
+        crewMode: this.crewMode(),
         incomePerMinute: Math.round((earned / span) * 60),
         offlineEarnings: this.offlineEarnings,
         sitesCleared: this.sitesCleared,
@@ -2311,8 +2483,18 @@ export class Engine {
         username: this.username,
         synced: this.synced,
         ban: this.ban,
+        islands: ISLANDS.map((s) => ({ id: s.id, open: this.islandOpen(s.id), yard: this.yardLevels[s.index] })),
+        truckCapacity: this.truckCapacity(),
+        bridgeBuild: this.bridgeBuild
+          ? {
+              to: this.bridgeBuild.to,
+              secondsLeft: Math.max(0, Math.ceil((this.bridgeBuild.endsAt - Date.now()) / 1000)),
+              totalSeconds: (ISLANDS.find((s) => s.id === this.bridgeBuild!.to)?.unlock?.buildMinutes ?? 0) * 60,
+            }
+          : null,
         yardBuild: this.yardBuild
           ? {
+              yard: this.yardBuild.yard,
               toSize: this.yardBuild.level + 1,
               secondsLeft: Math.max(0, Math.ceil((this.yardBuild.endsAt - Date.now()) / 1000)),
               totalSeconds: yardBuildSeconds(this.yardBuild.level + 1),

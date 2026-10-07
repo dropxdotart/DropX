@@ -1,6 +1,7 @@
 'use client'
 
 import { useMemo, useRef, useState } from 'react'
+import { ISLANDS, type IslandId } from '@/lib/game/islands'
 import dynamic from 'next/dynamic'
 import { useRouter } from 'next/navigation'
 import { Eraser, Loader2, RotateCcw, Trash2, Undo2 } from 'lucide-react'
@@ -161,6 +162,7 @@ export default function BuildingEditor({ initial }: { initial: CustomBuilding | 
   const [name, setName] = useState(initial?.name ?? '')
   const [emoji, setEmoji] = useState(initial?.emoji ?? '🏢')
   const [level, setLevel] = useState(initial?.required_level ?? 5)
+  const [island, setIsland] = useState<IslandId>(initial?.island ?? 'city')
   const [auto, setAuto] = useState(!initial)
   const [manual, setManual] = useState({
     contractCost: initial?.contract_cost ?? 0,
@@ -257,6 +259,7 @@ export default function BuildingEditor({ initial }: { initial: CustomBuilding | 
         emoji,
         shape: { size, data: encodeCells(cells) },
         params: edited ? null : params,
+        island,
         requiredLevel: Math.round(level),
         contractCost: pricing.contractCost,
         brickValue: pricing.brickValue,
@@ -429,6 +432,14 @@ export default function BuildingEditor({ initial }: { initial: CustomBuilding | 
               Emoji
               <Input value={emoji} onChange={(e) => setEmoji(e.target.value)} className="text-center text-lg" maxLength={8} />
             </label>
+          </div>
+          <div className="space-y-1 text-xs text-muted-foreground">
+            Island (where players can build it)
+            <Segmented<IslandId>
+              value={island}
+              onChange={setIsland}
+              options={ISLANDS.map((s) => ({ value: s.id, label: `${s.emoji} ${s.id === 'houses' ? 'Houses' : s.id === 'city' ? 'City' : 'Industrial'}` }))}
+            />
           </div>
           <label className="block space-y-1 text-xs text-muted-foreground">
             Unlock level

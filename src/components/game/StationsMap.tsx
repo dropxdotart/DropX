@@ -2,7 +2,9 @@
 
 import { ChevronRight, X } from 'lucide-react'
 import { type Snapshot } from '@/lib/game/engine'
-import { STATIONS, dumpstersAffordable, fleetAffordable, upgradeReady, tierFor, type StationId } from '@/lib/game/stations'
+import { PLOT_SLOTS, islandIndex } from '@/lib/game/plots'
+import { ISLANDS } from '@/lib/game/islands'
+import { STATIONS, dumpstersAffordable, fleetAffordable, upgradeReady, yardUpgrades, tierFor, type StationId } from '@/lib/game/stations'
 
 // The Upgrades button's overview: every upgradable thing on the site.
 // Picking one closes this and flies the camera over to it with its panel.
@@ -32,14 +34,16 @@ export default function StationsMap({
         </div>
         <div className="space-y-2">
           {STATIONS.map((s) => {
-            const level = s.level(snap.upgrades)
+            // The yard listed is the one on this plot's island.
+            const yard = islandIndex(PLOT_SLOTS[plot]?.island ?? 'houses')
+            const level = s.level(s.id === 'yard' ? yardUpgrades(snap, yard) : snap.upgrades)
             const here = snap.plots[plot] ?? snap.plots[0]
             const ready =
               s.id === 'truck'
                 ? fleetAffordable(snap)
                 : s.id === 'dumpster'
                   ? dumpstersAffordable(here, snap.scrap)
-                  : s.upgrades.some((k) => upgradeReady(k, snap))
+                  : s.upgrades.some((k) => upgradeReady(k, snap, yard))
             // Trucks each have their own level, so show the fleet size.
             const subtitle =
               s.id === 'truck'
@@ -55,7 +59,7 @@ export default function StationsMap({
               >
                 <span className="flex h-12 w-12 items-center justify-center rounded-xl bg-white text-2xl">{s.emoji}</span>
                 <span className="min-w-0 flex-1">
-                  <span className="block font-display text-base leading-tight text-[#1d3a6e]">{s.name}</span>
+                  <span className="block font-display text-base leading-tight text-[#1d3a6e]">{s.id === 'yard' ? ISLANDS[yard].yard.name : s.name}</span>
                   <span className="block text-xs text-[#5b6f93]">{subtitle}</span>
                 </span>
                 {ready && (

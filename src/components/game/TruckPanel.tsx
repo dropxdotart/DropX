@@ -70,7 +70,7 @@ export default function TruckPanel({
     },
   ]
   const fleetCost = upgradeCost('fleet', snap.upgrades.fleet)
-  const yardFull = upgradeLock('fleet', snap.upgrades, snap.level) !== null
+  const yardFull = upgradeLock('fleet', snap.upgrades, snap.level, snap.truckCapacity) !== null
 
   return (
     <div className="pointer-events-auto fixed inset-x-0 bottom-0 z-40 flex justify-center">
@@ -146,7 +146,7 @@ export default function TruckPanel({
               <div className="min-w-0">
                 <p className="font-display text-base leading-tight text-[#1d3a6e]">Yard full</p>
                 <p className="text-xs leading-tight text-[#5b6f93]">
-                  {snap.trucks.length} of {stats.yardCapacity(snap.upgrades)} bays used · expand the Brick Yard to park more trucks
+                  {snap.trucks.length} of {snap.truckCapacity} bays used · expand a yard to park more trucks
                 </p>
               </div>
               <button

@@ -475,6 +475,138 @@ const BLUEPRINTS: Blueprint[] = [
       return null
     },
   },
+  // ── Industrial island (2026-10-02) ───────────────────────────────────
+  // 12 — Factory: a long brick works with a sawtooth roof of glass north
+  // lights, loading docks with roller doors, a tall brick chimney and a
+  // water tower on the roof.
+  {
+    size: [34, 40, 28],
+    voxel: (x, y, z) => {
+      // Chimney at the back-right corner.
+      if (Math.hypot(x - 29.5, z - 23.5) <= 1.8 && y <= 39) {
+        if (Math.hypot(x - 29.5, z - 23.5) <= 0.7 && y > 2) return null
+        return y >= 37 ? 'black' : y % 6 === 0 ? 'trim' : 'brickDark'
+      }
+      // Water tower on legs on the roof.
+      if (y >= 16 && y <= 30) {
+        const legs = [[5, 18], [9, 18], [5, 22], [9, 22]].some(([lx, lz]) => x === lx && z === lz) && y <= 23
+        if (legs) return 'steelDark'
+        if (y >= 24 && Math.hypot(x - 7, z - 20) <= 3.2) return y === 30 ? 'roofDark' : y % 2 ? 'wood' : 'woodDark'
+      }
+      if (y === 0) return between(x, 0, 33) && between(z, 0, 27) ? 'concreteDark' : null
+      if (!between(x, 1, 32) || !between(z, 3, 26)) {
+        // Loading docks out front.
+        if (z <= 2 && y <= 2 && x % 7 >= 2 && x % 7 <= 5) return y === 2 ? 'yellow' : 'concrete'
+        return null
+      }
+      const wallTop = 12
+      if (y < wallTop) {
+        const front = z === 3
+        if (front && y <= 6 && x % 7 >= 2 && x % 7 <= 5) return y === 6 ? 'yellow' : y % 2 ? 'steel' : 'steelDark' // roller doors
+        if ((front || x === 32) && y >= 8 && y <= 10 && (front ? x : z) % 3 !== 0) return 'glassDark'
+        if (y === 7 || y === 11) return 'trim'
+        return (x + y) % 6 === 0 ? 'brickLight' : y % 2 ? 'brick' : 'brickDark'
+      }
+      // Sawtooth roof: rows of steep glass faces toward the front.
+      const k = (z - 3) % 6
+      const h = wallTop + (5 - k)
+      if (y > h) return null
+      return k === 5 || y === h ? 'roofDark' : k === 0 ? 'glass' : 'roof'
+    },
+  },
+  // 13 — Power plant: two hyperbolic cooling towers, the turbine hall and
+  // a tall red-and-white chimney.
+  {
+    size: [36, 64, 32],
+    voxel: (x, y, z) => {
+      if (y === 0) return 'concreteDark'
+      // Chimney.
+      const cr = Math.hypot(x - 31.5, z - 4.5)
+      if (cr <= 1.6 && y <= 63) {
+        if (cr <= 0.6) return null
+        return Math.floor(y / 6) % 2 ? 'red' : 'white'
+      }
+      // Cooling towers: waisted shells, open at the top.
+      for (const [cx, cz] of [[9.5, 20.5], [24.5, 22.5]] as [number, number][]) {
+        const r = Math.hypot(x - cx, z - cz)
+        if (y > 36) continue
+        const t = y / 36
+        const radius = 8.6 - 4.2 * Math.sin(t * Math.PI * 0.85) + (t > 0.85 ? (t - 0.85) * 6 : 0)
+        if (r <= radius && r > radius - 1.2) return y <= 2 ? 'concreteDark' : y % 9 === 0 ? 'concrete' : 'white'
+      }
+      // Turbine hall in front.
+      if (between(x, 2, 28) && between(z, 1, 9) && y <= 14) {
+        if (y === 14) return 'roofDark'
+        if ((z === 1 || x === 28) && y >= 4 && y <= 11 && (z === 1 ? x : z) % 3 !== 0) return 'glassDark'
+        return y % 5 === 0 ? 'trim' : 'concrete'
+      }
+      // Transformer yard.
+      if (between(x, 29, 34) && between(z, 10, 16) && y <= 3) return (x + z) % 2 ? 'steel' : 'yellow'
+      return null
+    },
+  },
+  // 14 — Refinery: storage tanks, tall distillation columns with platforms,
+  // a pipe rack and a flare stack with a flame on top.
+  {
+    size: [36, 56, 30],
+    voxel: (x, y, z) => {
+      if (y === 0) return (x + z) % 7 === 0 ? 'yellow' : 'concreteDark'
+      // Storage tanks.
+      for (const [cx, cz, r, h] of [[7, 22, 5, 9], [18, 23, 4.5, 8], [28, 22, 5, 10]] as [number, number, number, number][]) {
+        const d = Math.hypot(x - cx, z - cz)
+        if (d <= r && y <= h) return y === h ? 'steel' : y % 4 === 0 ? 'steelDark' : 'white'
+      }
+      // Distillation columns with platforms every 8.
+      for (const [cx, cz, h] of [[8, 8, 44], [14, 7, 50], [20, 9, 38]] as [number, number, number][]) {
+        const d = Math.hypot(x - cx, z - cz)
+        if (d <= 1.6 && y <= h) return y % 8 === 0 ? 'yellow' : 'steel'
+        if (y % 8 === 0 && y < h && d <= 2.8 && d > 1.6) return 'steelDark'
+      }
+      // Pipe rack between the columns and the tanks.
+      if (between(z, 14, 15) && between(x, 3, 32) && (y === 6 || y === 9)) return y === 6 ? 'orange' : 'blue'
+      if (between(z, 14, 15) && x % 6 === 3 && y <= 9) return 'steelDark'
+      // Flare stack.
+      const fd = Math.hypot(x - 31, z - 6)
+      if (fd <= 0.8 && y <= 52) return 'steelDark'
+      if (fd <= 1.4 && y > 52) return y > 54 ? 'yellow' : 'orange'
+      // Control building.
+      if (between(x, 25, 34) && between(z, 1, 9) && y <= 6) return y === 6 ? 'roofDark' : y === 3 && (x + z) % 2 ? 'glass' : 'concrete'
+      return null
+    },
+  },
+  // 15 — Steel mill: twin blast furnaces with stoves, a long rolling-mill
+  // shed, a sloped conveyor and ore piles.
+  {
+    size: [36, 70, 32],
+    voxel: (x, y, z) => {
+      if (y === 0) return 'concreteDark'
+      // Blast furnaces: tapering towers with a glowing band.
+      for (const cx of [8, 20]) {
+        const d = Math.hypot(x - cx, z - 22)
+        const r = y < 30 ? 4.2 - y * 0.05 : 2.6
+        if (d <= r && y <= 60) {
+          if (y >= 6 && y <= 7) return 'orange'
+          return y > 56 ? 'black' : y % 5 === 0 ? 'steel' : 'steelDark'
+        }
+        // Hot stoves next to each furnace.
+        const sd = Math.hypot(x - (cx + 6), z - 26)
+        if (sd <= 1.8 && y <= 34) return y > 31 ? 'roofDark' : 'concrete'
+      }
+      // Rolling-mill shed along the front.
+      if (between(x, 1, 34) && between(z, 1, 11) && y <= 13) {
+        if (y === 13) return z % 3 === 0 ? 'roof' : 'roofDark'
+        if (z === 1 && y <= 5 && x % 8 >= 3 && x % 8 <= 5) return 'black'
+        return y % 4 === 0 ? 'blue' : 'steel'
+      }
+      // Conveyor up to the furnace tops.
+      const c = (x - 26) * 1.9
+      if (between(x, 26, 34) && between(z, 18, 19) && Math.abs(y - (60 - c)) <= 0.6) return 'yellow'
+      // Ore piles.
+      const od = Math.hypot(x - 31, z - 27)
+      if (y <= 5 - od * 1.1) return 'brickDark'
+      return null
+    },
+  },
 ]
 
 export const BLUEPRINT_COUNT = BLUEPRINTS.length

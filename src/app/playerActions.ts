@@ -189,7 +189,7 @@ export async function redeemCode(id: string, code: string): Promise<{ ok: true; 
 export async function getCustomBuildings(): Promise<import('@/lib/game/buildings').BuildingDef[]> {
   const { data } = await createAdminClient()
     .from('custom_buildings')
-    .select('id, name, emoji, shape, required_level, contract_cost, brick_value, bonus, active, starts_at, ends_at')
+    .select('id, name, emoji, island, shape, required_level, contract_cost, brick_value, bonus, active, starts_at, ends_at')
   const now = Date.now()
   return (data ?? []).map((b) => ({
     id: `custom-${b.id}`,
@@ -198,6 +198,7 @@ export async function getCustomBuildings(): Promise<import('@/lib/game/buildings
     blueprint: 0,
     shape: b.shape,
     requiredLevel: b.required_level,
+    island: b.island,
     contractCost: b.contract_cost,
     brickValue: b.brick_value,
     bonus: b.bonus,

@@ -1,19 +1,13 @@
-import { ROAD_Z, TRUCK_STOP } from './layout'
-import { BLOCK, MAP_BLOCKS, PLOT_SLOTS, YARD_BLOCK } from './plots'
-import { LOT_HALF } from './layout'
+import { LOT_HALF, ROAD_Z, TRUCK_STOP } from './layout'
+import { ISLANDS, roadPath, type Point } from './islands'
+import { PLOT_SLOTS } from './plots'
 
-// Truck routing on the city's road grid. Every road runs along a line just
-// past a block's front (constant z) or right side (constant x). Vehicles
-// keep right: heading +x uses the lane nearer the block (−0.6), heading −x
-// the far one (+0.65); on cross streets +z is at −0.65 and −z at +0.65.
+export type { Point } from './islands'
 
-// Cross streets (constant x) run the whole map; streets along x (constant
-// z) stop at the waterfront, so there's none past the last row of blocks.
-export const ROAD_LINES: number[] = []
-for (let k = -MAP_BLOCKS - 1; k <= MAP_BLOCKS; k++) ROAD_LINES.push(ROAD_Z + k * BLOCK)
-export const ROAD_LINES_Z = ROAD_LINES.filter((z) => z > YARD_BLOCK.z - BLOCK / 2)
+// Truck routing over the islands' roads (see islands.ts). Vehicles keep
+// right: heading +x uses the lane nearer the block (−0.6), heading −x the
+// far one (+0.65); along z, +z is at −0.65 and −z at +0.65.
 
-export type Point = { x: number; z: number }
 // A spot on a front road: `line` is the road's z, `x` how far along.
 export type RoadSpot = { x: number; line: number }
 
@@ -22,50 +16,57 @@ export function plotStop(plot: number): RoadSpot {
   return { x: slot.x + TRUCK_STOP.x, line: slot.z + ROAD_Z }
 }
 
-// The Brick Yard is fenced, with an IN gate and an OUT gate on its front
-// (road) side. Trucks turn in at IN, drive to the unload bay, then loop
-// across and leave by OUT — one way, so they never meet head-on. Trucks
-// with nothing to do park in a row behind the bay. Points are world space.
-const YARD_FRONT = YARD_BLOCK.z + LOT_HALF // the fence line facing the road
-export const YARD_GATE_IN: RoadSpot = { x: YARD_BLOCK.x - 3, line: YARD_BLOCK.z + ROAD_Z }
-export const YARD_GATE_OUT: RoadSpot = { x: YARD_BLOCK.x + 3, line: YARD_BLOCK.z + ROAD_Z }
-export const YARD_BAY: Point = { x: YARD_BLOCK.x - 3, z: YARD_FRONT - 4.5 }
+// ── Yards ────────────────────────────────────────────────────────────────
+//
+// Every island has a fenced yard on its north shore, all laid out the same
+// (local to the yard's block, +z facing the road): an IN gate (x −3) and an
+// OUT gate (x +3), unloading docks along the bay line, and parking bays.
+// Trucks turn in at IN, unload at a dock, loop across and leave by OUT —
+// one way, so they never meet head-on. `y` is the island's index.
 
-// Unloading docks along the bay line (dock 0 is YARD_BAY, with the raised
-// hopper; more are bought in the yard). Local x positions.
+const yardBlock = (y: number) => ISLANDS[y].yard
+const yardFront = (y: number) => yardBlock(y).z + LOT_HALF // fence line facing the road
+
+export const yardGateIn = (y: number): RoadSpot => ({ x: yardBlock(y).x - 3, line: yardBlock(y).z + ROAD_Z })
+export const yardGateOut = (y: number): RoadSpot => ({ x: yardBlock(y).x + 3, line: yardBlock(y).z + ROAD_Z })
+const bayZ = (y: number) => yardFront(y) - 4.5
+
+// Unloading docks along the bay line (dock 0 has the raised hopper; more
+// are bought in the yard). Local x positions.
 export const MAX_DOCKS = 4
 const DOCK_X = [-3, -0.4, 2.2, 5.4]
 export const dockLocalX = (k: number) => DOCK_X[Math.max(0, Math.min(MAX_DOCKS - 1, k))]
-export function dockPoint(k: number): Point {
-  return { x: YARD_BLOCK.x + dockLocalX(k), z: YARD_BAY.z }
+export function dockPoint(y: number, k: number): Point {
+  return { x: yardBlock(y).x + dockLocalX(k), z: bayZ(y) }
 }
 
 // From the IN gate on the road to an unloading dock: straight down to the
 // first; to the others, along the drive just inside the front fence.
-export function yardEnterPath(dock = 0): Point[] {
-  const p = dockPoint(dock)
-  const inside = YARD_FRONT - 1
-  if (dock === 0) return [{ x: YARD_GATE_IN.x, z: YARD_FRONT + 0.8 }, { x: YARD_GATE_IN.x, z: inside }, p]
-  return [{ x: YARD_GATE_IN.x, z: YARD_FRONT + 0.8 }, { x: YARD_GATE_IN.x, z: inside }, { x: p.x, z: inside }, p]
+export function yardEnterPath(y: number, dock = 0): Point[] {
+  const p = dockPoint(y, dock)
+  const gx = yardGateIn(y).x
+  const inside = yardFront(y) - 1
+  if (dock === 0) return [{ x: gx, z: yardFront(y) + 0.8 }, { x: gx, z: inside }, p]
+  return [{ x: gx, z: yardFront(y) + 0.8 }, { x: gx, z: inside }, { x: p.x, z: inside }, p]
 }
 
-// From the bay (or a parking bay) out through the OUT gate onto the road.
-export function yardExitPath(from: Point): Point[] {
+// From a dock (or a parking bay) out through the OUT gate onto the road.
+export function yardExitPath(y: number, from: Point): Point[] {
+  const gx = yardGateOut(y).x
   return [
-    { x: from.x, z: YARD_BAY.z },
-    { x: YARD_GATE_OUT.x, z: YARD_BAY.z },
-    { x: YARD_GATE_OUT.x, z: YARD_FRONT - 1 },
-    { x: YARD_GATE_OUT.x, z: YARD_FRONT + 0.8 },
+    { x: from.x, z: bayZ(y) },
+    { x: gx, z: bayZ(y) },
+    { x: gx, z: yardFront(y) - 1 },
+    { x: gx, z: yardFront(y) + 0.8 },
   ]
 }
 
 // ── Yard size and parking ──────────────────────────────────────────────
 //
-// The yard starts as a small fenced lot with 2 parking bays. Each
-// expansion adds 2 bays: the fence first pushes out sideways until the yard
-// fills its block, then it grows back over the beach onto a pier in the
-// water, a row of bays at a time. Bay positions never move as it grows.
-// Local coordinates (relative to YARD_BLOCK): +z faces the road.
+// A yard starts as a small fenced lot with 2 parking bays. Each expansion
+// adds 2 bays: the fence first pushes out sideways until the yard fills its
+// block, then it grows back over the water onto a pier, a row of bays at a
+// time. Bay positions never move as it grows.
 
 export const YARD_MAX_SIZE = 10
 export const yardCapacity = (size: number) => 2 * size
@@ -75,7 +76,7 @@ export function yardHalfWidth(size: number) {
   return size <= 1 ? 6.5 : size === 2 ? 8 : 9.3
 }
 
-const BAY_LINE_Z = 3.5 // YARD_BAY's z, local
+const BAY_LINE_Z = 3.5 // the bay line's z, local
 const LANE_X = -7.6 // the lane down the left side to the back rows
 const FRONT_BAYS: Point[] = [
   { x: -5.4, z: -0.5 },
@@ -88,7 +89,7 @@ const FRONT_BAYS: Point[] = [
 const BACK_ROW_X = [-4.4, -1.8, 0.8, 3.4, 6]
 const backRowZ = (row: number) => -11 - 4.6 * row
 
-// A bay's spot, local to the yard.
+// A bay's spot, local to its yard.
 export function bayLocal(i: number): Point {
   if (i < FRONT_BAYS.length) return FRONT_BAYS[i]
   const k = i - FRONT_BAYS.length
@@ -104,39 +105,38 @@ export function yardBackZ(size: number) {
   return backRowZ(rows - 1) - 1.8
 }
 
-const world = (p: Point): Point => ({ x: YARD_BLOCK.x + p.x, z: YARD_BLOCK.z + p.z })
+const world = (y: number, p: Point): Point => ({ x: yardBlock(y).x + p.x, z: yardBlock(y).z + p.z })
 
-export function parkingSpot(i: number): Point {
-  return world(bayLocal(i))
+export function parkingSpot(y: number, i: number): Point {
+  return world(y, bayLocal(i))
 }
 
 // The aisle in front of a back-row bay, and the way to it from the bay line.
-function backRowAccess(i: number): Point[] {
+function backRowAccess(y: number, i: number): Point[] {
   const b = bayLocal(i)
   const aisle = b.z + 2.2
-  return [world({ x: LANE_X, z: BAY_LINE_Z }), world({ x: LANE_X, z: aisle }), world({ x: b.x, z: aisle })]
+  return [world(y, { x: LANE_X, z: BAY_LINE_Z }), world(y, { x: LANE_X, z: aisle }), world(y, { x: b.x, z: aisle })]
 }
 
-// From the unload bay into parking bay i.
-export function parkPath(i: number): Point[] {
-  const spot = parkingSpot(i)
-  if (i < FRONT_BAYS.length) return [{ x: spot.x, z: YARD_BAY.z }, spot]
-  return [...backRowAccess(i), spot]
+// From the dock line into parking bay i.
+export function parkPath(y: number, i: number): Point[] {
+  const spot = parkingSpot(y, i)
+  if (i < FRONT_BAYS.length) return [{ x: spot.x, z: bayZ(y) }, spot]
+  return [...backRowAccess(y, i), spot]
 }
 
-// From parking bay i back out to the bay line (then yardExitPath or the bay).
-export function unparkPath(i: number): Point[] {
+// From parking bay i back out to the dock line (then yardExitPath or a dock).
+export function unparkPath(y: number, i: number): Point[] {
   if (i < FRONT_BAYS.length) return []
-  return backRowAccess(i).reverse()
+  return backRowAccess(y, i).reverse()
 }
 
-// Trucks the yard has no room for (an admin can gift more than fit) park
-// at the kerb on the road out front, alternating sides of the gates and
-// skipping the crossroads.
-export function kerbSpot(k: number): RoadSpot {
+// Trucks a yard has no bay for (an admin can gift more than fit) park at
+// the kerb on the road out front, alternating sides of the gates.
+export function kerbSpot(y: number, k: number): RoadSpot {
   const m = Math.floor(k / 2)
   const off = m < 2 ? 6 + 2.6 * m : 15 + 3 * (m - 2)
-  return { x: YARD_BLOCK.x + (k % 2 === 0 ? off : -off), line: YARD_BLOCK.z + ROAD_Z }
+  return { x: yardBlock(y).x + (k % 2 === 0 ? off : -off), line: yardBlock(y).z + ROAD_Z }
 }
 
 export const KERB_INSET = 1.9 // from the road's centre line toward the yard
@@ -156,25 +156,10 @@ function laneOffset(from: Point, to: Point): Point {
   return { x: dx, z: 0 }
 }
 
-// Waypoints from one front-road spot to another, in driving lanes: along
-// the current road to a cross street, along that, then along the target
-// road. The cross street is the one that keeps the trip shortest.
+// Waypoints from one front-road spot to another, in driving lanes, along
+// the shortest way over the roads (and bridges).
 export function planRoute(from: RoadSpot, to: RoadSpot): Point[] {
-  const corners: Point[] = [{ x: from.x, z: from.line }]
-  if (Math.abs(from.line - to.line) > 0.01) {
-    let cross = ROAD_LINES[0]
-    let best = Infinity
-    for (const v of ROAD_LINES) {
-      const cost = Math.abs(from.x - v) + Math.abs(v - to.x) + Math.abs(from.x - v) * 0.001
-      if (cost < best) {
-        best = cost
-        cross = v
-      }
-    }
-    corners.push({ x: cross, z: from.line }, { x: cross, z: to.line })
-  }
-  corners.push({ x: to.x, z: to.line })
-
+  const corners = roadPath({ x: from.x, z: from.line }, { x: to.x, z: to.line })
   const out: Point[] = []
   for (let i = 0; i < corners.length - 1; i++) {
     const a = corners[i]

@@ -1,3 +1,4 @@
+import type { IslandId } from './islands'
 import { getBlueprintSize, getBricks, type Brick } from './blueprints'
 import { bricksFromCells, decodeCells, type Shape, type ShapeSize } from './shapes'
 
@@ -20,16 +21,22 @@ export type BuildingDef = {
   endsAt?: string // a limited-time building's last moment to start it
   toughness?: number // bricks take this many times longer to work loose (default 1)
   harbour?: boolean // too big for a city plot: only on a harbour lot
+  island?: IslandId // which island it's built on (default: the City)
 }
 
 export const BUILDINGS: BuildingDef[] = [
-  { id: 'shed', name: 'Garden Shed', blueprint: 0, requiredLevel: 1, contractCost: 0, brickValue: 1, bonus: 50 },
-  { id: 'house', name: 'Old House', blueprint: 1, requiredLevel: 3, contractCost: 250, brickValue: 2, bonus: 400 },
+  { id: 'shed', island: 'houses', name: 'Garden Shed', blueprint: 0, requiredLevel: 1, contractCost: 0, brickValue: 1, bonus: 50 },
+  { id: 'house', island: 'houses', name: 'Old House', blueprint: 1, requiredLevel: 3, contractCost: 250, brickValue: 2, bonus: 400 },
   { id: 'warehouse', name: 'Warehouse', blueprint: 2, requiredLevel: 5, contractCost: 2_500, brickValue: 5, bonus: 3_000 },
   { id: 'tower', name: 'Office Tower', blueprint: 3, requiredLevel: 8, contractCost: 20_000, brickValue: 12, bonus: 25_000 },
   { id: 'mall', name: 'Shopping Mall', blueprint: 4, requiredLevel: 11, contractCost: 120_000, brickValue: 30, bonus: 150_000 },
   { id: 'stadium', name: 'Stadium', blueprint: 5, requiredLevel: 14, contractCost: 700_000, brickValue: 80, bonus: 900_000, toughness: 1.25, harbour: true },
   { id: 'ship', name: 'Cruise Ship', blueprint: 6, requiredLevel: 17, contractCost: 4_000_000, brickValue: 220, bonus: 5_000_000, toughness: 1.9, harbour: true },
+  // Industrial island
+  { id: 'factory', island: 'industrial', name: 'Factory', blueprint: 12, requiredLevel: 15, contractCost: 2_000_000, brickValue: 120, bonus: 2_500_000, toughness: 1.3 },
+  { id: 'power', island: 'industrial', name: 'Power Plant', blueprint: 13, requiredLevel: 17, contractCost: 6_000_000, brickValue: 260, bonus: 7_000_000, toughness: 1.5 },
+  { id: 'refinery', island: 'industrial', name: 'Refinery', blueprint: 14, requiredLevel: 19, contractCost: 18_000_000, brickValue: 500, bonus: 20_000_000, toughness: 1.7 },
+  { id: 'steel', island: 'industrial', name: 'Steel Mill', blueprint: 15, requiredLevel: 21, contractCost: 50_000_000, brickValue: 900, bonus: 60_000_000, toughness: 2 },
 ]
 
 // Admin-made buildings known to this game (from the server, the local

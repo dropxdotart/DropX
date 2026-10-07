@@ -6,8 +6,9 @@ import { Html, OrthographicCamera, useProgress } from '@react-three/drei'
 import * as THREE from 'three'
 import { getBuilding, sizeFor } from '@/lib/game/buildings'
 import { BRICK, DUMPSTER_SLOTS, LOT_HALF, stats, type Engine, type Snapshot } from '@/lib/game/engine'
-import { BLOCK, HARBOUR_X, MAP_BLOCKS, PLOT_SLOTS, YARD_BLOCK } from '@/lib/game/plots'
-import { STATIONS, dumpstersAffordable, fleetAffordable, upgradeReady, getStation, tierFor, truckLevel, type StationId } from '@/lib/game/stations'
+import { BLOCK, HARBOUR_X, PLOT_SLOTS } from '@/lib/game/plots'
+import { ISLANDS } from '@/lib/game/islands'
+import { STATIONS, dumpstersAffordable, fleetAffordable, upgradeReady, yardUpgrades, getStation, tierFor, truckLevel, type StationId } from '@/lib/game/stations'
 import { formatNumber } from '@/components/game/format'
 import Building from './Building'
 import Worker, { vestMaterial } from './Worker'
@@ -21,7 +22,9 @@ const CAMERA_DIR = new THREE.Vector3(1, 0.95, 1).normalize()
 // Screen-right and screen-up as directions on the ground, for drag-to-pan.
 const GROUND_RIGHT = new THREE.Vector3(1, 0, -1).normalize()
 const GROUND_FORWARD = new THREE.Vector3(-1, 0, -1).normalize()
-const PAN_LIMIT = MAP_BLOCKS * BLOCK
+// The camera can roam over every island (west: Houses; south: Industrial).
+const PAN_X = [-6.5 * BLOCK, HARBOUR_X + BLOCK / 2]
+const PAN_Z = [-2.5 * BLOCK, 6.5 * BLOCK]
 const DRAG_THRESHOLD = 8
 // How far pinch/wheel can zoom out (wider city view) and in.
 const MIN_ZOOM = 0.55
@@ -93,8 +96,9 @@ function CameraRig({
     if (followed) {
       target.set(followed.x, -1.5, followed.z)
     } else if (focus) {
-      // The yard and the truck depot sign sit on the Brick Yard's block.
-      const base = focus.id === 'yard' || focus.id === 'truck' ? YARD_BLOCK : PLOT_SLOTS[focus.plot]
+      // A yard and its truck depot sign sit on their island's yard block
+      // (for those, `plot` is the island's index).
+      const base = focus.id === 'yard' || focus.id === 'truck' ? (ISLANDS[focus.plot] ?? ISLANDS[0]).yard : PLOT_SLOTS[focus.plot]
       const p = focus.id === 'dumpster' ? DUMPSTER_SLOTS[focus.index ?? 0] : getStation(focus.id).position
       target.set(base.x + p.x, -1.5, base.z + p.z)
     } else {
@@ -301,8 +305,8 @@ export default function Scene({
     c.addScaledVector(GROUND_RIGHT, -dx / zoom)
     c.addScaledVector(GROUND_FORWARD, dy / (zoom * CAMERA_DIR.y))
     // The harbour district sticks out on the right.
-    c.x = THREE.MathUtils.clamp(c.x, -PAN_LIMIT, HARBOUR_X + BLOCK / 2)
-    c.z = THREE.MathUtils.clamp(c.z, -PAN_LIMIT, PAN_LIMIT)
+    c.x = THREE.MathUtils.clamp(c.x, PAN_X[0], PAN_X[1])
+    c.z = THREE.MathUtils.clamp(c.z, PAN_Z[0], PAN_Z[1])
   }
   const onPointerUp = (e: React.PointerEvent) => {
     pointers.current.delete(e.pointerId)
@@ -349,7 +353,11 @@ export default function Scene({
         />
 
         <Suspense fallback={null}>
-          <World ownedPlots={snap.plots.length} />
+          <World
+            ownedPlots={snap.plots.length}
+            openIslands={snap.islands.filter((i) => i.open).map((i) => i.id)}
+            bridgeBuilding={snap.bridgeBuild?.to ?? null}
+          />
           {engine.plots.map((site) => {
             const slot = PLOT_SLOTS[site.id]
             const select = (id: StationId) => onSelectStation(id, site.id)
@@ -380,11 +388,25 @@ export default function Scene({
               </group>
             )
           })}
-          <group position={[YARD_BLOCK.x, 0, YARD_BLOCK.z]}>
-            <BrickYard {...station.yard} size={stats.yardSize(snap.upgrades)} docks={stats.docks(snap.upgrades)} building={!!snap.yardBuild} onSelect={(id) => onSelectStation(id, 0)} />
-            {/* Truck upgrades live by the yard's parking bays */}
-            <TruckDepot size={stats.yardSize(snap.upgrades)} affordable={station.truck.affordable} onSelect={(id) => onSelectStation(id, 0)} />
-          </group>
+          {/* A yard on every open island */}
+          {ISLANDS.filter((s) => snap.islands[s.index]?.open).map((s) => {
+            const u = yardUpgrades(snap, s.index)
+            return (
+              <group key={s.id} position={[s.yard.x, 0, s.yard.z]}>
+                <BrickYard
+                  theme={s.yard.theme}
+                  tier={tierFor(getStation('yard').level(u))}
+                  affordable={getStation('yard').upgrades.some((k) => upgradeReady(k, snap, s.index))}
+                  size={stats.yardSize(u)}
+                  docks={stats.docks(u)}
+                  building={snap.yardBuild?.yard === s.index}
+                  onSelect={(id) => onSelectStation(id, s.index)}
+                />
+                {/* Truck upgrades live by the yard's parking bays */}
+                <TruckDepot size={stats.yardSize(u)} affordable={station.truck.affordable} onSelect={(id) => onSelectStation(id, s.index)} />
+              </group>
+            )
+          })}
           <Fleet engine={engine} tiers={snap.trucks.map((t) => tierFor(truckLevel(t)))} onSelect={onSelectTruck} />
           <PlotLabels snap={snap} onPlotAction={onPlotAction} />
           <SceneReady onReady={() => onLoadProgress(100)} />

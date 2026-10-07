@@ -1,49 +1,51 @@
-// The city is a grid of blocks with a road between every pair. Your plots
-// sit on blocks scattered around the map; every other block is filler
-// neighborhood. Coordinates are block centers in world units.
+// Plots: the lots a player can own and demolish on, spread over the islands
+// (see islands.ts). Coordinates are block centres in world units.
 
-export const BLOCK = 23
-export const MAP_BLOCKS = 2 // blocks drawn each way from home (a 5×5 city)
+import { BLOCK, HARBOUR_X, ISLANDS, type IslandId } from './islands'
+
+export { BLOCK, HARBOUR_X } from './islands'
 
 export type PlotSlot = {
   id: number
+  island: IslandId
   x: number
   z: number
   cost: number
   requiredLevel: number
-  harbour?: boolean // a big lot in the harbour district (for the biggest buildings)
+  harbour?: boolean // a big lot in the City's harbour (for the biggest buildings)
 }
 
-// The harbour district: big lots on the quay off the east edge of the city,
-// with open water around them so the biggest buildings have room.
-export const HARBOUR_X = (MAP_BLOCKS + 1) * BLOCK
-
-// Ordered by unlock. Diagonal neighbours first so new plots appear around
-// the map (left/right/behind/in front of home on screen), not in a row.
+// Plots are bought in this order — by unlock level, so each island's plots
+// come up as the player levels (a City or Industrial plot also needs that
+// island's bridge built first). The first is the home lot.
 export const PLOT_SLOTS: PlotSlot[] = [
-  { id: 0, x: 0, z: 0, cost: 0, requiredLevel: 1 },
-  { id: 1, x: BLOCK, z: -BLOCK, cost: 5_000, requiredLevel: 4 },
-  { id: 2, x: -BLOCK, z: BLOCK, cost: 60_000, requiredLevel: 7 },
-  { id: 3, x: -BLOCK, z: -BLOCK, cost: 500_000, requiredLevel: 10 },
-  { id: 4, x: BLOCK, z: BLOCK, cost: 4_000_000, requiredLevel: 13 },
-  { id: 5, x: (MAP_BLOCKS + 1) * BLOCK, z: 0, cost: 8_000_000, requiredLevel: 14, harbour: true },
-  { id: 6, x: (MAP_BLOCKS + 1) * BLOCK, z: -BLOCK, cost: 30_000_000, requiredLevel: 16, harbour: true },
-  { id: 7, x: (MAP_BLOCKS + 1) * BLOCK, z: BLOCK, cost: 100_000_000, requiredLevel: 18, harbour: true },
+  { id: 0, island: 'houses', x: -5 * BLOCK, z: 0, cost: 0, requiredLevel: 1 },
+  { id: 1, island: 'houses', x: -4 * BLOCK, z: BLOCK, cost: 500, requiredLevel: 2 },
+  { id: 2, island: 'houses', x: -6 * BLOCK, z: -BLOCK, cost: 2_000, requiredLevel: 3 },
+  { id: 3, island: 'houses', x: -6 * BLOCK, z: BLOCK, cost: 6_000, requiredLevel: 5 },
+  { id: 4, island: 'city', x: 0, z: 0, cost: 25_000, requiredLevel: 8 },
+  { id: 5, island: 'city', x: BLOCK, z: -BLOCK, cost: 60_000, requiredLevel: 9 },
+  { id: 6, island: 'city', x: -BLOCK, z: BLOCK, cost: 150_000, requiredLevel: 10 },
+  { id: 7, island: 'city', x: -BLOCK, z: -BLOCK, cost: 500_000, requiredLevel: 11 },
+  { id: 8, island: 'city', x: BLOCK, z: BLOCK, cost: 2_000_000, requiredLevel: 13 },
+  { id: 9, island: 'city', x: HARBOUR_X, z: 0, cost: 8_000_000, requiredLevel: 14, harbour: true },
+  { id: 10, island: 'industrial', x: -BLOCK, z: 5 * BLOCK, cost: 15_000_000, requiredLevel: 15 },
+  { id: 11, island: 'city', x: HARBOUR_X, z: -BLOCK, cost: 30_000_000, requiredLevel: 16, harbour: true },
+  { id: 12, island: 'industrial', x: BLOCK, z: 5 * BLOCK, cost: 40_000_000, requiredLevel: 17 },
+  { id: 13, island: 'city', x: HARBOUR_X, z: BLOCK, cost: 100_000_000, requiredLevel: 18, harbour: true },
+  { id: 14, island: 'industrial', x: 0, z: 6 * BLOCK, cost: 100_000_000, requiredLevel: 19 },
+  { id: 15, island: 'industrial', x: -BLOCK, z: 6 * BLOCK, cost: 250_000_000, requiredLevel: 21 },
 ]
 
 export function plotSlot(id: number): PlotSlot {
   return PLOT_SLOTS[id]
 }
 
-// The far edge of the map (behind everything, top-right on screen) is
-// water. SHORE_Z is where the quay meets it.
-export const SHORE_Z = -MAP_BLOCKS * BLOCK - BLOCK / 2 - 1.2
+export function islandIndex(id: IslandId): number {
+  return ISLANDS.findIndex((s) => s.id === id)
+}
 
-// The Brick Yard, where trucks unload and you get paid: on the waterfront
-// at the edge of the city, so trucks make a real trip across town.
-export const YARD_BLOCK = { x: 0, z: -MAP_BLOCKS * BLOCK }
-
-// Blocks that aren't filler neighbourhood: plots and the yard.
+// Blocks that aren't filler neighbourhood: plots and yards.
 export function isReservedBlock(x: number, z: number) {
-  return PLOT_SLOTS.some((p) => p.x === x && p.z === z) || (x === YARD_BLOCK.x && z === YARD_BLOCK.z)
+  return PLOT_SLOTS.some((p) => p.x === x && p.z === z) || ISLANDS.some((s) => s.yard.x === x && s.yard.z === z)
 }

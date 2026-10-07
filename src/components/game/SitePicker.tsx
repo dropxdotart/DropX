@@ -63,7 +63,9 @@ export default function SitePicker({
         )}
         {error && <p className="mb-2 rounded-xl bg-[#ffe3e3] p-2 text-center text-sm text-[#c23030]">{error}</p>}
         <div className="space-y-2">
-          {pickableBuildings().map((b) => {
+          {pickableBuildings()
+            .filter((b) => (b.island ?? 'city') === (PLOT_SLOTS[plot]?.island ?? 'houses'))
+            .map((b) => {
             const bricks = brickCount(b)
             const needsHarbour = !!b.harbour && !PLOT_SLOTS[plot]?.harbour
             const locked = snap.level < b.requiredLevel || needsHarbour
