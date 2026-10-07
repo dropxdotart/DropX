@@ -30,7 +30,7 @@ export type PlayerRow = {
 
 export type GrantRow = {
   id: number
-  kind: 'bricks' | 'set_bricks' | 'set_level' | 'boost' | 'upgrade' | 'reset' | 'restore'
+  kind: 'bricks' | 'set_bricks' | 'set_level' | 'boost' | 'upgrade' | 'reset' | 'restore' | 'rain'
   amount: number
   upgrade: string | null
   message: string | null
@@ -74,15 +74,17 @@ export async function sendGrant(
   grant: { kind: GrantRow['kind']; amount: number; upgrade: string | null; message: string }
 ): Promise<Result> {
   await requireAdminSession()
-  if (!['bricks', 'set_bricks', 'set_level', 'boost', 'upgrade'].includes(grant.kind)) return { ok: false, message: 'Pick what to send' }
+  if (!['bricks', 'set_bricks', 'set_level', 'boost', 'upgrade', 'rain'].includes(grant.kind)) return { ok: false, message: 'Pick what to send' }
   // Negative amounts take away (bricks, boost minutes, upgrades); a balance can't be set below 0.
   if (!Number.isFinite(grant.amount) || (grant.kind === 'set_bricks' ? grant.amount < 0 : grant.amount === 0))
     return { ok: false, message: 'Enter an amount' }
+  if (grant.kind === 'rain' && !(Number.isInteger(grant.amount) && grant.amount >= 1 && grant.amount <= 7 * 24 * 60))
+    return { ok: false, message: 'Rain lasts 1 minute to 7 days' }
   if (grant.kind === 'set_level' && !(Number.isInteger(grant.amount) && grant.amount >= 1 && grant.amount <= 10000))
     return { ok: false, message: 'Levels are whole numbers from 1' }
   if (grant.kind === 'upgrade' && !UPGRADES.includes(grant.upgrade ?? '')) return { ok: false, message: 'Pick which upgrade' }
   if (grant.kind === 'upgrade' && !Number.isInteger(grant.amount)) return { ok: false, message: 'Upgrades are whole numbers' }
-  await backup(playerId, `Before: ${rewardText(grant.kind, grant.amount, grant.upgrade)}`)
+  if (grant.kind !== 'rain') await backup(playerId, `Before: ${rewardText(grant.kind, grant.amount, grant.upgrade)}`)
   const { error } = await createAdminClient()
     .from('player_grants')
     .insert({

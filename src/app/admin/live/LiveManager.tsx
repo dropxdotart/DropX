@@ -12,6 +12,7 @@ import { StatusBadge } from '../ads/AdInsights'
 import {
   createBroadcast,
   createEvent,
+  createRain,
   createGlobalGift,
   deleteLive,
   listLive,
@@ -190,6 +191,9 @@ export default function LiveManager({ initial }: { initial: Data }) {
   const evWin = useWindow()
   const info = eventInfo(kind)
 
+  // Rain
+  const rainWin = useWindow()
+
   // Message form
   const [title, setTitle] = useState('')
   const [body, setBody] = useState('')
@@ -243,7 +247,7 @@ export default function LiveManager({ initial }: { initial: Data }) {
           Schedule {eventTitle(kind, Number(value) || info.default)}
         </Button>
         <div>
-          {data.events.map((e) => (
+          {data.events.filter((e) => e.kind !== 'rain').map((e) => (
             <Row
               key={e.id}
               table="event"
@@ -253,6 +257,29 @@ export default function LiveManager({ initial }: { initial: Data }) {
               sub={eventInfo(e.kind).label}
             />
           ))}
+        </div>
+      </Card>
+
+      <Card title="Weather" help="Make it rain for everyone. It's just for looks — play isn't affected. (To rain on one player, use Players.)">
+        {rainWin.ui}
+        <Button
+          className="w-full"
+          disabled={busy !== null}
+          onClick={() => {
+            const w = rainWin.resolve()
+            if (typeof w === 'string') return toast.error(w)
+            submit('rain', () => createRain(w.startsAt, w.endsAt), () => {})
+          }}
+        >
+          {busy === 'rain' && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+          🌧️ Make it rain
+        </Button>
+        <div>
+          {data.events
+            .filter((e) => e.kind === 'rain')
+            .map((e) => (
+              <Row key={e.id} table="event" row={e} onChanged={refresh} title="🌧️ Rain" sub="For everyone" />
+            ))}
         </div>
       </Card>
 

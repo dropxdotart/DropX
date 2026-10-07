@@ -65,6 +65,18 @@ export async function createEvent(kind: LiveEventKind, value: number, startsAt: 
   return { ok: true }
 }
 
+// Rain for everyone (weather only — it doesn't change play).
+export async function createRain(startsAt: string, endsAt: string): Promise<Result> {
+  await requireAdminSession()
+  const bad = checkWindow(startsAt, endsAt)
+  if (bad) return { ok: false, message: bad }
+  const { error } = await createAdminClient().from('live_events').insert({ kind: 'rain', value: 1, starts_at: startsAt, ends_at: endsAt })
+  if (error) return { ok: false, message: error.message }
+  await audit('Made it rain for everyone', null, { startsAt, endsAt })
+  revalidatePath('/admin/live')
+  return { ok: true }
+}
+
 export async function createBroadcast(title: string, body: string, style: 'popup' | 'banner', startsAt: string, endsAt: string): Promise<Result> {
   await requireAdminSession()
   const t = title.trim().slice(0, 80)
@@ -117,6 +129,7 @@ async function labelOf(table: LiveTable, id: string): Promise<string> {
   const admin = createAdminClient()
   if (table === 'event') {
     const { data } = await admin.from('live_events').select('kind, value').eq('id', id).maybeSingle()
+    if (data?.kind === 'rain') return 'Rain'
     return data ? eventTitle(data.kind as LiveEventKind, data.value) : id
   }
   if (table === 'broadcast') {

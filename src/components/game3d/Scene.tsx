@@ -29,7 +29,7 @@ const PAN_PEEK = 20
 const DRAG_THRESHOLD = 8
 // How far pinch/wheel can zoom out (wider city view) and in.
 // Zooming out further is earned: each island you open lets you see more.
-const MIN_ZOOM_BY_ISLANDS = [0.55, 0.47, 0.4]
+const MIN_ZOOM_BY_ISLANDS = [0.44, 0.37, 0.31]
 const MAX_ZOOM = 2
 
 // `truck` set = one specific truck (the camera follows it as it drives);
@@ -353,7 +353,7 @@ export default function Scene({
         <CameraRig engine={engine} center={center} zoomRef={zoomRef} zoomMul={zoomMul} focus={focus} snap={snap} onFocusPlot={onFocusPlot} />
 
         {/* Sun and sky: day and night follow the player's clock, with rain now and then */}
-        <Sky />
+        <Sky raining={snap.raining} />
 
         <Suspense fallback={null}>
           <World

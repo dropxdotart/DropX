@@ -256,6 +256,7 @@ function PlayerDetail({
   }
   const [balance, setBalance] = useState('')
   const [lvl, setLvl] = useState('')
+  const [rainMin, setRainMin] = useState(60)
   const [kind, setKind] = useState<'bricks' | 'boost' | 'upgrade'>('bricks')
   const [amount, setAmount] = useState('')
   const [upgrade, setUpgrade] = useState(UPGRADE_OPTIONS[0].value)
@@ -332,6 +333,30 @@ function PlayerDetail({
             onClick={() => send({ kind: 'set_level', amount: Number(lvl), upgrade: null, message: '' }, () => setLvl(''))}
           >
             Set
+          </Button>
+        </div>
+      </div>
+
+      <div className="space-y-1.5">
+        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Weather</p>
+        <div className="flex flex-wrap items-center gap-1.5">
+          {[
+            [15, '15 min'],
+            [60, '1 hour'],
+            [180, '3 hours'],
+            [1440, '1 day'],
+          ].map(([m, label]) => (
+            <button
+              key={m}
+              type="button"
+              onClick={() => setRainMin(m as number)}
+              className={`rounded-full px-3 py-1 text-xs font-medium ${rainMin === m ? 'bg-foreground text-background' : 'bg-secondary'}`}
+            >
+              {label}
+            </button>
+          ))}
+          <Button size="sm" disabled={busy} onClick={() => send({ kind: 'rain', amount: rainMin, upgrade: null, message: '' }, () => {})}>
+            🌧️ Make it rain
           </Button>
         </div>
       </div>

@@ -9,7 +9,7 @@ import { BLOCK, BRIDGES, HARBOUR, HARBOUR_X, ISLANDS, ROADS, islandRect, type Is
 import { PLOT_SLOTS, isReservedBlock } from '@/lib/game/plots'
 import Prop from './Prop'
 import { Billboard } from './SiteProps'
-import { BlockDressing, Streets, Waterside } from './Scenery'
+import { BlockDressing, Sea, Streets, Waterside } from './Scenery'
 
 // The world: islands on one grid of blocks, roads between the blocks and
 // bridges between the islands. Owned plots get a construction lot, plots
@@ -706,6 +706,7 @@ export default function World({
       <Billboard position={[PLOT_SLOTS[0].x - 6, 0, PLOT_SLOTS[0].z - 11.5 - 2.2]} rotationY={Math.PI / 8} />
       <Billboard position={[PLOT_SLOTS[0].x - 11.5 - 2.2, 0, PLOT_SLOTS[0].z - 1]} rotationY={Math.PI / 2 - Math.PI / 8} />
 
+      <Sea />
       <Streets open={open} />
       <Waterside open={open} />
       <Traffic segs={segs} />

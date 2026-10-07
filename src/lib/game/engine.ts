@@ -150,7 +150,7 @@ function eventsLive(kind: LiveEventKind, at = simNow()) {
 }
 
 // Multiplier from live events of a kind (1 when none).
-export function eventMultiplier(kind: Exclude<LiveEventKind, 'upgrade_sale'>): number {
+export function eventMultiplier(kind: Exclude<LiveEventKind, 'upgrade_sale' | 'rain'>): number {
   return eventsLive(kind).reduce((m, e) => m * e.value, 1)
 }
 
@@ -171,7 +171,7 @@ export function dumpsterBuyCost(owned: number): number | null {
   return owned < MAX_DUMPSTERS ? Math.round(DUMPSTER_BUY_COSTS[owned] * priceFactor()) : null
 }
 
-export type RewardKind = 'bricks' | 'set_bricks' | 'set_level' | 'boost' | 'upgrade' | 'reset' | 'restore'
+export type RewardKind = 'bricks' | 'set_bricks' | 'set_level' | 'boost' | 'upgrade' | 'reset' | 'restore' | 'rain'
 export type Reward = { kind: RewardKind; amount: number; upgrade: string | null; data?: unknown }
 // Set by an admin: the game shows a block screen (until = ISO end, null = permanent).
 export type Ban = { until: string | null; reason: string }
@@ -400,6 +400,7 @@ export type Snapshot = {
   shortId: string | null
   username: string | null
   ban: Ban | null
+  raining: boolean
   yardBuild: { yard: number; toSize: number; secondsLeft: number; totalSeconds: number } | null
   islands: { id: IslandId; open: boolean; yard: YardLevels }[]
   truckCapacity: number
@@ -1107,6 +1108,12 @@ export class Engine {
       window.location.reload()
       return
     }
+    if (r.kind === 'rain') {
+      // An admin made it rain for this player for a while (no popup).
+      this.rainUntil = Math.max(Date.now(), this.rainUntil) + Math.max(0, Number(r.amount) || 0) * 60_000
+      this.markDirty()
+      return
+    }
     if (r.kind === 'restore') {
       // Swap in a backed-up save (an admin undoing a mistake).
       if (!r.data || typeof r.data !== 'object') return
@@ -1227,7 +1234,7 @@ export class Engine {
     const seen = new Set(readList(SEEN_LIVE_KEY))
     const now = Date.now()
     for (const e of events) {
-      if (seen.has(e.id) || new Date(e.startsAt).getTime() > now) continue
+      if (e.kind === 'rain' || seen.has(e.id) || new Date(e.startsAt).getTime() > now) continue
       seen.add(e.id)
       const info = eventInfo(e.kind)
       this.notices.push({ title: eventTitle(e.kind, e.value), detail: eventDetail(e.kind, e.value), message: null, emoji: info.emoji, button: "Let's go!" })
@@ -1483,6 +1490,9 @@ export class Engine {
     this.save()
     this.markDirty()
   }
+
+  // Rain an admin sent this player, until (real-world ms).
+  rainUntil = 0
 
   // ── Bridges (to the next island) ──────────────────────────────────────
 
@@ -2501,7 +2511,8 @@ export class Engine {
               totalSeconds: yardBuildSeconds(this.yardBuild.level + 1),
             }
           : null,
-        events: liveEvents.filter((e) => new Date(e.startsAt).getTime() <= Date.now() && new Date(e.endsAt).getTime() > Date.now()),
+        events: liveEvents.filter((e) => e.kind !== 'rain' && new Date(e.startsAt).getTime() <= Date.now() && new Date(e.endsAt).getTime() > Date.now()),
+        raining: Date.now() < this.rainUntil || eventsLive('rain', Date.now()).length > 0,
         banners: this.banners,
         bonusDrop: this.bonusDrop
           ? { amount: this.bonusDrop.amount, secondsLeft: Math.ceil(this.bonusDrop.expiresAt - this.time) }

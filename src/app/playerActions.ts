@@ -8,7 +8,7 @@ import type { LiveEventKind } from '@/lib/liveEvents'
 // sign in: the device's random player id is the key, and only the game on
 // that device knows it. Everything runs with the service role here.
 
-export type RewardKind = 'bricks' | 'set_bricks' | 'set_level' | 'boost' | 'upgrade' | 'reset' | 'restore'
+export type RewardKind = 'bricks' | 'set_bricks' | 'set_level' | 'boost' | 'upgrade' | 'reset' | 'restore' | 'rain'
 export type Grant = { kind: RewardKind; amount: number; upgrade: string | null; message: string | null; source: string; data?: unknown }
 export type LiveInfo = {
   events: { id: string; kind: LiveEventKind; value: number; startsAt: string; endsAt: string }[]

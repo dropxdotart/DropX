@@ -1,7 +1,8 @@
 // Game-wide events an admin schedules (see migration 016), as players and
 // admins see them.
 
-export type LiveEventKind = 'double_bricks' | 'crew_boost' | 'upgrade_sale' | 'double_xp'
+// 'rain' is weather an admin turns on (no popup or pill, no effect on play).
+export type LiveEventKind = 'double_bricks' | 'crew_boost' | 'upgrade_sale' | 'double_xp' | 'rain'
 
 export const EVENT_KINDS: { value: LiveEventKind; label: string; emoji: string; unit: 'times' | 'percent'; default: number }[] = [
   { value: 'double_bricks', label: 'Double bricks', emoji: '🧱', unit: 'times', default: 2 },

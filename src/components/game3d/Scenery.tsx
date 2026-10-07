@@ -7,8 +7,7 @@ import { BLOCK, ISLANDS, ROADS, islandRect, type IslandId, type Segment } from '
 import Prop from './Prop'
 
 // Dressing for the world: street furniture, what's in the blocks, life on
-// the water, and the sky — day and night follow the player's clock, with a
-// shower of rain now and then.
+// the water, and the sky — day and night follow the player's clock.
 
 function seeded(i: number) {
   const x = Math.sin(i * 127.1 + 311.7) * 43758.5453
@@ -33,13 +32,9 @@ function nightAt(h: number) {
   return 1 - (h - 5) / 2
 }
 
-// Rain comes and goes by the hour (the same for everyone at the same time).
-function rainyNow(d: Date) {
-  const hourIndex = Math.floor(d.getTime() / 3_600_000)
-  return seeded(hourIndex * 7.3) < 0.12
-}
 
-export function Sky() {
+// `raining`: an admin made it rain (for everyone, or just this player).
+export function Sky({ raining }: { raining: boolean }) {
   const hemi = useRef<THREE.HemisphereLight>(null)
   const sun = useRef<THREE.DirectionalLight>(null)
   const scene = useThree((s) => s.scene)
@@ -51,9 +46,8 @@ export function Sky() {
     const d = new Date()
     const h = d.getHours() + d.getMinutes() / 60
     const night = nightAt(h)
-    const rainTarget = rainyNow(d) ? 1 : 0
     env.night += (night - env.night) * Math.min(1, dt * 2)
-    env.rain += (rainTarget - env.rain) * Math.min(1, dt * 0.5)
+    env.rain += ((raining ? 1 : 0) - env.rain) * Math.min(1, dt * 0.5)
     const n = env.night
     const dusk = n > 0 && n < 1 ? Math.sin(n * Math.PI) : 0
     bg.copy(SKY_DAY).lerp(SKY_NIGHT, n).lerp(SKY_DUSK, dusk * 0.6).lerp(SKY_RAIN, env.rain * 0.55 * (1 - n))
@@ -90,7 +84,10 @@ function Rain() {
   const COUNT = 500
   const mesh = useRef<THREE.InstancedMesh>(null)
   const camera = useThree((s) => s.camera)
-  const drops = useMemo(() => Array.from({ length: COUNT }, (_, i) => ({ x: (seeded(i) - 0.5) * 70, z: (seeded(i + 1000) - 0.5) * 70, y: seeded(i + 2000) * 20, v: 18 + seeded(i + 3000) * 8 })), [])
+  const drops = useMemo(
+    () => Array.from({ length: COUNT }, (_, i) => ({ x: (seeded(i) - 0.5) * 70, z: (seeded(i + 1000) - 0.5) * 70, y: seeded(i + 2000) * 20, v: 18 + seeded(i + 3000) * 8 })),
+    []
+  )
   const o = useMemo(() => new THREE.Object3D(), [])
   const material = useMemo(() => new THREE.MeshBasicMaterial({ color: '#dfe9f5', transparent: true, opacity: 0 }), [])
   useFrame((_, dt) => {
@@ -359,6 +356,21 @@ export function BlockDressing({ kind, seed }: { kind: 'downtown' | 'suburb' | 'p
 }
 
 // ── Water and shores ─────────────────────────────────────────────────────
+
+// The sea under everything, darkening with the sky at night.
+const SEA_DAY = new THREE.Color('#3d9fd6')
+const SEA_NIGHT = new THREE.Color('#163456')
+export function Sea() {
+  const mat = useMemo(() => new THREE.MeshStandardMaterial({ color: SEA_DAY.clone(), roughness: 0.35, metalness: 0.05 }), [])
+  useFrame(() => {
+    mat.color.copy(SEA_DAY).lerp(SEA_NIGHT, env.night * 0.8)
+  })
+  return (
+    <mesh rotation={[-Math.PI / 2, 0, 0]} position={[-30, -0.06, 50]} material={mat}>
+      <planeGeometry args={[900, 900]} />
+    </mesh>
+  )
+}
 
 // Glints on the water, seagulls, a lighthouse and pier on the Houses
 // island, rocks along the other islands' quays.
