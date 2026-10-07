@@ -89,7 +89,7 @@ export const BRIDGES: Bridge[] = [
 // ── Road network ─────────────────────────────────────────────────────────
 
 // A straight road: along x at height `line` (z), or along z at `line` (x).
-export type Segment = { axis: 'x' | 'z'; line: number; from: number; until: number; bridge?: IslandId; harbour?: boolean }
+export type Segment = { axis: 'x' | 'z'; line: number; from: number; until: number; bridge?: IslandId; harbour?: boolean; island?: IslandId }
 
 function islandRoads(s: Island): Segment[] {
   const out: Segment[] = []
@@ -98,9 +98,9 @@ function islandRoads(s: Island): Segment[] {
   const north = (s.j0 - 1) * BLOCK + R
   const south = s.j1 * BLOCK + R
   // Front roads of each row (none along the north shore).
-  for (let j = s.j0; j <= s.j1; j++) out.push({ axis: 'z', line: j * BLOCK + R, from: west, until: east })
+  for (let j = s.j0; j <= s.j1; j++) out.push({ axis: 'z', line: j * BLOCK + R, from: west, until: east, island: s.id })
   // Cross streets from the north shore to the south edge.
-  for (let i = s.i0 - 1; i <= s.i1; i++) out.push({ axis: 'x', line: i * BLOCK + R, from: north, until: south })
+  for (let i = s.i0 - 1; i <= s.i1; i++) out.push({ axis: 'x', line: i * BLOCK + R, from: north, until: south, island: s.id })
   return out
 }
 
@@ -114,8 +114,9 @@ export const ROADS: Segment[] = [
     from: 2 * BLOCK + R,
     until: HARBOUR.i * BLOCK + R,
     harbour: true,
+    island: 'city' as const,
   })),
-  { axis: 'x', line: HARBOUR.i * BLOCK + R, from: -2 * BLOCK + R, until: 1 * BLOCK + R, harbour: true },
+  { axis: 'x', line: HARBOUR.i * BLOCK + R, from: -2 * BLOCK + R, until: 1 * BLOCK + R, harbour: true, island: 'city' },
   ...BRIDGES.map((b) => ({ axis: b.axis, line: b.line, from: b.from, until: b.until, bridge: b.to })),
 ]
 
@@ -216,4 +217,14 @@ export function islandAt(x: number, z: number): Island | null {
       (s) => x >= (s.i0 - 0.5) * BLOCK - 3 && x <= (s.i1 + 0.5) * BLOCK + 3 && z >= (s.j0 - 0.5) * BLOCK - 3 && z <= (s.j1 + 0.5) * BLOCK + 3
     ) ?? null
   )
+}
+
+// An island's land rectangle (edge to edge; the north edge is its beach).
+export function islandRect(s: Island) {
+  return {
+    x0: (s.i0 - 0.5) * BLOCK - 2.7,
+    x1: (s.i1 + 0.5) * BLOCK + 2.7 + (s.id === 'city' ? (HARBOUR.i - s.i1) * BLOCK : 0),
+    z0: (s.j0 - 0.5) * BLOCK - 1.2,
+    z1: (s.j1 + 0.5) * BLOCK + 2.7,
+  }
 }

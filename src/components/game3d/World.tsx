@@ -1,11 +1,11 @@
 'use client'
 
-import { useLayoutEffect, useMemo, useRef } from 'react'
+import { useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useFrame } from '@react-three/fiber'
-import { useGLTF } from '@react-three/drei'
+import { Html, useGLTF } from '@react-three/drei'
 import * as THREE from 'three'
 import { LOT_HALF } from '@/lib/game/engine'
-import { BLOCK, BRIDGES, HARBOUR, HARBOUR_X, ISLANDS, ROADS, type Island, type IslandId, type Segment } from '@/lib/game/islands'
+import { BLOCK, BRIDGES, HARBOUR, HARBOUR_X, ISLANDS, ROADS, islandRect, type Island, type IslandId, type Segment } from '@/lib/game/islands'
 import { PLOT_SLOTS, isReservedBlock } from '@/lib/game/plots'
 import Prop from './Prop'
 import { Billboard } from './SiteProps'
@@ -490,6 +490,74 @@ function Traffic({ segs }: { segs: Segment[] }) {
   )
 }
 
+// A cloud bank over an island you haven't reached yet, with a sign saying
+// what opens it. Fades away when the island opens.
+function FogBank({ s, show }: { s: Island; show: boolean }) {
+  const r = islandRect(s)
+  const group = useRef<THREE.Group>(null)
+  const fade = useRef(show ? 1 : 0)
+  const puffs = useMemo(() => {
+    const out: { x: number; z: number; r: number; y: number; phase: number }[] = []
+    let n = 0
+    for (let x = r.x0 + 6; x <= r.x1 - 4; x += 11)
+      for (let z = r.z0 + 6; z <= r.z1 - 4; z += 11) {
+        out.push({ x: x + (seeded(n * 3) - 0.5) * 5, z: z + (seeded(n * 5) - 0.5) * 5, r: 7 + seeded(n * 7) * 4, y: 2 + seeded(n * 11) * 3, phase: seeded(n * 13) * 6 })
+        n++
+      }
+    return out
+  }, [r.x0, r.x1, r.z0, r.z1])
+  const material = useMemo(() => new THREE.MeshStandardMaterial({ color: '#f4f7fb', transparent: true, opacity: 0.94, roughness: 1, depthWrite: false }), [])
+  useFrame(({ clock }, dt) => {
+    fade.current = show ? Math.min(1, fade.current + dt) : Math.max(0, fade.current - dt / 2)
+    material.opacity = 0.94 * fade.current
+    const g = group.current
+    if (!g) return
+    g.visible = fade.current > 0.01
+    const t = clock.getElapsedTime()
+    g.children.forEach((c, i) => {
+      const p = puffs[i]
+      if (p) c.position.y = p.y + Math.sin(t * 0.4 + p.phase) * 0.6 + (1 - fade.current) * 6
+    })
+  })
+  return (
+    <group ref={group}>
+      {puffs.map((p, i) => (
+        <mesh key={i} position={[p.x, p.y, p.z]} scale={[1, 0.45, 1]} material={material}>
+          <sphereGeometry args={[p.r, 14, 10]} />
+        </mesh>
+      ))}
+      {show && s.unlock && (
+        <Html position={[(r.x0 + r.x1) / 2, 9, (r.z0 + r.z1) / 2]} center zIndexRange={[5, 0]}>
+          <div className="pointer-events-none whitespace-nowrap rounded-2xl bg-white/90 px-3 py-1.5 text-center font-display text-sm text-[#1d3a6e] shadow">
+            🔒 {s.emoji} {s.name}
+            <div className="text-xs text-[#5b6f93]">Lv {s.unlock.level} · build the bridge in Plots</div>
+          </div>
+        </Html>
+      )}
+    </group>
+  )
+}
+
+// An island's contents. Open at load: just there. Opened while playing: it
+// rises out of the sea over a few seconds.
+function IslandReveal({ open, children }: { open: boolean; children: React.ReactNode }) {
+  const [openAtStart] = useState(open)
+  const rise = useRef(openAtStart ? 1 : 0)
+  const group = useRef<THREE.Group>(null)
+  useFrame((_, dt) => {
+    if (!open || rise.current >= 1) return
+    rise.current = Math.min(1, rise.current + dt / 3)
+    const k = 1 - Math.pow(1 - rise.current, 3)
+    if (group.current) group.current.position.y = -12 * (1 - k)
+  })
+  if (!open) return null
+  return (
+    <group ref={group} position={[0, openAtStart ? 0 : -12, 0]}>
+      {children}
+    </group>
+  )
+}
+
 export default function World({
   ownedPlots,
   openIslands,
@@ -511,36 +579,41 @@ export default function World({
     return out
   }, [])
   const open = useMemo(() => new Set(openIslands), [openIslands])
-  const segs = useMemo(() => ROADS.filter((r) => !r.bridge), [])
+  const segs = useMemo(() => ROADS.filter((r) => !r.bridge && r.island && open.has(r.island)), [open])
 
   return (
     <group>
       {ISLANDS.map((s) => (
-        <IslandLand key={s.id} s={s} />
+        <group key={s.id}>
+          <IslandReveal open={open.has(s.id)}>
+            <IslandLand s={s} />
+            {s.id === 'city' && <Harbour />}
+            <Roads built={(r) => r.island === s.id} />
+            {PLOT_SLOTS.filter((slot) => slot.island === s.id).map((slot) => (
+              <group key={slot.id} position={[slot.x, 0, slot.z]}>
+                {slot.id < ownedPlots ? <ConstructionLot /> : <ForSaleLot />}
+              </group>
+            ))}
+            {blocks
+              .filter((b) => b.island === s.id)
+              .map((b) =>
+                b.island === 'industrial' ? (
+                  <IndustrialBlock key={`${b.x},${b.z}`} bx={b.x} bz={b.z} seed={b.seed} />
+                ) : (
+                  <FillerBlock key={`${b.x},${b.z}`} bx={b.x} bz={b.z} seed={b.seed} island={b.island} />
+                )
+              )}
+          </IslandReveal>
+          {s.unlock && <FogBank s={s} show={!open.has(s.id)} />}
+        </group>
       ))}
-      <Harbour />
-      <Roads built={() => true} />
       {BRIDGES.map((b) => (
         <Bridge key={b.to} b={b} state={open.has(b.to) ? 'built' : bridgeBuilding === b.to ? 'building' : 'none'} />
-      ))}
-
-      {PLOT_SLOTS.map((slot) => (
-        <group key={slot.id} position={[slot.x, 0, slot.z]}>
-          {slot.id < ownedPlots ? <ConstructionLot /> : <ForSaleLot />}
-        </group>
       ))}
 
       {/* Ad billboards by the home lot, angled toward the camera. */}
       <Billboard position={[PLOT_SLOTS[0].x - 6, 0, PLOT_SLOTS[0].z - 11.5 - 2.2]} rotationY={Math.PI / 8} />
       <Billboard position={[PLOT_SLOTS[0].x - 11.5 - 2.2, 0, PLOT_SLOTS[0].z - 1]} rotationY={Math.PI / 2 - Math.PI / 8} />
-
-      {blocks.map((b) =>
-        b.island === 'industrial' ? (
-          <IndustrialBlock key={`${b.x},${b.z}`} bx={b.x} bz={b.z} seed={b.seed} />
-        ) : (
-          <FillerBlock key={`${b.x},${b.z}`} bx={b.x} bz={b.z} seed={b.seed} island={b.island} />
-        )
-      )}
 
       <Traffic segs={segs} />
     </group>

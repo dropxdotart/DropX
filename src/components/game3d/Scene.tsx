@@ -6,8 +6,8 @@ import { Html, OrthographicCamera, useProgress } from '@react-three/drei'
 import * as THREE from 'three'
 import { getBuilding, sizeFor } from '@/lib/game/buildings'
 import { BRICK, DUMPSTER_SLOTS, LOT_HALF, stats, type Engine, type Snapshot } from '@/lib/game/engine'
-import { BLOCK, HARBOUR_X, PLOT_SLOTS } from '@/lib/game/plots'
-import { ISLANDS } from '@/lib/game/islands'
+import { PLOT_SLOTS } from '@/lib/game/plots'
+import { ISLANDS, islandRect } from '@/lib/game/islands'
 import { STATIONS, dumpstersAffordable, fleetAffordable, upgradeReady, yardUpgrades, getStation, tierFor, truckLevel, type StationId } from '@/lib/game/stations'
 import { formatNumber } from '@/components/game/format'
 import Building from './Building'
@@ -22,12 +22,13 @@ const CAMERA_DIR = new THREE.Vector3(1, 0.95, 1).normalize()
 // Screen-right and screen-up as directions on the ground, for drag-to-pan.
 const GROUND_RIGHT = new THREE.Vector3(1, 0, -1).normalize()
 const GROUND_FORWARD = new THREE.Vector3(-1, 0, -1).normalize()
-// The camera can roam over every island (south: Houses; west: Industrial).
-const PAN_X = [-6.5 * BLOCK, HARBOUR_X + BLOCK / 2]
-const PAN_Z = [-2.5 * BLOCK, 6.5 * BLOCK]
+// The camera roams over the islands you've opened, plus a little past
+// their edges — enough to peek at the next island's fog bank.
+const PAN_PEEK = 20
 const DRAG_THRESHOLD = 8
 // How far pinch/wheel can zoom out (wider city view) and in.
-const MIN_ZOOM = 0.4
+// Zooming out further is earned: each island you open lets you see more.
+const MIN_ZOOM_BY_ISLANDS = [0.55, 0.47, 0.4]
 const MAX_ZOOM = 2
 
 // `truck` set = one specific truck (the camera follows it as it drives);
@@ -183,7 +184,7 @@ function PlotLabels({ snap, onPlotAction }: { snap: Snapshot; onPlotAction: (plo
               <span className="block text-xs leading-tight opacity-90">Tap to start a demolition</span>
             </button>
           )
-        } else if (slot.id === snap.plots.length) {
+        } else if (slot.id === snap.plots.length && snap.islands.find((i) => i.id === slot.island)?.open) {
           // Only the next plot up for sale gets a bubble; later ones just
           // show their sign so the map stays clean.
           const locked = snap.level < slot.requiredLevel
@@ -265,8 +266,20 @@ export default function Scene({
   const pointers = useRef(new Map<number, { x: number; y: number }>())
   const pinchDist = useRef(0)
 
+  const openIslands = snap.islands.filter((i) => i.open).length
+  const pan = useMemo(() => {
+    const rects = ISLANDS.filter((s) => snap.islands[s.index]?.open).map(islandRect)
+    return {
+      x0: Math.min(...rects.map((r) => r.x0)) - PAN_PEEK,
+      x1: Math.max(...rects.map((r) => r.x1)) + PAN_PEEK,
+      z0: Math.min(...rects.map((r) => r.z0)) - PAN_PEEK,
+      z1: Math.max(...rects.map((r) => r.z1)) + PAN_PEEK,
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only when an island opens
+  }, [openIslands])
+  const minZoom = MIN_ZOOM_BY_ISLANDS[Math.max(0, Math.min(MIN_ZOOM_BY_ISLANDS.length - 1, openIslands - 1))]
   const zoomBy = (factor: number) => {
-    zoomMul.current = THREE.MathUtils.clamp(zoomMul.current * factor, MIN_ZOOM, MAX_ZOOM)
+    zoomMul.current = THREE.MathUtils.clamp(zoomMul.current * factor, minZoom, MAX_ZOOM)
   }
 
   const onPointerDown = (e: React.PointerEvent) => {
@@ -305,8 +318,8 @@ export default function Scene({
     c.addScaledVector(GROUND_RIGHT, -dx / zoom)
     c.addScaledVector(GROUND_FORWARD, dy / (zoom * CAMERA_DIR.y))
     // The harbour district sticks out on the right.
-    c.x = THREE.MathUtils.clamp(c.x, PAN_X[0], PAN_X[1])
-    c.z = THREE.MathUtils.clamp(c.z, PAN_Z[0], PAN_Z[1])
+    c.x = THREE.MathUtils.clamp(c.x, pan.x0, pan.x1)
+    c.z = THREE.MathUtils.clamp(c.z, pan.z0, pan.z1)
   }
   const onPointerUp = (e: React.PointerEvent) => {
     pointers.current.delete(e.pointerId)
