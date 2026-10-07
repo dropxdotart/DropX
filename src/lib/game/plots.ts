@@ -19,10 +19,10 @@ export type PlotSlot = {
 // come up as the player levels (a City or Industrial plot also needs that
 // island's bridge built first). The first is the home lot.
 export const PLOT_SLOTS: PlotSlot[] = [
-  { id: 0, island: 'houses', x: 0, z: 5 * BLOCK, cost: 0, requiredLevel: 1 },
-  { id: 1, island: 'houses', x: BLOCK, z: 6 * BLOCK, cost: 500, requiredLevel: 2 },
-  { id: 2, island: 'houses', x: -BLOCK, z: 4 * BLOCK, cost: 2_000, requiredLevel: 3 },
-  { id: 3, island: 'houses', x: -BLOCK, z: 6 * BLOCK, cost: 6_000, requiredLevel: 5 },
+  { id: 0, island: 'houses', x: 0, z: 6 * BLOCK, cost: 0, requiredLevel: 1 },
+  { id: 1, island: 'houses', x: BLOCK, z: 5 * BLOCK, cost: 500, requiredLevel: 2 },
+  { id: 2, island: 'houses', x: -BLOCK, z: 7 * BLOCK, cost: 2_000, requiredLevel: 3 },
+  { id: 3, island: 'houses', x: -BLOCK, z: 5 * BLOCK, cost: 6_000, requiredLevel: 5 },
   { id: 4, island: 'city', x: 0, z: 0, cost: 25_000, requiredLevel: 8 },
   { id: 5, island: 'city', x: BLOCK, z: -BLOCK, cost: 60_000, requiredLevel: 9 },
   { id: 6, island: 'city', x: -BLOCK, z: BLOCK, cost: 150_000, requiredLevel: 10 },

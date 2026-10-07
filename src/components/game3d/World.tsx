@@ -147,59 +147,140 @@ function Bridge({ b, state }: { b: (typeof BRIDGES)[number]; state: 'built' | 'b
 
 const UMBRELLA_COLORS = ['#ff6b1a', '#2d7ff9', '#f2c230', '#3fbf4a']
 
-// An island's grass, the beach along its north shore and a stone quay on
-// its other sides (open where a bridge or the harbour joins on).
+function Umbrella({ x, z, i }: { x: number; z: number; i: number }) {
+  return (
+    <group position={[x, 0, z]}>
+      <mesh position={[0, 0.9, 0]}>
+        <cylinderGeometry args={[0.05, 0.05, 1.8, 6]} />
+        <meshStandardMaterial color="#f4f1ea" />
+      </mesh>
+      <mesh position={[0, 1.75, 0]} castShadow>
+        <coneGeometry args={[1, 0.45, 8]} />
+        <meshStandardMaterial color={UMBRELLA_COLORS[i % 4]} />
+      </mesh>
+      <mesh position={[0.9, 0.02, 0.3]} rotation={[0, 0.3, 0]}>
+        <boxGeometry args={[0.7, 0.03, 1.5]} />
+        <meshStandardMaterial color={['#f4f1ea', '#e23f3f', '#2d7ff9', '#ffc93c'][i % 4]} />
+      </mesh>
+    </group>
+  )
+}
+
+// Little sailboats bobbing offshore.
+function Boats({ spots }: { spots: [number, number, number][] }) {
+  const group = useRef<THREE.Group>(null)
+  useFrame(({ clock }) => {
+    const g = group.current
+    if (!g) return
+    const t = clock.getElapsedTime()
+    g.children.forEach((b, i) => {
+      b.position.y = Math.sin(t * 1.2 + i * 1.7) * 0.12
+      b.rotation.z = Math.sin(t * 0.9 + i) * 0.06
+    })
+  })
+  return (
+    <group ref={group}>
+      {spots.map(([x, z, rot], i) => (
+        <group key={i} position={[x, 0, z]} rotation={[0, rot, 0]}>
+          <mesh position={[0, 0.1, 0]} castShadow>
+            <boxGeometry args={[1.1, 0.45, 3]} />
+            <meshStandardMaterial color={i % 2 ? '#f4f1ea' : '#2d7ff9'} />
+          </mesh>
+          <mesh position={[0, 1.6, 0.2]}>
+            <boxGeometry args={[0.08, 2.8, 0.08]} />
+            <meshStandardMaterial color="#8a5a30" />
+          </mesh>
+          <mesh position={[0, 1.6, -0.45]} rotation={[0, Math.PI / 2, 0]}>
+            <planeGeometry args={[1.3, 2.4]} />
+            <meshStandardMaterial color={i % 3 ? '#ffffff' : '#ff6b1a'} side={THREE.DoubleSide} />
+          </mesh>
+        </group>
+      ))}
+    </group>
+  )
+}
+
+// An island's grass and its shores. The Houses island is a beach town with
+// sand and umbrellas all the way round; the others have a beach on the
+// north shore and stone quays on their other sides.
 function IslandLand({ s }: { s: Island }) {
   const r = landRect(s)
   const grass = s.id === 'industrial' ? '#a9b39a' : s.id === 'houses' ? '#8fcf72' : '#86c56b'
   const quay = '#b9b2a4'
+  const sand = s.id === 'industrial' ? '#cfc6ad' : '#ecd9a6'
+  const beachTown = s.id === 'houses'
   const w = r.x1 - r.x0
   const d = r.z1 - r.z0
-  // Umbrellas along the beach, away from the yard.
+  const cx = (r.x0 + r.x1) / 2
+  const cz = (r.z0 + r.z1) / 2
+  const B = BEACH_WIDTH
+  // Umbrellas along the beaches, away from the yard and the bridge.
   const umbrellas = useMemo(() => {
-    const out: number[] = []
-    for (let x = r.x0 + 8; x < r.x1 - 6; x += 13) if (Math.abs(x - s.yard.x) > 14) out.push(x)
+    const out: [number, number][] = []
+    const clear = (x: number, z: number) => Math.hypot(x - s.yard.x, z - s.yard.z) > 16 && !BRIDGES.some((b) => (b.axis === 'x' ? Math.abs(x - b.line) < 6 : Math.abs(z - b.line) < 6))
+    for (let x = r.x0 + 8; x < r.x1 - 6; x += 12) {
+      if (clear(x, r.z0)) out.push([x, r.z0 - 2.2 - (out.length % 2) * 1.6])
+      if (beachTown && clear(x, r.z1)) out.push([x, r.z1 + 2.2 + (out.length % 2) * 1.6])
+    }
+    if (beachTown)
+      for (let z = r.z0 + 8; z < r.z1 - 6; z += 12) {
+        out.push([r.x0 - 2.2 - (out.length % 2) * 1.6, z])
+        out.push([r.x1 + 2.2 + (out.length % 2) * 1.6, z])
+      }
     return out
-  }, [r.x0, r.x1, s.yard.x])
+  }, [r.x0, r.x1, r.z0, r.z1, s.yard.x, s.yard.z, beachTown])
+  const boats = useMemo<[number, number, number][]>(
+    () =>
+      beachTown
+        ? [
+            [r.x0 - 14, cz - 20, 0.4],
+            [r.x0 - 12, cz + 25, -0.3],
+            [r.x1 + 13, cz - 10, 1.2],
+            [r.x1 + 15, cz + 30, 0.2],
+            [cx - 30, r.z1 + 14, 1.5],
+            [cx + 20, r.z1 + 16, 1.7],
+          ]
+        : [],
+    [beachTown, r.x0, r.x1, r.z1, cx, cz]
+  )
+  const strip = (pos: [number, number], size: [number, number], color: string, y: number, key: string) => (
+    <mesh key={key} rotation={[-Math.PI / 2, 0, 0]} receiveShadow position={[pos[0], y, pos[1]]}>
+      <planeGeometry args={size} />
+      <meshStandardMaterial color={color} roughness={color === sand ? 1 : 0.4} />
+    </mesh>
+  )
   return (
     <group>
-      <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow position={[(r.x0 + r.x1) / 2, -0.01, (r.z0 + r.z1) / 2]}>
-        <planeGeometry args={[w, d]} />
-        <meshStandardMaterial color={grass} />
-      </mesh>
+      {strip([cx, cz], [w, d], grass, -0.01, 'grass')}
       {/* North shore: beach sloping into shallow water */}
-      <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow position={[(r.x0 + r.x1) / 2, -0.02, r.z0 - BEACH_WIDTH / 2]}>
-        <planeGeometry args={[w, BEACH_WIDTH]} />
-        <meshStandardMaterial color={s.id === 'industrial' ? '#cfc6ad' : '#ecd9a6'} roughness={1} />
-      </mesh>
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[(r.x0 + r.x1) / 2, -0.04, r.z0 - BEACH_WIDTH - 2]}>
-        <planeGeometry args={[w, 4]} />
-        <meshStandardMaterial color="#7fcbe8" roughness={0.4} />
-      </mesh>
-      {s.id !== 'industrial' &&
-        umbrellas.map((x, i) => (
-          <group key={x} position={[x, 0, r.z0 - 2.2 - (i % 2) * 1.6]}>
-            <mesh position={[0, 0.9, 0]}>
-              <cylinderGeometry args={[0.05, 0.05, 1.8, 6]} />
-              <meshStandardMaterial color="#f4f1ea" />
+      {strip([cx, r.z0 - B / 2], [w + (beachTown ? 2 * B : 0), B], sand, -0.02, 'nb')}
+      {strip([cx, r.z0 - B - 2], [w + (beachTown ? 2 * B + 8 : 0), 4], '#7fcbe8', -0.04, 'nw')}
+      {beachTown ? (
+        <>
+          {strip([cx, r.z1 + B / 2], [w + 2 * B, B], sand, -0.02, 'sb')}
+          {strip([cx, r.z1 + B + 2], [w + 2 * B + 8, 4], '#7fcbe8', -0.04, 'sw')}
+          {strip([r.x0 - B / 2, cz], [B, d], sand, -0.02, 'wb')}
+          {strip([r.x0 - B - 2, cz], [4, d + 2 * B], '#7fcbe8', -0.04, 'ww')}
+          {strip([r.x1 + B / 2, cz], [B, d], sand, -0.02, 'eb')}
+          {strip([r.x1 + B + 2, cz], [4, d + 2 * B], '#7fcbe8', -0.04, 'ew')}
+        </>
+      ) : (
+        <>
+          {/* Quays: south, west, east */}
+          <mesh position={[cx, 0.03, r.z1 - 0.7]} receiveShadow>
+            <boxGeometry args={[w, 0.16, 1.4]} />
+            <meshStandardMaterial color={quay} roughness={0.9} />
+          </mesh>
+          {[r.x0 + 0.7, r.x1 - 0.7].map((x) => (
+            <mesh key={x} position={[x, 0.03, cz]} receiveShadow>
+              <boxGeometry args={[1.4, 0.16, d]} />
+              <meshStandardMaterial color={quay} roughness={0.9} />
             </mesh>
-            <mesh position={[0, 1.75, 0]} castShadow>
-              <coneGeometry args={[1, 0.45, 8]} />
-              <meshStandardMaterial color={UMBRELLA_COLORS[i % 4]} />
-            </mesh>
-          </group>
-        ))}
-      {/* Quays: south, west, east */}
-      <mesh position={[(r.x0 + r.x1) / 2, 0.03, r.z1 - 0.7]} receiveShadow>
-        <boxGeometry args={[w, 0.16, 1.4]} />
-        <meshStandardMaterial color={quay} roughness={0.9} />
-      </mesh>
-      {[r.x0 + 0.7, r.x1 - 0.7].map((x) => (
-        <mesh key={x} position={[x, 0.03, (r.z0 + r.z1) / 2]} receiveShadow>
-          <boxGeometry args={[1.4, 0.16, d]} />
-          <meshStandardMaterial color={quay} roughness={0.9} />
-        </mesh>
-      ))}
+          ))}
+        </>
+      )}
+      {s.id !== 'industrial' && umbrellas.map(([x, z], i) => <Umbrella key={`${x},${z}`} x={x} z={z} i={i} />)}
+      <Boats spots={boats} />
     </group>
   )
 }
@@ -393,9 +474,14 @@ function IndustrialBlock({ bx, bz, seed }: { bx: number; bz: number; seed: numbe
   )
 }
 
+const SHOPS = DOWNTOWN.filter((m) => !m.url.includes('skyscraper'))
+
 function FillerBlock({ bx, bz, seed, island }: { bx: number; bz: number; seed: number; island: IslandId }) {
-  // City blocks are mostly downtown; the Houses island is suburbs and parks.
-  const kind = island === 'city' && seeded(seed) < 0.7 ? 'downtown' : seeded(seed + 1) < 0.8 ? 'suburb' : 'park'
+  // City blocks are mostly downtown. The Houses island is suburbs and parks,
+  // with a little shopping corner on the blocks next to the home lot.
+  const home = PLOT_SLOTS[0]
+  const byHome = island === 'houses' && Math.abs(bx - home.x) <= BLOCK && Math.abs(bz - home.z) <= BLOCK && bz <= home.z
+  const kind = byHome ? 'shops' : island === 'city' && seeded(seed) < 0.7 ? 'downtown' : seeded(seed + 1) < 0.78 ? 'suburb' : 'park'
   const items = useMemo(() => {
     const out: { url: string; size: number; pos: [number, number, number]; rot: number }[] = []
     SPOTS.forEach(([sx, sz], n) => {
@@ -405,6 +491,9 @@ function FillerBlock({ bx, bz, seed, island }: { bx: number; bz: number; seed: n
       const rot = sz > 0 ? Math.PI : sx > 0 ? -Math.PI / 2 : 0
       if (kind === 'downtown' && r < 0.85) {
         const m = DOWNTOWN[Math.floor(seeded(seed + n * 13) * DOWNTOWN.length)]
+        out.push({ ...m, pos, rot })
+      } else if (kind === 'shops' && r < 0.9) {
+        const m = SHOPS[Math.floor(seeded(seed + n * 13) * SHOPS.length)]
         out.push({ ...m, pos, rot })
       } else if (kind === 'suburb' && r < 0.8) {
         const m = SUBURB[Math.floor(seeded(seed + n * 17) * SUBURB.length)]
@@ -446,7 +535,7 @@ const CAR_MODELS = ['/models/vehicles/taxi.glb', '/models/vehicles/van.glb', '/m
 function Traffic({ segs }: { segs: Segment[] }) {
   const cars: Car[] = useMemo(() => {
     const roads = segs.filter((r) => !r.bridge && r.until - r.from > 30)
-    return Array.from({ length: Math.min(16, roads.length) }, (_, i) => ({
+    return Array.from({ length: Math.min(26, roads.length) }, (_, i) => ({
       url: CAR_MODELS[i % CAR_MODELS.length],
       seg: roads[Math.floor(seeded(i + 80) * roads.length)],
       dir: (seeded(i + 90) < 0.5 ? 1 : -1) as 1 | -1,

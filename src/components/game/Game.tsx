@@ -33,6 +33,13 @@ const NAME_PROMPT_KEY = 'rubble-name-prompted'
 export default function Game() {
   const game = useEngine()
   const [mapOpen, setMapOpen] = useState(false)
+  // A station opened from the Upgrades list goes back to the list on close.
+  const [fromList, setFromList] = useState(false)
+  const closeStation = () => {
+    setSelected(null)
+    if (fromList) setMapOpen(true)
+    setFromList(false)
+  }
   const [bonusOpen, setBonusOpen] = useState(false)
   const [plotsOpen, setPlotsOpen] = useState(false)
   const [profileOpen, setProfileOpen] = useState(false)
@@ -157,12 +164,14 @@ export default function Game() {
           }}
           onSelectStation={(id, plotId, index) => {
             setMapOpen(false)
+            setFromList(false)
             // The depot sign opens the fleet, following truck 1.
             setSelected(id === 'truck' ? { id, plot: plotId, truck: 0 } : { id, plot: plotId, index })
           }}
           onBreakTap={tapBuilding}
           onSelectTruck={(truck) => {
             setMapOpen(false)
+            setFromList(false)
             setSelected({ id: 'truck', plot: engine.trucks[truck]?.home ?? 0, truck })
           }}
         />
@@ -353,6 +362,7 @@ export default function Game() {
           plot={plot.id}
           onPick={(id) => {
             setMapOpen(false)
+            setFromList(true)
             // Tool rack and crew trailer live on the home lot; dumpsters and
             // trucks are on every plot, so use the one you're looking at.
             // Yard and trucks: the yard on the island you're looking at.
@@ -371,7 +381,7 @@ export default function Game() {
           plot={selected.plot}
           index={selected.index ?? 0}
           onPick={(index) => setSelected({ ...selected, index })}
-          onClose={() => setSelected(null)}
+          onClose={closeStation}
         />
       ) : selected?.id === 'truck' ? (
         <TruckPanel
@@ -380,10 +390,10 @@ export default function Game() {
           truck={selected.truck ?? 0}
           onPickTruck={(truck) => setSelected({ ...selected, truck })}
           onOpenYard={() => setSelected({ id: 'yard', plot: selected.plot })}
-          onClose={() => setSelected(null)}
+          onClose={closeStation}
         />
       ) : (
-        selected && <StationPanel engine={engine} snap={snap} id={selected.id} yard={selected.plot} onClose={() => setSelected(null)} />
+        selected && <StationPanel engine={engine} snap={snap} id={selected.id} yard={selected.plot} onClose={closeStation} />
       )}
       {plotsOpen && (
         <PlotsSheet

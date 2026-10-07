@@ -126,13 +126,16 @@ export default function PlotsSheet({
         <div className="space-y-4">
           {ISLANDS.map((island) => {
             const open = snap.islands[island.index]?.open
+            // Locked islands: only the next one shows, and just its bridge.
+            const prevOpen = island.index === 0 || snap.islands[island.index - 1]?.open
+            if (!open && !prevOpen) return null
             return (
               <div key={island.id} className="space-y-2">
                 <p className="font-display text-sm uppercase tracking-wide text-[#5b6f93]">
                   {island.emoji} {island.name}
                 </p>
                 {!open && <BridgeCard engine={engine} snap={snap} island={island} />}
-                {PLOT_SLOTS.filter((slot) => slot.island === island.id).map((slot) => {
+                {PLOT_SLOTS.filter((slot) => open && slot.island === island.id).map((slot) => {
             const owned = snap.plots[slot.id]
             if (owned) {
               const st = status(owned)
