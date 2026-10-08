@@ -8,7 +8,7 @@ export default function BuildingScreen() {
       </div>
       <p className="font-display text-5xl text-white [text-shadow:0_4px_0_#1d3a6e]">Sorry, building!</p>
       <p className="max-w-xs font-display text-lg leading-snug text-[#1d3a6e]">
-        Our crew is rebuilding Rubble. Come back soon — your progress is safe.
+        Our crew is rebuilding Rubble from the ground up. Come back soon!
       </p>
       <div className="flex gap-1.5" aria-hidden>
         {[0, 1, 2, 3, 4].map((i) => (
