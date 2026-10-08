@@ -1,5 +1,6 @@
 'use client'
 
+import { Chest, Emo, IconText } from './Icons'
 import { useState } from 'react'
 import { X } from 'lucide-react'
 import type { Engine, Snapshot } from '@/lib/game/engine'
@@ -63,36 +64,106 @@ function clock(s: number) {
   return h ? `${h}h ${m}m` : m ? `${m}m ${String(sec).padStart(2, '0')}s` : `${sec}s`
 }
 
-// A little head-and-shoulders portrait drawn from a manager's look.
+// A cartoon head-and-shoulders portrait drawn from a manager's look:
+// outlined, with ears, rosy cheeks, shiny eyes and their hat, collar,
+// vest or robe.
 export function Portrait({ look, size = 56, dim = false }: { look: Look; size?: number; dim?: boolean }) {
-  const u = size / 14
+  const O = '#1d3a6e'
+  const sw = 1.4
   const hat = look.hat
+  const body = look.robe ?? look.top
   return (
-    <div className="relative shrink-0 overflow-hidden rounded-xl bg-[#cfe6f5]" style={{ width: size, height: size, filter: dim ? 'brightness(0)' : undefined, opacity: dim ? 0.35 : 1 }}>
-      <div className="absolute" style={{ left: 2 * u, right: 2 * u, bottom: 0, height: 4 * u, background: look.robe ?? look.vest ?? look.top, borderRadius: `${u}px ${u}px 0 0` }} />
-      {look.under && <div className="absolute" style={{ left: 6 * u, width: 2 * u, bottom: 3 * u, height: u, background: look.under }} />}
-      <div className="absolute" style={{ left: 3.5 * u, width: 7 * u, top: 3 * u, height: 7 * u, background: look.skin, borderRadius: u * 0.6 }} />
-      <div className="absolute" style={{ left: 3.5 * u, width: 7 * u, top: 3 * u, height: 1.3 * u, background: look.hair, borderRadius: `${u * 0.6}px ${u * 0.6}px 0 0` }} />
+    <svg
+      viewBox="0 0 64 64"
+      width={size}
+      height={size}
+      className="shrink-0 rounded-xl bg-[#cfe6f5]"
+      style={{ filter: dim ? 'brightness(0)' : undefined, opacity: dim ? 0.3 : 1 }}
+      aria-hidden
+    >
+      {/* Shoulders */}
+      <path d="M8 64 Q9 47 24 45 H40 Q55 47 56 64 Z" fill={body} stroke={O} strokeWidth={sw} strokeLinejoin="round" />
+      {look.topPattern === 'plaid' && <path d="M17 49 V64 M47 49 V64 M10 56 H54" stroke="#c8d2eb" strokeWidth={0.6} opacity={0.7} />}
+      {look.vest && (
+        <>
+          <path d="M14 64 Q15 50 26 47 L32 56 L38 47 Q49 50 50 64 Z" fill={look.vest} stroke={O} strokeWidth={sw} strokeLinejoin="round" />
+          <path d="M15 58 H49" stroke="#e8eef2" strokeWidth={2.2} />
+        </>
+      )}
+      {look.under && <path d="M26 45 L32 54 L38 45 Z" fill={look.under} stroke={O} strokeWidth={1} strokeLinejoin="round" />}
+      {/* Lapels for jackets and robes */}
+      {(look.topPattern === 'plaid' || look.robe) && <path d="M25 46 L30 57 M39 46 L34 57" stroke={O} strokeWidth={1.2} strokeLinecap="round" />}
+      {look.tie && <path d="M31 50 H33 L34 60 L32 63 L30 60 Z" fill={look.tie[0]} stroke={O} strokeWidth={0.8} />}
+      {/* Neck, ears, head */}
+      <rect x="27.5" y="38" width="9" height="8" fill={look.skin} stroke={O} strokeWidth={sw} />
+      <circle cx="18" cy="28" r="3.6" fill={look.skin} stroke={O} strokeWidth={sw} />
+      <circle cx="46" cy="28" r="3.6" fill={look.skin} stroke={O} strokeWidth={sw} />
+      <rect x="18" y="12" width="28" height="30" rx="10" fill={look.skin} stroke={O} strokeWidth={sw} />
+      {/* Hair */}
+      {hat !== 'hood' && <path d="M18.5 24 Q17 11 32 10.5 Q47 11 45.5 24 Q42 17 32 17 Q22 17 18.5 24 Z" fill={look.hair} stroke={O} strokeWidth={sw} strokeLinejoin="round" />}
       {look.payos &&
-        [3.1, 10.2].map((l) => <div key={l} className="absolute" style={{ left: l * u, width: 0.8 * u, top: 5 * u, height: 4 * u, background: look.hair, borderRadius: u }} />)}
-      {[5.2, 7.8].map((l) => (
-        <div key={l} className="absolute" style={{ left: l * u, width: u, top: 6 * u, height: 1.2 * u, background: '#2a1d14' }} />
+        [17.5, 46.5].map((x) => (
+          <path key={x} d={`M${x} 26 q${x < 32 ? -2.5 : 2.5} 3 0 6 q${x < 32 ? 2.5 : -2.5} 3 0 6 q${x < 32 ? -2.5 : 2.5} 2.5 0 5`} fill="none" stroke={look.hair} strokeWidth={2.6} strokeLinecap="round" />
+        ))}
+      {/* Face */}
+      <circle cx="23.5" cy="33" r="2.6" fill="#ff9a9a" opacity={0.45} />
+      <circle cx="40.5" cy="33" r="2.6" fill="#ff9a9a" opacity={0.45} />
+      <path d="M23 24.5 Q26 22.8 29 24.3 M35 24.3 Q38 22.8 41 24.5" fill="none" stroke={look.hair} strokeWidth={1.6} strokeLinecap="round" />
+      {[26.5, 37.5].map((x) => (
+        <g key={x}>
+          <ellipse cx={x} cy={28.5} rx={2.2} ry={2.7} fill="#2a1d14" />
+          <circle cx={x + 0.8} cy={27.6} r={0.8} fill="#ffffff" />
+        </g>
       ))}
-      {look.glasses &&
-        [4.7, 7.3].map((l) => <div key={l} className="absolute rounded-full" style={{ left: l * u, width: 2 * u, top: 5.6 * u, height: 2 * u, border: `${Math.max(1, u * 0.3)}px solid #141414` }} />)}
-      <div className="absolute" style={{ left: 6 * u, width: 2 * u, top: 8.4 * u, height: 0.5 * u, background: '#9a4a3a' }} />
-      {hat === 'kippah' && <div className="absolute" style={{ left: 5 * u, width: 4 * u, top: 1.8 * u, height: 1.6 * u, background: look.hatColor, borderRadius: `${2 * u}px ${2 * u}px 0 0` }} />}
+      <path d="M31 31 Q32.5 33 31.5 34" fill="none" stroke="#c98a6a" strokeWidth={1.1} strokeLinecap="round" />
+      <path d="M27 36.5 Q32 40.5 37 36.5" fill="#ffffff" stroke={O} strokeWidth={1.2} strokeLinejoin="round" />
+      {look.glasses && (
+        <g fill="none" stroke="#141414" strokeWidth={1.4}>
+          <circle cx="26.5" cy="28.5" r="4.2" />
+          <circle cx="37.5" cy="28.5" r="4.2" />
+          <path d="M30.7 28.2 H33.3" />
+        </g>
+      )}
+      {/* Headwear */}
+      {hat === 'kippah' && <path d="M24 13.5 Q32 6.5 40 13.5 Z" fill={look.hatColor} stroke={O} strokeWidth={sw} strokeLinejoin="round" />}
       {hat === 'fedora' && (
         <>
-          <div className="absolute" style={{ left: 2 * u, width: 10 * u, top: 3 * u, height: 0.8 * u, background: look.hatColor, borderRadius: u }} />
-          <div className="absolute" style={{ left: 4 * u, width: 6 * u, top: 0.6 * u, height: 2.8 * u, background: look.hatColor, borderRadius: `${u}px ${u}px 0 0` }} />
+          <path d="M9 17 Q32 22 55 17 Q53 13.5 32 14.5 Q11 13.5 9 17 Z" fill={look.hatColor} stroke={O} strokeWidth={sw} strokeLinejoin="round" />
+          <path d="M19 15 Q19 4 32 4 Q45 4 45 15 Z" fill={look.hatColor} stroke={O} strokeWidth={sw} strokeLinejoin="round" />
+          <path d="M19.5 12.5 Q32 15 44.5 12.5" stroke="#3a3a3e" strokeWidth={2.4} fill="none" />
+        </>
+      )}
+      {hat === 'flatcap' && (
+        <>
+          <path d="M17 18 Q16 8 32 8 Q48 8 47 18 Q32 14 17 18 Z" fill={look.hatColor} stroke={O} strokeWidth={sw} strokeLinejoin="round" />
+          <path d="M28 16.5 Q40 15 50 19 Q44 21.5 32 19.5 Z" fill={look.hatColor} stroke={O} strokeWidth={sw} strokeLinejoin="round" />
+        </>
+      )}
+      {hat === 'wizard' && (
+        <>
+          <path d="M8 18 Q32 23 56 18 Q54 14 32 15 Q10 14 8 18 Z" fill={look.hatColor} stroke={O} strokeWidth={sw} strokeLinejoin="round" />
+          <path d="M20 16 L34 1 L44 16 Z" fill={look.hatColor} stroke={O} strokeWidth={sw} strokeLinejoin="round" />
+          <path d="M33 7 l1 2 2 .3 -1.5 1.4 .4 2 -1.9 -1 -1.9 1 .4 -2 -1.5 -1.4 2 -.3 Z" fill="#e3b33c" />
         </>
       )}
       {(hat === 'hardhat' || hat === 'cap') && (
-        <div className="absolute" style={{ left: 3 * u, width: 8 * u, top: 1.4 * u, height: 2.2 * u, background: look.hatColor, borderRadius: hat === 'hardhat' ? `${4 * u}px ${4 * u}px 0 0` : `${u}px ${u}px 0 0` }} />
+        <>
+          {hat === 'hardhat' ? (
+            <>
+              <path d="M16 19 Q16 5 32 5 Q48 5 48 19 Z" fill={look.hatColor} stroke={O} strokeWidth={sw} strokeLinejoin="round" />
+              <rect x="12" y="17.5" width="40" height="4" rx="2" fill={look.hatColor} stroke={O} strokeWidth={sw} />
+              <path d="M32 5.5 V17" stroke={O} strokeWidth={1} opacity={0.5} />
+            </>
+          ) : (
+            <>
+              <path d="M17 18 Q17 6 32 6 Q47 6 47 18 Z" fill={look.hatColor} stroke={O} strokeWidth={sw} strokeLinejoin="round" />
+              <path d="M30 17 Q44 15 52 19.5 Q44 22 30 19.5 Z" fill={look.hatColor} stroke={O} strokeWidth={sw} strokeLinejoin="round" />
+            </>
+          )}
+        </>
       )}
-      {hat === 'hood' && <div className="absolute" style={{ left: 2.6 * u, width: 8.8 * u, top: 2 * u, height: 9 * u, border: `${u}px solid ${look.hatColor}`, borderBottom: 'none', borderRadius: `${3 * u}px ${3 * u}px 0 0` }} />}
-    </div>
+      {hat === 'hood' && <path d="M14 44 Q10 10 32 8 Q54 10 50 44 Q47 22 32 20 Q17 22 14 44 Z" fill={look.hatColor} stroke={O} strokeWidth={sw} strokeLinejoin="round" />}
+    </svg>
   )
 }
 
@@ -129,8 +200,8 @@ function ChestReveal({ type, result, snap, onDone }: { type: ChestType; result: 
         else setShown((n) => n + 1)
       }}
     >
-      <div className="chest-pop mb-4 flex h-24 w-28 items-end justify-center rounded-2xl border-4 text-5xl" style={{ background: c.color, borderColor: c.trim }}>
-        <span className="mb-2">🗝️</span>
+      <div className="chest-pop mb-4">
+        <Chest type={type} size={110} />
       </div>
       <p className="mb-3 font-display text-2xl text-white">{c.name}</p>
       <div className="grid w-full max-w-sm grid-cols-2 gap-2">
@@ -161,7 +232,7 @@ function ChestReveal({ type, result, snap, onDone }: { type: ChestType; result: 
           )
         })}
       </div>
-      <p className="mt-4 font-display text-lg text-[#9fe0ff]">+{result.gems} 💎</p>
+      <p className="mt-4 font-display text-lg text-[#9fe0ff]">+{result.gems} <Emo e="💎" /></p>
       <p className="mt-2 text-sm text-white/70">{all ? 'Tap to close' : 'Tap to reveal'}</p>
     </div>
   )
@@ -188,7 +259,7 @@ export default function ManagersSheet({ engine, snap, focusSlot, onClose }: { en
         <div className="mb-3 flex items-center justify-between">
           <p className="font-display text-2xl text-[#1d3a6e]">Your team</p>
           <div className="flex items-center gap-2">
-            <span className="rounded-full bg-[#e6f6ff] px-2.5 py-1 font-display text-sm text-[#1b6fa8]">💎 {formatNumber(snap.gems)}</span>
+            <span className="rounded-full bg-[#e6f6ff] px-2.5 py-1 font-display text-sm text-[#1b6fa8]"><Emo e="💎" /> {formatNumber(snap.gems)}</span>
             <button onClick={onClose} className="rounded-full bg-[#eef2f8] p-2" aria-label="Close">
               <X className="h-5 w-5 text-[#1d3a6e]" />
             </button>
@@ -204,7 +275,7 @@ export default function ManagersSheet({ engine, snap, focusSlot, onClose }: { en
               }}
               className={`rounded-xl py-1.5 font-display text-sm capitalize ${tab === t ? 'bg-white text-[#1d3a6e] shadow' : 'text-[#5b6f93]'}`}
             >
-              {t === 'boss' ? '😎 Boss' : t}
+              <IconText text={t === 'boss' ? '😎 Boss' : t} />
             </button>
           ))}
         </div>
@@ -229,7 +300,7 @@ export default function ManagersSheet({ engine, snap, focusSlot, onClose }: { en
                           {m.name} <span className="text-xs text-[#5b6f93]">Lv {own.level}</span> <RarityChip m={m} />
                         </p>
                         <p className="text-xs leading-tight text-[#2a9a3a]">{boostText(m, own.level, slot)}</p>
-                        {m.automation && <p className="text-[11px] leading-tight text-[#5b6f93]">🤖 {m.automation.map((a) => AUTO_NAMES[a]).join(' · ')}</p>}
+                        {m.automation && <p className="text-[11px] leading-tight text-[#5b6f93]"><Emo e="🤖" /> {m.automation.map((a) => AUTO_NAMES[a]).join(' · ')}</p>}
                       </div>
                       <div className="flex shrink-0 flex-col items-end gap-1">
                         {ab && (
@@ -249,7 +320,7 @@ export default function ManagersSheet({ engine, snap, focusSlot, onClose }: { en
                     </div>
                   ) : (
                     <button onClick={() => setPicking(slot)} className="flex w-full items-center gap-3 rounded-xl border-2 border-dashed border-[#c9d3e3] p-2 text-left">
-                      <span className="flex h-14 w-14 items-center justify-center rounded-xl bg-white text-2xl">➕</span>
+                      <span className="flex h-14 w-14 items-center justify-center rounded-xl bg-white text-2xl"><Emo e="➕" /></span>
                       <span className="text-sm text-[#5b6f93]">No manager — tap to put one in charge ({STATION_STATS[slotKind(slot)].map((k) => STAT_NAMES[k]).join(', ')})</span>
                     </button>
                   )}
@@ -308,7 +379,7 @@ export default function ManagersSheet({ engine, snap, focusSlot, onClose }: { en
           <div className="space-y-2">
             <div className="flex items-center justify-between gap-3 rounded-2xl bg-[#fff4d6] p-3">
               <div>
-                <p className="font-display text-base text-[#1d3a6e]">🎁 Free chest</p>
+                <p className="font-display text-base text-[#1d3a6e]"><Emo e="🎁" /> Free chest</p>
                 <p className="text-xs text-[#5b6f93]">A Wooden chest every 4 hours</p>
               </div>
               <button
@@ -324,15 +395,15 @@ export default function ManagersSheet({ engine, snap, focusSlot, onClose }: { en
               const n = snap.chests[type]
               return (
                 <div key={type} className="flex items-center gap-3 rounded-2xl bg-[#eef2f8] p-3">
-                  <span className="flex h-12 w-14 shrink-0 items-center justify-center rounded-xl border-[3px] text-2xl" style={{ background: c.color, borderColor: c.trim }}>
-                    🧰
+                  <span className="flex h-12 w-14 shrink-0 items-center justify-center rounded-xl bg-white">
+                    <Chest type={type} size={42} />
                   </span>
                   <div className="min-w-0 flex-1">
                     <p className="font-display text-base leading-tight text-[#1d3a6e]">
                       {c.name} <span className="text-sm text-[#5b6f93]">×{n}</span>
                     </p>
                     <p className="text-[11px] leading-tight text-[#5b6f93]">
-                      {c.cards} cards · {c.odds.epic + c.odds.legendary}% Epic or better · {c.gems[0]}–{c.gems[1]} 💎
+                      {c.cards} cards · {c.odds.epic + c.odds.legendary}% Epic or better · {c.gems[0]}–{c.gems[1]} <Emo e="💎" />
                     </p>
                   </div>
                   <div className="flex shrink-0 flex-col items-end gap-1">
@@ -354,7 +425,7 @@ export default function ManagersSheet({ engine, snap, focusSlot, onClose }: { en
                         onClick={() => act(engine.buyChest('iron'))}
                         className="rounded-lg bg-white px-2 py-1 font-display text-xs text-[#1d3a6e] disabled:opacity-50"
                       >
-                        Buy 🧱{formatNumber(snap.ironChestPrice)}
+                        Buy <Emo e="🧱" />{formatNumber(snap.ironChestPrice)}
                       </button>
                     )}
                     {type === 'gold' && (
@@ -363,7 +434,7 @@ export default function ManagersSheet({ engine, snap, focusSlot, onClose }: { en
                         onClick={() => act(engine.buyChest('gold'))}
                         className="rounded-lg bg-white px-2 py-1 font-display text-xs text-[#1d3a6e] disabled:opacity-50"
                       >
-                        Buy 💎{GOLD_CHEST_GEMS}
+                        Buy <Emo e="💎" />{GOLD_CHEST_GEMS}
                       </button>
                     )}
                     {type === 'wood' &&
@@ -374,7 +445,7 @@ export default function ManagersSheet({ engine, snap, focusSlot, onClose }: { en
                           onReward={() => act(engine.adChest())}
                           className="rounded-lg bg-[#3fbf4a] px-2 py-1 font-display text-xs text-white disabled:opacity-60"
                         >
-                          ▶ +1 for an ad
+                          <Emo e="▶" /> +1 for an ad
                         </RewardedAdButton>
                       ))}
                   </div>
@@ -414,7 +485,7 @@ export default function ManagersSheet({ engine, snap, focusSlot, onClose }: { en
                       onClick={() => act(engine.levelUpManager(m.id))}
                       className="shrink-0 rounded-xl bg-[#3fbf4a] px-2.5 py-1.5 font-display text-xs text-white shadow-[0_3px_0_#2a8a33] active:translate-y-[3px] active:shadow-none disabled:bg-[#b9c2cf] disabled:shadow-[0_3px_0_#97a1ae]"
                     >
-                      {own.cards}/{need} · 🧱{formatNumber(levelUpCost(m, own.level))}
+                      {own.cards}/{need} · <Emo e="🧱" />{formatNumber(levelUpCost(m, own.level))}
                     </button>
                   )}
                   {maxed && <span className="font-display text-xs text-[#c98a10]">MAX</span>}
@@ -428,7 +499,7 @@ export default function ManagersSheet({ engine, snap, focusSlot, onClose }: { en
           <div className="space-y-2">
             {!snap.managers.boss && (
               <p className="rounded-2xl bg-[#fff4d6] p-3 text-center text-sm text-[#8a5a00]">
-                😎 The Boss is a <b>Legendary</b> manager — find him in chests. Outfits you buy now are ready when he joins.
+                <Emo e="😎" /> The Boss is a <b>Legendary</b> manager — find him in chests. Outfits you buy now are ready when he joins.
               </p>
             )}
             <div className="grid grid-cols-2 gap-2">
@@ -443,7 +514,7 @@ export default function ManagersSheet({ engine, snap, focusSlot, onClose }: { en
                   >
                     <Portrait look={outfitLook(o.id)} size={64} />
                     <span className="font-display text-sm text-[#1d3a6e]">{o.name}</span>
-                    <span className="font-display text-xs text-[#5b6f93]">{on ? 'Wearing' : owned ? 'Wear' : `💎 ${o.gems}`}</span>
+                    <span className="font-display text-xs text-[#5b6f93]"><IconText text={on ? 'Wearing' : owned ? 'Wear' : `💎 ${o.gems}`} /></span>
                   </button>
                 )
               })}

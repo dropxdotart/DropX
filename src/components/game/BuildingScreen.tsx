@@ -1,10 +1,11 @@
+import { Emo } from './Icons'
 // Shown instead of the game while it's switched off for building work
 // (Admin → Maintenance). Pure markup, no 3D.
 export default function BuildingScreen() {
   return (
     <div className="fixed inset-0 flex flex-col items-center justify-center gap-5 bg-[#9fd4ef] px-8 text-center">
       <div className="relative flex h-32 w-32 items-center justify-center rounded-[30px] bg-[#ff6b1a] text-6xl shadow-[0_6px_0_#c94e0a]">
-        🚧
+        <Emo e="🚧" />
       </div>
       <p className="font-display text-5xl text-white [text-shadow:0_4px_0_#1d3a6e]">Sorry, building!</p>
       <p className="max-w-xs font-display text-lg leading-snug text-[#1d3a6e]">

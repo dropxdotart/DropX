@@ -1,5 +1,6 @@
 'use client'
 
+import { Emo } from '@/components/game/Icons'
 import { useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useFrame } from '@react-three/fiber'
 import { Html, useGLTF } from '@react-three/drei'
@@ -656,7 +657,7 @@ function FogBank({ s, show }: { s: Island; show: boolean }) {
       {show && s.stages[0] && (
         <Html position={[(r.x0 + r.x1) / 2, 9, (r.z0 + r.z1) / 2]} center zIndexRange={[5, 0]}>
           <div className="pointer-events-none whitespace-nowrap rounded-2xl bg-white/90 px-3 py-1.5 text-center font-display text-sm text-[#1d3a6e] shadow">
-            🔒 {s.emoji} {s.name}
+            <Emo e="🔒" /> {s.emoji} {s.name}
             <div className="text-xs text-[#5b6f93]">Lv {s.stages[0].level} · build the bridge in Plots</div>
           </div>
         </Html>

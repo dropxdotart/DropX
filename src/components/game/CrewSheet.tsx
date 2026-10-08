@@ -1,5 +1,6 @@
 'use client'
 
+import { Emo, IconText } from './Icons'
 import { useRef, useState } from 'react'
 import { Minus, Plus, X } from 'lucide-react'
 import { getBuilding } from '@/lib/game/buildings'
@@ -94,7 +95,7 @@ export default function CrewSheet({ engine, snap, focus, onClose }: { engine: En
         onClick={(e) => e.stopPropagation()}
       >
         <div className="mb-3 flex items-center justify-between">
-          <p className="font-display text-2xl text-[#1d3a6e]">👷 Crew · {total}</p>
+          <p className="font-display text-2xl text-[#1d3a6e]"><Emo e="👷" /> Crew · {total}</p>
           <button onClick={onClose} className="rounded-full bg-[#eef2f8] p-2" aria-label="Close">
             <X className="h-5 w-5 text-[#1d3a6e]" />
           </button>
@@ -120,7 +121,7 @@ export default function CrewSheet({ engine, snap, focus, onClose }: { engine: En
                     mode === m ? 'bg-[#2d7ff9] text-white shadow-[0_3px_0_#1d5fc4]' : 'bg-[#eef2f8] text-[#1d3a6e] shadow-[0_3px_0_#d5ddea]'
                   }`}
                 >
-                  {mode === m ? '✓ ' : ''}
+                  <IconText text={mode === m ? '✓ ' : ''} />
                   {label}
                 </button>
               ))}

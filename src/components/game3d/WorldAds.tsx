@@ -41,6 +41,21 @@ function textureFor(ad: AdCreative): Promise<THREE.Texture> {
       // browsers "load" a video they can't actually decode.
       const ready = () => {
         if (el.currentTime <= 0 || !el.videoWidth) return
+        // Make sure a frame can really be read into the 3D view (a video
+        // from another site without the right headers draws blank).
+        try {
+          const c = document.createElement('canvas')
+          c.width = c.height = 4
+          const g = c.getContext('2d')!
+          g.drawImage(el, 0, 0, 4, 4)
+          const px = g.getImageData(0, 0, 4, 4).data
+          if (!px.some((v, i) => i % 4 === 3 && v > 0)) return // nothing drawn yet
+        } catch {
+          el.removeEventListener('timeupdate', ready)
+          clearTimeout(fail)
+          reject(new Error('video can’t be drawn'))
+          return
+        }
         el.removeEventListener('timeupdate', ready)
         clearTimeout(fail)
         const tex = new THREE.VideoTexture(el)
@@ -153,7 +168,8 @@ export function AdFace({
       }}
     >
       <planeGeometry args={[width, height]} />
-      <meshBasicMaterial map={map ?? undefined} color={map ? '#ffffff' : '#1d3a6e'} toneMapped={false} />
+      {/* Keyed by the picture: a material first drawn without one needs rebuilding to show it. */}
+      <meshBasicMaterial key={map?.uuid ?? 'none'} map={map ?? undefined} color={map ? '#ffffff' : '#1d3a6e'} toneMapped={false} />
     </mesh>
   )
 }

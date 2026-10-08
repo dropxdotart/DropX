@@ -1,5 +1,6 @@
 'use client'
 
+import { Emo, IconText } from './Icons'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import dynamic from 'next/dynamic'
 import { ArrowBigUpDash, Map as MapIcon, X } from 'lucide-react'
@@ -8,7 +9,7 @@ import { getBuilding, xpForLevel } from '@/lib/game/buildings'
 import BannerAd from './BannerAd'
 import InterstitialAd from './InterstitialAd'
 import RewardedAdButton from './RewardedAdButton'
-import { AD_BOOST_MINUTES, BOOST_SECONDS, HELPERS, HELPER_MINUTES } from '@/lib/game/engine'
+import { BALL_HITS_MS, BOOST_SECONDS, DYNAMITE_BOOM_MS, HELPERS } from '@/lib/game/engine'
 import StationPanel from './StationPanel'
 import CrewSheet from './CrewSheet'
 import { eventInfo, eventTitle, timeLeft } from '@/lib/liveEvents'
@@ -22,6 +23,7 @@ import PlotsSheet, { plotName } from './PlotsSheet'
 import ProfileSheet from './ProfileSheet'
 import ManagersSheet from './ManagersSheet'
 import GoalsSheet from './GoalsSheet'
+import BoostsSheet from './BoostsSheet'
 import { CatchBricksGame, FixTruckGame } from './MiniGames'
 import type { Need } from '@/components/game3d/NeedsYou'
 import type { Slot } from '@/lib/game/managers'
@@ -59,6 +61,7 @@ export default function Game() {
   const [goalsOpen, setGoalsOpen] = useState(false)
   const [boostsOpen, setBoostsOpen] = useState(false)
   const [toolShop, setToolShop] = useState<'ball' | 'dynamite' | null>(null)
+  const [toolAim, setToolAim] = useState<'ball' | 'dynamite' | null>(null)
   const [mini, setMini] = useState<{ kind: 'truck'; id: number } | { kind: 'catch' } | null>(null)
   // Holding BREAK! is the jackhammer: a brick every beat until it overheats.
   const hammer = useRef<ReturnType<typeof setInterval> | null>(null)
@@ -201,12 +204,17 @@ export default function Game() {
     hammer.current = null
   }
 
-  const fireTool = (kind: 'ball' | 'dynamite', e: React.MouseEvent<HTMLButtonElement>) => {
-    const n = kind === 'ball' ? engine.swingBall(plot.id) : engine.blast(plot.id)
+  // Tools aim at a plot you pick (the camera flies there first).
+  const fireTool = (kind: 'ball' | 'dynamite', target: number) => {
+    setToolAim(null)
+    setFlyTo((f) => ({ plot: target, nonce: f.nonce + 1 }))
+    const n = kind === 'ball' ? engine.swingBall(target) : engine.blast(target)
     engine.notify()
     if (!n) return
-    const rect = e.currentTarget.getBoundingClientRect()
-    pop(kind === 'ball' ? 'SMASH!' : 'BOOM!', rect.left + rect.width / 2, rect.top - 10)
+    // The pop lands when the ball hits / the dynamite goes off.
+    const at = { x: window.innerWidth / 2, y: window.innerHeight * 0.4 }
+    if (kind === 'ball') for (const ms of BALL_HITS_MS) setTimeout(() => pop('SMASH!', at.x, at.y), ms)
+    else setTimeout(() => pop('BOOM!', at.x, at.y), DYNAMITE_BOOM_MS)
   }
 
   const onNeed = (need: Need) => {
@@ -223,6 +231,12 @@ export default function Game() {
 
   return (
     <div className="fixed inset-0 select-none overflow-hidden bg-[#9fd4ef]">
+      {/* Portrait only: a phone turned sideways gets asked to turn back */}
+      <div className="rotate-lock fixed inset-0 z-[100] hidden flex-col items-center justify-center gap-3 bg-[#1d3a6e] text-center">
+        <div className="rotate-phone h-16 w-10 rounded-lg border-4 border-white" />
+        <p className="font-display text-2xl text-white">Turn your phone upright</p>
+        <p className="font-display text-sm text-white/70">Rubble plays in portrait</p>
+      </div>
       <div className="absolute inset-0">
         <Scene
           engine={engine}
@@ -271,7 +285,7 @@ export default function Game() {
           className="pointer-events-none fixed z-30 -translate-x-1/2 font-display text-2xl text-white animate-[float-up_0.8s_ease-out_forwards] [text-shadow:0_2px_0_#7a3a10,0_0_6px_rgba(0,0,0,0.4)]"
           style={{ left: p.x, top: p.y }}
         >
-          {p.text}
+          <IconText text={p.text} />
         </span>
       ))}
 
@@ -281,8 +295,8 @@ export default function Game() {
           <div className="flex items-center gap-1.5">
             <div className="rounded-2xl border-[3px] border-[#1d3a6e] bg-white px-2.5 py-1 shadow-[0_3px_0_#1d3a6e]">
               <p className="flex items-baseline gap-2 whitespace-nowrap font-display leading-none text-[#1d3a6e]">
-                <span className="text-xl">🧱 {formatNumber(snap.scrap)}</span>
-                <span className="text-sm text-[#1b6fa8]">💎 {formatNumber(snap.gems)}</span>
+                <span className="text-xl"><Emo e="🧱" /> {formatNumber(snap.scrap)}</span>
+                <span className="text-sm text-[#1b6fa8]"><Emo e="💎" /> {formatNumber(snap.gems)}</span>
               </p>
               <p className="mt-0.5 font-display text-[11px] leading-none text-[#2a9a3a]">+{formatNumber(snap.incomePerMinute)} / min</p>
             </div>
@@ -329,12 +343,12 @@ export default function Game() {
           <div className="flex min-w-0 flex-col items-start gap-1.5">
             {snap.boostLeft > BOOST_SECONDS && (
               <div className="inline-flex items-center gap-1 rounded-full border-2 border-white bg-[#ffd23c] px-2.5 py-0.5 font-display text-xs tabular-nums text-[#5a3d00]">
-                ⚡ 2× crew · {snap.boostLeft >= 60 ? `${Math.floor(snap.boostLeft / 60)}m ${String(snap.boostLeft % 60).padStart(2, '0')}s` : `${snap.boostLeft}s`}
+                <Emo e="⚡" /> 2× crew · {snap.boostLeft >= 60 ? `${Math.floor(snap.boostLeft / 60)}m ${String(snap.boostLeft % 60).padStart(2, '0')}s` : `${snap.boostLeft}s`}
               </div>
             )}
             {snap.helpersLeft > 0 && (
               <div className="inline-flex items-center gap-1 rounded-full border-2 border-white bg-[#2d7ff9] px-2.5 py-0.5 font-display text-xs tabular-nums text-white">
-                👷 +{HELPERS} fast · {Math.floor(snap.helpersLeft / 60)}m {String(snap.helpersLeft % 60).padStart(2, '0')}s
+                <Emo e="👷" /> +{HELPERS} fast · {Math.floor(snap.helpersLeft / 60)}m {String(snap.helpersLeft % 60).padStart(2, '0')}s
               </div>
             )}
             {snap.catchOffer > 0 && !mini && (
@@ -345,15 +359,15 @@ export default function Game() {
                 }}
                 className="needs-you pointer-events-auto block rounded-full border-2 border-white bg-[#c4553a] px-2.5 py-1 font-display text-xs text-white"
               >
-                🧱 Bricks falling! Catch them · {snap.catchOffer}s
+                <Emo e="🧱" /> Bricks falling! Catch them · {snap.catchOffer}s
               </button>
             )}
           </div>
           <div className="relative flex flex-col items-end gap-2">
             {([
-              ['Team', '👔', '#9b59d0', '#6c3a99', () => setTeam({ slot: null }), snap.freeChestIn === 0 || snap.chests.wood + snap.chests.iron + snap.chests.gold > 0],
-              ['Goals', '🎯', '#3fbf4a', '#2a8a33', () => setGoalsOpen(true), goalsReady],
-              ['Boosts', '⚡', '#2d7ff9', '#1b5bbd', () => setBoostsOpen((o) => !o), snap.boostLeft <= BOOST_SECONDS || snap.helpersLeft === 0],
+              ['Team', '👔', '#9b59d0', '#6c3a99', () => (setBoostsOpen(false), setTeam({ slot: null })), snap.freeChestIn === 0 || snap.chests.wood + snap.chests.iron + snap.chests.gold > 0],
+              ['Goals', '🎯', '#3fbf4a', '#2a8a33', () => (setBoostsOpen(false), setGoalsOpen(true)), goalsReady],
+              ['Boosts', '⚡', '#2d7ff9', '#1b5bbd', () => setBoostsOpen(true), snap.boostLeft <= BOOST_SECONDS || snap.helpersLeft === 0],
             ] as const).map(([label, emoji, bg, shade, onClick, dot]) => (
               <button
                 key={label}
@@ -362,44 +376,11 @@ export default function Game() {
                 className="pointer-events-auto relative flex h-12 w-12 flex-col items-center justify-center rounded-2xl border-[3px] border-white active:translate-y-0.5"
                 style={{ background: bg, boxShadow: `0 3px 0 ${shade}` }}
               >
-                <span className="text-lg leading-none">{emoji}</span>
+                <Emo e={emoji} size={22} />
                 <span className="font-display text-[9px] leading-none text-white">{label}</span>
                 {dot && <span className="absolute -right-1 -top-1 h-3.5 w-3.5 rounded-full border-2 border-white bg-[#ff6b1a]" />}
               </button>
             ))}
-            {boostsOpen && (
-              <div className="pointer-events-auto absolute right-14 top-[7.5rem] w-52 space-y-1.5 rounded-2xl border-[3px] border-[#1d3a6e] bg-white p-2 shadow-[0_3px_0_#1d3a6e]">
-                <p className="font-display text-sm text-[#1d3a6e]">Boosts</p>
-                {snap.boostLeft > BOOST_SECONDS ? (
-                  <p className="rounded-xl bg-[#fff4d6] px-2 py-1.5 font-display text-xs text-[#5a3d00]">⚡ 2× crew running</p>
-                ) : (
-                  <RewardedAdButton
-                    onReward={() => {
-                      engine.adBoost()
-                      engine.notify()
-                      setBoostsOpen(false)
-                    }}
-                    className="w-full rounded-xl bg-[#3fbf4a] px-2 py-1.5 text-left font-display text-xs text-white disabled:opacity-70"
-                  >
-                    ▶ 2× crew · {AD_BOOST_MINUTES} min
-                  </RewardedAdButton>
-                )}
-                {snap.helpersLeft > 0 ? (
-                  <p className="rounded-xl bg-[#e6f1fb] px-2 py-1.5 font-display text-xs text-[#1b5bbd]">👷 Fast workers on site</p>
-                ) : (
-                  <RewardedAdButton
-                    onReward={() => {
-                      engine.adHelpers()
-                      engine.notify()
-                      setBoostsOpen(false)
-                    }}
-                    className="w-full rounded-xl bg-[#2d7ff9] px-2 py-1.5 text-left font-display text-xs text-white disabled:opacity-70"
-                  >
-                    ▶ +{HELPERS} fast workers · {HELPER_MINUTES} min
-                  </RewardedAdButton>
-                )}
-              </div>
-            )}
           </div>
         </div>
 
@@ -424,7 +405,7 @@ export default function Game() {
             className="pointer-events-auto mx-3 mt-2 flex items-start justify-between gap-2 rounded-2xl bg-[#1d3a6e] p-3 text-white shadow-[0_3px_0_rgba(0,0,0,0.2)]"
           >
             <div className="min-w-0">
-              <p className="font-display text-sm">📣 {b.title}</p>
+              <p className="font-display text-sm"><Emo e="📣" /> {b.title}</p>
               {b.body && <p className="mt-0.5 text-xs text-white/85">{b.body}</p>}
             </div>
             <button
@@ -442,7 +423,7 @@ export default function Game() {
 
         {snap.catchUp !== null && (
           <div className="mx-3 mt-3 flex items-center gap-2 rounded-2xl bg-white p-3 shadow-[0_3px_0_rgba(0,0,0,0.15)]">
-            <span className="text-lg">⏳</span>
+            <span className="text-lg"><Emo e="⏳" /></span>
             <div className="min-w-0 flex-1">
               <p className="font-display text-sm text-[#1d3a6e]">Your crew worked while you were away…</p>
               <div className="mt-1 h-2 overflow-hidden rounded-full bg-[#d5ddea]">
@@ -455,7 +436,7 @@ export default function Game() {
         {snap.catchUp === null && snap.offlineEarnings > 0 && (
           <div className="pointer-events-auto mx-3 mt-3 flex items-center justify-between gap-2 rounded-2xl bg-white p-3 shadow-[0_3px_0_rgba(0,0,0,0.15)]">
             <p className="font-display text-sm text-[#1d3a6e]">
-              Your crew kept hauling — <span className="text-[#e8701f]">+🧱{formatNumber(snap.offlineEarnings)}</span> while you were away!
+              Your crew kept hauling — <span className="text-[#e8701f]">+<Emo e="🧱" />{formatNumber(snap.offlineEarnings)}</span> while you were away!
             </p>
             <RewardedAdButton
               rewardBricks={snap.offlineEarnings}
@@ -465,7 +446,7 @@ export default function Game() {
               }}
               className="shrink-0 rounded-xl bg-[#3fbf4a] px-3 py-2 font-display text-sm text-white shadow-[0_3px_0_#2a8a33] active:translate-y-[3px] active:shadow-none disabled:opacity-70"
             >
-              ▶ Double it
+              <Emo e="▶" /> Double it
             </RewardedAdButton>
             <button
               onClick={() => {
@@ -495,7 +476,7 @@ export default function Game() {
 
             <div className="relative -mt-12">
               {/* Tools: the wrecking ball and dynamite, on cooldowns */}
-              {plot.phase === 'demolishing' && (
+              {snap.plots.some((p) => p.phase === 'demolishing') && (
                 <div className="absolute -top-14 left-1/2 flex -translate-x-1/2 gap-12">
                   {([
                     ['ball', '🏗️', snap.tools.ballIn, snap.tools.ballCharges],
@@ -504,21 +485,50 @@ export default function Game() {
                     <button
                       key={kind}
                       // On cooldown with no bought uses left: offer a pack.
-                      onClick={(e) => (wait > 0 && charges === 0 ? setToolShop(toolShop === kind ? null : kind) : fireTool(kind, e))}
+                      onClick={() => {
+                        setToolShop(null)
+                        if (wait > 0 && charges === 0) setToolShop(toolShop === kind ? null : kind)
+                        else setToolAim(toolAim === kind ? null : kind)
+                      }}
                       aria-label={kind === 'ball' ? 'Wrecking ball' : 'Dynamite'}
                       className={`relative flex h-12 w-12 flex-col items-center justify-center rounded-full border-[3px] border-white text-xl shadow-[0_3px_0_#0f2347] active:translate-y-[3px] active:shadow-none ${wait > 0 && charges === 0 ? 'bg-[#5b6f93]' : 'bg-[#1d3a6e]'}`}
                     >
-                      <span className="leading-none">{emoji}</span>
+                      <Emo e={emoji} size={24} />
                       {wait > 0 && charges === 0 && <span className="font-display text-[10px] leading-none text-white">{wait >= 60 ? `${Math.ceil(wait / 60)}m` : `${wait}s`}</span>}
                       {charges > 0 && (
                         <span className="absolute -right-1.5 -top-1.5 rounded-full border-2 border-white bg-[#ff6b1a] px-1.5 font-display text-[10px] leading-4 text-white">×{charges}</span>
                       )}
                     </button>
                   ))}
+                  {toolAim && (
+                    <div className="absolute bottom-16 left-1/2 w-64 -translate-x-1/2 rounded-2xl border-[3px] border-[#1d3a6e] bg-white p-2.5 shadow-[0_3px_0_#1d3a6e]">
+                      <p className="mb-1.5 font-display text-sm text-[#1d3a6e]"><IconText text={toolAim === 'ball' ? '🏗️ Where should the crane go?' : '🧨 Where should the dynamite go?'} /></p>
+                      <div className="max-h-48 space-y-1.5 overflow-y-auto">
+                        {snap.plots
+                          .filter((p) => p.phase === 'demolishing' && p.bricksLeft > 0)
+                          .map((p) => (
+                            <button
+                              key={p.id}
+                              onClick={() => fireTool(toolAim, p.id)}
+                              className="flex w-full items-center justify-between gap-2 rounded-xl bg-[#eef2f8] px-2.5 py-2 text-left active:scale-[0.98]"
+                            >
+                              <span className="min-w-0">
+                                <span className="block truncate font-display text-sm leading-tight text-[#1d3a6e]">{getBuilding(p.buildingId).name}</span>
+                                <span className="block text-[11px] leading-tight text-[#5b6f93]">{plotName(p.id)}</span>
+                              </span>
+                              <span className="shrink-0 font-display text-xs text-[#5b6f93]">{formatNumber(p.bricksLeft)} left</span>
+                            </button>
+                          ))}
+                      </div>
+                      <button onClick={() => setToolAim(null)} className="mt-1.5 w-full font-display text-xs text-[#5b6f93]">
+                        Cancel
+                      </button>
+                    </div>
+                  )}
                   {toolShop && (
                     <div className="absolute bottom-16 left-1/2 w-56 -translate-x-1/2 rounded-2xl border-[3px] border-[#1d3a6e] bg-white p-2.5 shadow-[0_3px_0_#1d3a6e]">
                       <p className="font-display text-sm text-[#1d3a6e]">
-                        {toolShop === 'ball' ? '🏗️ 3 more swings' : '🧨 3 more sticks'}
+                        <IconText text={toolShop === 'ball' ? '🏗️ 3 more swings' : '🧨 3 more sticks'} />
                         <span className="text-xs text-[#5b6f93]"> · use them any time</span>
                       </p>
                       <div className="mt-1.5 flex gap-1.5">
@@ -536,7 +546,7 @@ export default function Game() {
                               }}
                               className="flex-1 rounded-xl bg-[#3fbf4a] py-1.5 font-display text-xs text-white shadow-[0_3px_0_#2a8a33] active:translate-y-[3px] active:shadow-none disabled:bg-[#b9c2cf] disabled:shadow-[0_3px_0_#97a1ae]"
                             >
-                              {pay === 'gems' ? `💎 ${price.gems}` : `🧱 ${formatNumber(price.bricks)}`}
+                              <IconText text={pay === 'gems' ? `💎 ${price.gems}` : `🧱 ${formatNumber(price.bricks)}`} />
                             </button>
                           )
                         })}
@@ -639,6 +649,7 @@ export default function Game() {
       )}
       {crewOpen && <CrewSheet engine={engine} snap={snap} focus={plot.id} onClose={() => setCrewOpen(false)} />}
       {profileOpen && <ProfileSheet engine={engine} snap={snap} onClose={() => setProfileOpen(false)} />}
+      {boostsOpen && <BoostsSheet engine={engine} snap={snap} onClose={() => setBoostsOpen(false)} />}
       {goalsOpen && <GoalsSheet engine={engine} snap={snap} onClose={() => setGoalsOpen(false)} />}
       {mini?.kind === 'truck' && (
         <FixTruckGame
@@ -666,7 +677,7 @@ export default function Game() {
       {loadingGone && snap.synced && !snap.username && !namePrompted && !snap.notice && (
         <div className="pointer-events-auto fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-6">
           <div className="w-full max-w-xs rounded-3xl bg-white p-5 shadow-[0_6px_0_rgba(0,0,0,0.15)]">
-            <p className="text-center text-4xl">👷</p>
+            <p className="text-center text-4xl"><Emo e="👷" /></p>
             <p className="mt-1 text-center font-display text-2xl text-[#1d3a6e]">Pick a username</p>
             <p className="mb-3 text-center text-sm text-[#5b6f93]">What should the crew call you?</p>
             <UsernameForm engine={engine} initial="" submitLabel="Go!" onDone={dismissNamePrompt} />
@@ -680,9 +691,9 @@ export default function Game() {
       {snap.notice && (
         <div className="pointer-events-auto fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-6">
           <div className="w-full max-w-xs rounded-3xl border-4 border-white bg-[#2f8fe8] p-5 text-center text-white shadow-[0_6px_0_#1d5fa8]">
-            <p className="text-5xl">{snap.notice.emoji ?? '🎁'}</p>
-            <p className="mt-2 font-display text-2xl leading-tight">{snap.notice.title}</p>
-            {snap.notice.detail && <p className="mt-2 font-display text-xl">{snap.notice.detail}</p>}
+            <p className="flex justify-center text-5xl"><Emo e={snap.notice.emoji ?? '🎁'} size="1em" /></p>
+            <p className="mt-2 font-display text-2xl leading-tight"><IconText text={snap.notice.title} /></p>
+            {snap.notice.detail && <p className="mt-2 font-display text-xl"><IconText text={snap.notice.detail} /></p>}
             {snap.notice.message && <p className="mt-2 text-sm text-white/90">“{snap.notice.message}”</p>}
             <button
               onClick={() => {
@@ -703,7 +714,7 @@ export default function Game() {
       {snap.ban && (
         <div className="pointer-events-auto fixed inset-0 z-[60] flex items-center justify-center bg-[#1d3a6e]/95 p-6">
           <div className="w-full max-w-xs rounded-3xl bg-white p-5 text-center shadow-[0_6px_0_rgba(0,0,0,0.25)]">
-            <p className="text-5xl">🚫</p>
+            <p className="text-5xl"><Emo e="🚫" /></p>
             <p className="mt-2 font-display text-2xl leading-tight text-[#1d3a6e]">You&apos;re banned</p>
             <p className="mt-2 text-sm text-[#5b6f93]">
               {snap.ban.until

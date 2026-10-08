@@ -343,3 +343,15 @@ input[type='datetime-local']::-webkit-date-and-time-value {
   background: repeating-conic-gradient(#f2c230 0 15deg, #1d1d1f 15deg 30deg);
   border: 2px solid #1d3a6e;
 }
+
+/* Portrait only: phones turned sideways see the "turn upright" screen. */
+@media (orientation: landscape) and (max-height: 540px) {
+  .rotate-lock { display: flex; }
+}
+@keyframes rotate-phone {
+  0%, 30% { transform: rotate(90deg); }
+  60%, 100% { transform: rotate(0deg); }
+}
+.rotate-phone {
+  animation: rotate-phone 1.8s ease-in-out infinite;
+}

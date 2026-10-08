@@ -1,5 +1,6 @@
 'use client'
 
+import { Emo, IconText } from './Icons'
 import { useEffect, useRef, useState } from 'react'
 import { formatNumber } from './format'
 
@@ -25,8 +26,8 @@ export function FixTruckGame({ onDone, onCancel }: { onDone: () => void; onCance
     <div className="pointer-events-auto fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
       <div className="w-full max-w-sm rounded-3xl bg-white p-4">
         <div className="flex items-center justify-between">
-          <p className="font-display text-xl text-[#1d3a6e]">🔧 Fix the truck!</p>
-          <p className={`font-display text-xl tabular-nums ${left <= 3 ? 'text-[#e23f3f]' : 'text-[#1d3a6e]'}`}>{done ? '✅' : `${left}s`}</p>
+          <p className="font-display text-xl text-[#1d3a6e]"><Emo e="🔧" /> Fix the truck!</p>
+          <p className={`font-display text-xl tabular-nums ${left <= 3 ? 'text-[#e23f3f]' : 'text-[#1d3a6e]'}`}><IconText text={done ? '✅' : `${left}s`} /></p>
         </div>
         <p className="text-sm text-[#5b6f93]">Tap every loose bolt on the engine.</p>
         <div className="relative mt-3 h-56 overflow-hidden rounded-2xl bg-[#5b6470]">
@@ -44,7 +45,7 @@ export function FixTruckGame({ onDone, onCancel }: { onDone: () => void; onCance
               }`}
               style={{ left: `${b.x}%`, top: `${b.y}%` }}
             >
-              {tight[i] ? '✓' : '⚙'}
+              <IconText text={tight[i] ? '✓' : '⚙'} />
             </button>
           ))}
         </div>
@@ -125,11 +126,11 @@ export function CatchBricksGame({ unit, onDone }: { unit: number; onDone: (caugh
     <div className="pointer-events-auto fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
       <div className="w-full max-w-sm rounded-3xl bg-white p-4">
         <div className="flex items-center justify-between">
-          <p className="font-display text-xl text-[#1d3a6e]">🧱 Catch the bricks!</p>
+          <p className="font-display text-xl text-[#1d3a6e]"><Emo e="🧱" /> Catch the bricks!</p>
           <p className="font-display text-xl tabular-nums text-[#1d3a6e]">{Math.max(0, left)}s</p>
         </div>
         <p className="text-sm text-[#5b6f93]">
-          Slide the skip under them · {caught} caught = 🧱{formatNumber(caught * unit)}
+          Slide the skip under them · {caught} caught = <Emo e="🧱" />{formatNumber(caught * unit)}
         </p>
         <div
           ref={area}
@@ -145,7 +146,7 @@ export function CatchBricksGame({ unit, onDone }: { unit: number; onDone: (caugh
             <div className="absolute inset-0 flex flex-col items-center justify-center bg-white/80">
               <p className="font-display text-3xl text-[#1d3a6e]">{caught} caught!</p>
               <button onClick={() => onDone(caught)} className="mt-3 rounded-2xl bg-[#3fbf4a] px-6 py-2 font-display text-lg text-white shadow-[0_4px_0_#2a8a33]">
-                Collect 🧱{formatNumber(caught * unit)}
+                Collect <Emo e="🧱" />{formatNumber(caught * unit)}
               </button>
             </div>
           )}

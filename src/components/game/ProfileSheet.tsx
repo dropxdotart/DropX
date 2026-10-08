@@ -1,5 +1,6 @@
 'use client'
 
+import { Emo } from './Icons'
 import { useState } from 'react'
 import { Copy, Loader2, Pencil, X } from 'lucide-react'
 import type { Engine, Snapshot } from '@/lib/game/engine'
@@ -59,6 +60,16 @@ export default function ProfileSheet({ engine, snap, onClose }: { engine: Engine
           <button onClick={onClose} className="rounded-full bg-[#eef2f8] p-2" aria-label="Close">
             <X className="h-5 w-5 text-[#1d3a6e]" />
           </button>
+        </div>
+
+        {/* Accounts aren't here yet: progress lives on this device for now. */}
+        <div className="mb-3 flex items-center gap-3 rounded-2xl border-2 border-dashed border-[#c9d3e3] p-3">
+          <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[#eef2f8] text-xl"><Emo e="☁️" size={26} /></span>
+          <div className="min-w-0 flex-1">
+            <p className="font-display text-base leading-tight text-[#1d3a6e]">Sign in and save across devices</p>
+            <p className="text-xs leading-tight text-[#5b6f93]">Keep your progress on every phone and tablet. For now it’s saved on this device.</p>
+          </div>
+          <span className="shrink-0 rounded-full bg-[#fff4d6] px-2.5 py-1 font-display text-xs text-[#8a5a00]">Coming soon</span>
         </div>
 
         <div className="mb-3 rounded-2xl bg-[#eef2f8] p-3">

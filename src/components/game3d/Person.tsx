@@ -74,6 +74,28 @@ function Hat({ look }: { look: Look }) {
           </mesh>
         </group>
       )
+    case 'flatcap':
+      // A flat cap with a short peak.
+      return (
+        <group position={[0, 0.16, 0.01]}>
+          <Box size={[0.33, 0.06, 0.34]} position={[0, 0.01, 0]} color={c} />
+          <Box size={[0.3, 0.04, 0.12]} position={[0, -0.01, 0.2]} color={c} />
+        </group>
+      )
+    case 'wizard':
+      // A tall pointed hat with a brim and a couple of stars.
+      return (
+        <group position={[0, 0.17, 0]}>
+          <mesh material={mat(c)} castShadow>
+            <cylinderGeometry args={[0.26, 0.26, 0.03, 16]} />
+          </mesh>
+          <mesh position={[0, 0.24, -0.02]} rotation={[-0.15, 0, 0]} material={mat(c)} castShadow>
+            <coneGeometry args={[0.15, 0.48, 14]} />
+          </mesh>
+          <Box size={[0.05, 0.05, 0.02]} position={[0.06, 0.16, 0.12]} color="#e3b33c" />
+          <Box size={[0.04, 0.04, 0.02]} position={[-0.05, 0.3, 0.08]} color="#e3b33c" />
+        </group>
+      )
     case 'hood':
       return (
         <group>
@@ -123,7 +145,7 @@ export default function Person({ look, walking = false, scale = 1, seed = 0 }: {
   })
   const top = look.topPattern === 'plaid' ? plaid(look.top) : mat(look.top)
   const legsMat = look.topPattern === 'plaid' ? plaid(look.legs) : mat(look.legs)
-  const hairUnder = look.hat === 'hood' || look.hat === 'hardhat' || look.hat === 'fedora'
+  const hairUnder = look.hat === 'hood' || look.hat === 'hardhat' || look.hat === 'fedora' || look.hat === 'flatcap' || look.hat === 'wizard'
   const face = useMemo(() => look.skin, [look.skin])
 
   return (

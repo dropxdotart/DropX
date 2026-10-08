@@ -1,5 +1,6 @@
 'use client'
 
+import { Emo, IconText } from './Icons'
 import { useState } from 'react'
 import { ChevronRight, Lock, X } from 'lucide-react'
 import { getBuilding } from '@/lib/game/buildings'
@@ -40,7 +41,7 @@ function GrowCard({ engine, snap, island }: { engine: Engine; snap: Snapshot; is
       <div className="rounded-2xl bg-[#fff4d6] p-3">
         <div className="flex items-center justify-between gap-3">
           <div className="min-w-0 flex-1">
-            <p className="font-display text-base leading-tight text-[#1d3a6e]">{build.stage === 0 ? '🌉 Building the bridge' : '🏗️ Raising new land'}</p>
+            <p className="font-display text-base leading-tight text-[#1d3a6e]"><IconText text={build.stage === 0 ? '🌉 Building the bridge' : '🏗️ Raising new land'} /></p>
             <p className="text-xs text-[#5b6f93]">{duration(build.secondsLeft)} left · the crew is building</p>
             <div className="mt-1.5 h-2 overflow-hidden rounded-full bg-[#f1dca0]">
               <div className="h-full rounded-full bg-[#ff6b1a]" style={{ width: `${Math.round((1 - build.secondsLeft / Math.max(1, build.totalSeconds)) * 100)}%` }} />
@@ -53,7 +54,7 @@ function GrowCard({ engine, snap, island }: { engine: Engine; snap: Snapshot; is
             }}
             className="shrink-0 rounded-xl bg-[#3fbf4a] px-3 py-2 font-display text-sm text-white shadow-[0_3px_0_#2a8a33] active:translate-y-[3px] active:shadow-none disabled:opacity-70"
           >
-            ▶ −{duration(build.totalSeconds * LAND_AD_SHARE)}
+            <Emo e="▶" /> −{duration(build.totalSeconds * LAND_AD_SHARE)}
           </RewardedAdButton>
         </div>
       </div>
@@ -68,7 +69,7 @@ function GrowCard({ engine, snap, island }: { engine: Engine; snap: Snapshot; is
     <div className="rounded-2xl border-2 border-dashed border-[#c9d3e3] p-3">
       <div className="flex items-center justify-between gap-3">
         <div className="min-w-0">
-          <p className="font-display text-base leading-tight text-[#1d3a6e]">{bridge ? '🌉 Build the bridge' : `🏝️ Expand the ${island.name}`}</p>
+          <p className="font-display text-base leading-tight text-[#1d3a6e]"><IconText text={bridge ? '🌉 Build the bridge' : `🏝️ Expand the ${island.name}`} /></p>
           <p className="text-xs text-[#5b6f93]">
             {bridge ? `Opens the ${island.name} and the ${island.yard.name}` : 'New land rises from the sea'} · +{newPlots.length}{' '}
             {newPlots.some((p) => p.harbour) ? 'harbour lots' : 'plots'} · takes {duration(st.buildMinutes * 60)}
@@ -84,7 +85,7 @@ function GrowCard({ engine, snap, island }: { engine: Engine; snap: Snapshot; is
           }}
           className="shrink-0 rounded-xl bg-[#ff6b1a] px-3 py-2 font-display text-sm text-white shadow-[0_3px_0_#c94e0a] active:translate-y-[3px] active:shadow-none disabled:bg-[#b9c2cf] disabled:shadow-[0_3px_0_#97a1ae]"
         >
-          🧱 {formatNumber(buildPrice(st.cost))}
+          <Emo e="🧱" /> {formatNumber(buildPrice(st.cost))}
         </button>
       </div>
       {error && <p className="mt-1 text-xs font-bold text-[#c23030]">{error}</p>}
@@ -154,11 +155,11 @@ export default function PlotsSheet({
                   className="flex w-full items-center gap-3 rounded-2xl bg-[#eef2f8] p-3 text-left active:scale-[0.98]"
                 >
                   <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-white text-2xl">
-                    {slot.id === 0 ? '🏗️' : '🚧'}
+                    <IconText text={slot.id === 0 ? '🏗️' : '🚧'} />
                   </span>
                   <span className="min-w-0 flex-1">
                     <span className="block font-display text-base leading-tight text-[#1d3a6e]">{plotName(slot.id)}</span>
-                    <span className={`block truncate text-xs ${st.color}`}>{st.text}</span>
+                    <span className={`block truncate text-xs ${st.color}`}><IconText text={st.text} /></span>
                   </span>
                   <ChevronRight className="h-5 w-5 shrink-0 text-[#5b6f93]" />
                 </button>
@@ -192,7 +193,7 @@ export default function PlotsSheet({
                     }}
                     className="shrink-0 rounded-xl bg-[#3fbf4a] px-3 py-2 font-display text-sm text-white shadow-[0_3px_0_#2a8a33] active:translate-y-[3px] active:shadow-none disabled:bg-[#b9c2cf] disabled:shadow-[0_3px_0_#97a1ae]"
                   >
-                    🧱 {formatNumber(buildPrice(slot.cost))}
+                    <Emo e="🧱" /> {formatNumber(buildPrice(slot.cost))}
                   </button>
                 )}
               </div>

@@ -1,5 +1,6 @@
 'use client'
 
+import { Emo, IconText } from './Icons'
 import { useState } from 'react'
 import { Lock, X } from 'lucide-react'
 import { brickCount, pickableBuildings } from '@/lib/game/buildings'
@@ -49,9 +50,9 @@ export default function SitePicker({
         </button>
         {justCleared ? (
           <>
-            <p className="text-center font-display text-3xl text-[#1d3a6e]">Site cleared! 🎉</p>
+            <p className="text-center font-display text-3xl text-[#1d3a6e]">Site cleared! <Emo e="🎉" /></p>
             <p className="mb-4 text-center text-sm text-[#5b6f93]">
-              {justCleared.name} is gone — <span className="font-bold text-[#e8701f]">+🧱{formatNumber(justCleared.bonus)}</span>. Pick
+              {justCleared.name} is gone — <span className="font-bold text-[#e8701f]">+<Emo e="🧱" />{formatNumber(justCleared.bonus)}</span>. Pick
               the next job for {plotName(plot)}:
             </p>
           </>
@@ -84,15 +85,15 @@ export default function SitePicker({
                     {b.name}
                     {b.endsAt && (
                       <span className="ml-1.5 inline-block rounded-full bg-[#ff6b1a] px-2 py-0.5 align-middle font-display text-[11px] leading-none text-white">
-                        ⏳ {timeLeft(b.endsAt)} left
+                        <Emo e="⏳" /> {timeLeft(b.endsAt)} left
                       </span>
                     )}
                   </p>
                   <p className="text-xs leading-tight text-[#5b6f93]">
-                    {formatNumber(bricks)} bricks · pays ~🧱{formatNumber(payout)}
+                    {formatNumber(bricks)} bricks · pays ~<Emo e="🧱" />{formatNumber(payout)}
                   </p>
                   {needsHarbour ? (
-                    <p className="text-xs font-bold text-[#2d7ff9]">⚓ Too big for this plot — build on a harbour lot</p>
+                    <p className="text-xs font-bold text-[#2d7ff9]"><Emo e="⚓" /> Too big for this plot — build on a harbour lot</p>
                   ) : (
                     locked && <p className="text-xs font-bold text-[#c2410c]">Unlocks at level {b.requiredLevel}</p>
                   )}
@@ -107,7 +108,7 @@ export default function SitePicker({
                   }}
                   className="shrink-0 rounded-xl bg-[#ff6b1a] px-3 py-2 font-display text-sm text-white shadow-[0_3px_0_#c94e0a] active:translate-y-[3px] active:shadow-none disabled:bg-[#b9c2cf] disabled:shadow-[0_3px_0_#97a1ae]"
                 >
-                  {b.contractCost === 0 ? 'Free' : `🧱 ${formatNumber(buildPrice(b.contractCost))}`}
+                  <IconText text={b.contractCost === 0 ? 'Free' : `🧱 ${formatNumber(buildPrice(b.contractCost))}`} />
                 </button>
               </div>
             )

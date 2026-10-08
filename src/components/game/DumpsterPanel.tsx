@@ -1,5 +1,6 @@
 'use client'
 
+import { Emo } from './Icons'
 import { X } from 'lucide-react'
 import {
   DUMPSTER_UPGRADE,
@@ -22,7 +23,7 @@ function BuyButton({ cost, scrap, onBuy }: { cost: number; scrap: number; onBuy:
       onClick={onBuy}
       className="shrink-0 rounded-xl bg-[#3fbf4a] px-3 py-2 font-display text-sm text-white shadow-[0_3px_0_#2a8a33] active:translate-y-[3px] active:shadow-none disabled:bg-[#b9c2cf] disabled:shadow-[0_3px_0_#97a1ae]"
     >
-      🧱 {formatNumber(cost)}
+      <Emo e="🧱" /> {formatNumber(cost)}
     </button>
   )
 }
@@ -61,7 +62,7 @@ export default function DumpsterPanel({
       <div className="w-full max-w-md rounded-t-3xl bg-white p-4 pb-[max(env(safe-area-inset-bottom),16px)] shadow-[0_-4px_0_rgba(0,0,0,0.1)]">
         <div className="flex items-start justify-between gap-2">
           <div className="flex items-center gap-3">
-            <span className="flex h-12 w-12 items-center justify-center rounded-xl bg-[#eef2f8] text-2xl">🗑️</span>
+            <span className="flex h-12 w-12 items-center justify-center rounded-xl bg-[#eef2f8] text-2xl"><Emo e="🗑️" /></span>
             <div>
               <p className="font-display text-2xl leading-none text-[#1d3a6e]">Dumpster {i + 1}</p>
               <p className="mt-1 text-sm text-[#5b6f93]">
@@ -92,7 +93,7 @@ export default function DumpsterPanel({
           <div className="flex items-center justify-between text-xs text-[#5b6f93]">
             <span>{d.load >= d.capacity ? 'Full — workers are lining up' : 'Filling up'}</span>
             <span className="font-display text-[#1d3a6e]">
-              🧱 {d.load}/{d.capacity}
+              <Emo e="🧱" /> {d.load}/{d.capacity}
             </span>
           </div>
           <div className="mt-1.5 h-2.5 overflow-hidden rounded-full bg-[#d5ddea]">
@@ -117,7 +118,7 @@ export default function DumpsterPanel({
                     `Ready again in ${Math.ceil(snap.dumpsterAdIn / 60)} min`
                   ) : (
                     <>
-                      Every plot, paid straight away <span className="font-bold text-[#2a9a3a]">+🧱{formatNumber(snap.dumpsterValue)}</span>
+                      Every plot, paid straight away <span className="font-bold text-[#2a9a3a]">+<Emo e="🧱" />{formatNumber(snap.dumpsterValue)}</span>
                     </>
                   )}
                 </p>
@@ -131,7 +132,7 @@ export default function DumpsterPanel({
                   }}
                   className="shrink-0 rounded-xl bg-[#3fbf4a] px-3 py-2 font-display text-sm text-white shadow-[0_3px_0_#2a8a33] active:translate-y-[3px] active:shadow-none disabled:opacity-70"
                 >
-                  ▶ Watch ad
+                  <Emo e="▶" /> Watch ad
                 </RewardedAdButton>
               )}
             </div>

@@ -83,6 +83,11 @@ export const BOOST_SECONDS = 3
 // Rewarded-ad perks: 2× crew for this long, and how often the free upgrade
 // and the instant dumpster empty can be watched for.
 export const AD_BOOST_MINUTES = 5
+// Tool animation timing (ms after use): when the ball hits, when it blows.
+export const BALL_HITS_MS = [3500, 4700]
+export const BALL_FX_MS = 7500
+export const DYNAMITE_BOOM_MS = 4500
+export const DYNAMITE_FX_MS = 8000
 // The ad for extra hands: this many fast workers, for this long.
 export const HELPERS = 4
 export const HELPER_MINUTES = 3
@@ -920,6 +925,20 @@ export class Engine {
     return false
   }
   toolFx: { plot: number; kind: 'ball' | 'dynamite'; at: number } | null = null
+  // Tool hits waiting for their moment in the animation (real-world ms).
+  private pendingKnocks: { plot: number; at: number; share: number; min: number; near: { x: number; z: number } | null }[] = []
+  private runPendingKnocks() {
+    if (!this.pendingKnocks.length) return
+    const now = Date.now()
+    const due = this.pendingKnocks.filter((k) => k.at <= now)
+    if (!due.length) return
+    this.pendingKnocks = this.pendingKnocks.filter((k) => k.at > now)
+    for (const k of due) {
+      const site = this.plots[k.plot]
+      if (site && site.phase === 'demolishing') this.knock(site, k.share, k.min, k.near)
+    }
+    this.markDirty()
+  }
   counters: Counters = { ...ZERO_COUNTERS }
   goalDay = { day: '', base: { ...ZERO_COUNTERS }, claimed: [false, false, false], bonus: false }
   contract: Contract | null = null
@@ -985,8 +1004,12 @@ export class Engine {
   swingBall(plot: number): number {
     const site = this.plots[plot]
     if (!site || site.phase !== 'demolishing' || !this.useToolTurn('ball', 90_000)) return 0
-    const n = this.knock(site, 0.05, 12, { x: site.halfX, z: site.halfZ })
-    this.toolFx = { plot, kind: 'ball', at: Date.now() }
+    // Two swings: the bricks come off as the ball hits (see ToolFx timing).
+    const now = Date.now()
+    const near = { x: site.halfX, z: site.halfZ }
+    this.pendingKnocks.push({ plot, at: now + BALL_HITS_MS[0], share: 0.025, min: 6, near }, { plot, at: now + BALL_HITS_MS[1], share: 0.025, min: 6, near })
+    const n = 1
+    this.toolFx = { plot, kind: 'ball', at: now }
     this.count('tool')
     this.save()
     this.markDirty()
@@ -997,8 +1020,11 @@ export class Engine {
   blast(plot: number): number {
     const site = this.plots[plot]
     if (!site || site.phase !== 'demolishing' || !this.useToolTurn('dynamite', 240_000)) return 0
-    const n = this.knock(site, 0.1, 25, null)
-    this.toolFx = { plot, kind: 'dynamite', at: Date.now() }
+    // The fuse burns first; the blast takes the bricks.
+    const now = Date.now()
+    this.pendingKnocks.push({ plot, at: now + DYNAMITE_BOOM_MS, share: 0.1, min: 25, near: null })
+    const n = 1
+    this.toolFx = { plot, kind: 'dynamite', at: now }
     this.count('tool')
     this.save()
     this.markDirty()
@@ -2747,6 +2773,7 @@ export class Engine {
     this.runAutomation()
     this.checkLevelRewards()
     this.tickHiccups(dt)
+    this.runPendingKnocks()
     if (this.helpersUntil) this.syncHelpers()
     this.tickGoals()
     for (const site of this.plots) if (site.phase === 'demolishing') site.worked += dt

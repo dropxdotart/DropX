@@ -1,5 +1,6 @@
 'use client'
 
+import { Emo, IconText } from './Icons'
 import { useEffect, useState } from 'react'
 import { X } from 'lucide-react'
 import type { Engine, Snapshot } from '@/lib/game/engine'
@@ -105,7 +106,7 @@ export default function BonusTab({
               ? 'Watch an ad and it’s yours — open it in Team.'
               : 'Watch an ad and the crew tips them straight into your dumpster — even if it’s full.'}
           </p>
-          <p className="mt-2 text-center font-display text-3xl">{drop.chest ? (drop.chest === 'iron' ? '🧰 Iron chest' : '🧰 Wooden chest') : `+${formatNumber(drop.amount)} 🧱`}</p>
+          <p className="mt-2 text-center font-display text-3xl"><IconText text={drop.chest ? (drop.chest === 'iron' ? '🧰 Iron chest' : '🧰 Wooden chest') : `+${formatNumber(drop.amount)} 🧱`} /></p>
           <RewardedAdButton
             onStart={() => setWatching(true)}
             rewardBricks={drop.chest ? 0 : drop.amount}
@@ -117,7 +118,7 @@ export default function BonusTab({
             }}
             className="mt-2 w-full rounded-2xl bg-[#3fbf4a] py-2.5 font-display text-lg text-white shadow-[0_4px_0_#2a8a33] active:translate-y-1 active:shadow-none disabled:opacity-70"
           >
-            ▶ Watch ad to claim
+            <Emo e="▶" /> Watch ad to claim
           </RewardedAdButton>
         </div>
       ) : (
@@ -125,7 +126,7 @@ export default function BonusTab({
           onClick={() => setOpen(true)}
           className="flex flex-col items-center gap-0.5 rounded-l-2xl border-[3px] border-r-0 border-white bg-[#2f8fe8] py-2 pl-2.5 pr-2 text-white shadow-[0_5px_0_#1d5fa8] active:translate-x-1"
         >
-          <span className="text-3xl leading-none">{drop?.chest ? '🧰' : '🧱'}</span>
+          <span className="text-3xl leading-none"><IconText text={drop?.chest ? '🧰' : '🧱'} /></span>
           <span className="font-display text-base leading-none">{drop?.chest ? 'Chest' : `+${formatNumber(drop?.amount ?? 0)}`}</span>
           <span className="mt-1 rounded-full bg-[#1d3a6e] px-1.5 font-display text-xs tabular-nums">{drop?.secondsLeft ?? 0}s</span>
         </button>

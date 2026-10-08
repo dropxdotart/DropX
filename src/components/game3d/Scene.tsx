@@ -1,5 +1,6 @@
 'use client'
 
+import { IconText, Emo } from '@/components/game/Icons'
 import { Suspense, useEffect, useMemo, useRef } from 'react'
 import { Canvas, useFrame, useThree } from '@react-three/fiber'
 import { Html, OrthographicCamera, useProgress } from '@react-three/drei'
@@ -178,7 +179,7 @@ function PlotLabels({ snap, onPlotAction }: { snap: Snapshot; onPlotAction: (plo
           label = (
             <button onClick={tap(slot.id)} className="animate-bounce rounded-2xl border-[3px] border-white bg-[#ff6b1a] px-4 py-2 font-display text-white shadow-[0_4px_0_#c94e0a]">
               <span className="block text-xl leading-none">CLEARED!</span>
-              <span className="block text-sm leading-tight">Tap to claim 🧱{formatNumber(bonus)}</span>
+              <span className="block text-sm leading-tight">Tap to claim <Emo e="🧱" />{formatNumber(bonus)}</span>
             </button>
           )
         } else if (owned?.phase === 'empty') {
@@ -196,7 +197,7 @@ function PlotLabels({ snap, onPlotAction }: { snap: Snapshot; onPlotAction: (plo
             <button onClick={tap(slot.id)} className="rounded-2xl border-[3px] border-white bg-[#e23f3f] px-3 py-1.5 font-display text-white shadow-[0_4px_0_#a82a2a]">
               <span className="block text-base leading-none">FOR SALE</span>
               <span className="block text-xs leading-tight">
-                {locked ? `🔒 Level ${slot.requiredLevel}` : `🧱${formatNumber(slot.cost)}`}
+                <IconText text={locked ? `🔒 Level ${slot.requiredLevel}` : `🧱${formatNumber(slot.cost)}`} />
               </span>
             </button>
           )

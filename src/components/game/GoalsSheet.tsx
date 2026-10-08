@@ -1,5 +1,6 @@
 'use client'
 
+import { Emo } from './Icons'
 import { useState } from 'react'
 import { X } from 'lucide-react'
 import type { Engine, Snapshot } from '@/lib/game/engine'
@@ -17,7 +18,7 @@ export default function GoalsSheet({ engine, snap, onClose }: { engine: Engine; 
     <div className="pointer-events-auto fixed inset-0 z-40 flex items-end justify-center bg-black/40" onClick={onClose}>
       <div className="max-h-[85dvh] w-full max-w-md overflow-y-auto rounded-t-3xl bg-white p-4 pb-[max(env(safe-area-inset-bottom),16px)]" onClick={(e) => e.stopPropagation()}>
         <div className="mb-3 flex items-center justify-between">
-          <p className="font-display text-2xl text-[#1d3a6e]">🎯 Goals</p>
+          <p className="font-display text-2xl text-[#1d3a6e]"><Emo e="🎯" /> Goals</p>
           <button onClick={onClose} className="rounded-full bg-[#eef2f8] p-2" aria-label="Close">
             <X className="h-5 w-5 text-[#1d3a6e]" />
           </button>
@@ -39,23 +40,23 @@ export default function GoalsSheet({ engine, snap, onClose }: { engine: Engine; 
                   </p>
                 </div>
                 {g.claimed ? (
-                  <span className="font-display text-sm text-[#2a9a3a]">✓</span>
+                  <span className="font-display text-sm text-[#2a9a3a]"><Emo e="✓" /></span>
                 ) : (
                   <button
                     disabled={!done}
                     onClick={() => act(engine.claimGoal(i))}
                     className="shrink-0 rounded-xl bg-[#3fbf4a] px-3 py-2 font-display text-sm text-white shadow-[0_3px_0_#2a8a33] active:translate-y-[3px] active:shadow-none disabled:bg-[#b9c2cf] disabled:shadow-[0_3px_0_#97a1ae]"
                   >
-                    💎 {g.gems}
+                    <Emo e="💎" /> {g.gems}
                   </button>
                 )}
               </div>
             )
           })}
           <div className="flex items-center justify-between gap-3 rounded-2xl bg-[#fff4d6] p-3">
-            <p className="font-display text-sm text-[#1d3a6e]">All three done: 🧰 Iron chest</p>
+            <p className="font-display text-sm text-[#1d3a6e]">All three done: <Emo e="🧰" /> Iron chest</p>
             {snap.goalsBonusClaimed ? (
-              <span className="font-display text-sm text-[#2a9a3a]">✓</span>
+              <span className="font-display text-sm text-[#2a9a3a]"><Emo e="✓" /></span>
             ) : (
               <button
                 disabled={!snap.goalsBonusReady}
@@ -71,13 +72,13 @@ export default function GoalsSheet({ engine, snap, onClose }: { engine: Engine; 
           <>
             <p className="mb-1.5 mt-4 font-display text-xs uppercase tracking-wide text-[#5b6f93]">Contract</p>
             <div className="flex items-center gap-3 rounded-2xl border-2 border-dashed border-[#c9d3e3] p-3">
-              <span className="text-3xl">📜</span>
+              <span className="text-3xl"><Emo e="📜" /></span>
               <div className="min-w-0 flex-1">
                 <p className="font-display text-base leading-tight text-[#1d3a6e]">
                   Demolish {c.target} × {c.name}
                 </p>
                 <p className="text-xs text-[#5b6f93]">
-                  Reward: {c.chest === 'gold' ? 'Gold' : 'Iron'} chest + 💎{c.gems} · {c.progress}/{c.target}
+                  Reward: {c.chest === 'gold' ? 'Gold' : 'Iron'} chest + <Emo e="💎" />{c.gems} · {c.progress}/{c.target}
                 </p>
               </div>
               <button

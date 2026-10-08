@@ -38,7 +38,7 @@ export const ABILITIES: Record<AbilityId, Ability> = {
 export type Look = {
   skin: string
   hair: string
-  hat: 'hardhat' | 'cap' | 'kippah' | 'fedora' | 'hood' | 'none'
+  hat: 'hardhat' | 'cap' | 'kippah' | 'fedora' | 'hood' | 'flatcap' | 'wizard' | 'none'
   hatColor: string
   top: string // shirt / jacket
   topPattern?: 'plaid' | 'stripe'
@@ -259,20 +259,21 @@ export const OUTFITS: { id: OutfitId; name: string; gems: number }[] = [
   { id: 'wizard', name: 'Wizard robe', gems: 150 },
 ]
 
-// Every outfit keeps the kippah (under the fedora) and the payos.
+// Every outfit keeps the payos; only the plaid suit has the kippah — the
+// others each have their own headwear.
 function OUTFIT_LOOK(o: OutfitId): Look {
   const base = { skin: '#f0cfae', hair: '#3b2a1e', payos: true, hatColor: '#1d2433', shoes: '#141414', item: 'none' as const }
   switch (o) {
     case 'suit':
       return { ...base, hat: 'kippah', hatColor: '#e9e4d6', top: '#1f2a4a', topPattern: 'plaid', under: '#ffffff', legs: '#1f2a4a' }
     case 'shabbos':
-      return { ...base, hat: 'kippah', top: '#ffffff', under: '#ffffff', legs: '#1d2433' }
+      return { ...base, hat: 'flatcap', hatColor: '#5b6470', top: '#ffffff', under: '#ffffff', legs: '#1d2433' }
     case 'fedora':
       return { ...base, hat: 'fedora', hatColor: '#161616', top: '#ffffff', under: '#ffffff', legs: '#1f2a4a', topPattern: undefined }
     case 'puffer':
       return { ...base, hat: 'hood', hatColor: '#141414', top: '#141414', legs: '#2b2b2e' }
     case 'wizard':
-      return { ...base, hat: 'kippah', top: '#9ec3e6', under: '#9ec3e6', legs: '#2b2b2e', glasses: true, tie: ['#8a1c2b', '#e3b33c'], robe: '#161616' }
+      return { ...base, hat: 'wizard', hatColor: '#24365a', top: '#9ec3e6', under: '#9ec3e6', legs: '#2b2b2e', glasses: true, tie: ['#8a1c2b', '#e3b33c'], robe: '#161616' }
   }
 }
 export const outfitLook = OUTFIT_LOOK

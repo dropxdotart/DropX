@@ -1,5 +1,6 @@
 'use client'
 
+import { Emo } from './Icons'
 import { X } from 'lucide-react'
 import { upgradeCost, upgradeLock, UPGRADE_INFO, YARD_AD_SHARE, type Engine, type Snapshot } from '@/lib/game/engine'
 import RewardedAdButton from './RewardedAdButton'
@@ -80,7 +81,7 @@ export default function StationPanel({
                 <div key={key} className="rounded-2xl bg-[#fff4d6] p-3">
                   <div className="flex items-center justify-between gap-3">
                     <div className="min-w-0 flex-1">
-                      <p className="font-display text-base leading-tight text-[#1d3a6e]">🏗️ Expanding to size {build.toSize}</p>
+                      <p className="font-display text-base leading-tight text-[#1d3a6e]"><Emo e="🏗️" /> Expanding to size {build.toSize}</p>
                       <p className="text-xs leading-tight text-[#5b6f93]">{formatDuration(build.secondsLeft)} left · the crew is building</p>
                       <div className="mt-1.5 h-2 overflow-hidden rounded-full bg-[#f1dca0]">
                         <div
@@ -96,7 +97,7 @@ export default function StationPanel({
                       }}
                       className="shrink-0 rounded-xl bg-[#3fbf4a] px-3 py-2 font-display text-sm text-white shadow-[0_3px_0_#2a8a33] active:translate-y-[3px] active:shadow-none disabled:opacity-70"
                     >
-                      ▶ −{formatDuration(build.totalSeconds * YARD_AD_SHARE)}
+                      <Emo e="▶" /> −{formatDuration(build.totalSeconds * YARD_AD_SHARE)}
                     </RewardedAdButton>
                   </div>
                 </div>
@@ -143,7 +144,7 @@ export default function StationPanel({
                         }}
                         className="rounded-lg bg-[#2f8fe8] px-2 py-1 font-display text-xs text-white shadow-[0_2px_0_#1d5fa8] active:translate-y-0.5 active:shadow-none disabled:opacity-70"
                       >
-                        ▶ Free
+                        <Emo e="▶" /> Free
                       </RewardedAdButton>
                     )}
                   </div>
