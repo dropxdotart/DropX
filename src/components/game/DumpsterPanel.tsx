@@ -13,6 +13,7 @@ import {
 import { dumpsterLevel, getStation, nextMilestone, tierFor } from '@/lib/game/stations'
 import { formatNumber } from './format'
 import { plotName } from './PlotsSheet'
+import RewardedAdButton from './RewardedAdButton'
 
 function BuyButton({ cost, scrap, onBuy }: { cost: number; scrap: number; onBuy: () => void }) {
   return (
@@ -107,6 +108,34 @@ export default function DumpsterPanel({
         </div>
 
         <div className="mt-3 space-y-2">
+          {snap.dumpsterValue > 0 && (
+            <div className="flex items-center justify-between gap-3 rounded-2xl bg-[#e3f6e5] p-3">
+              <div className="min-w-0">
+                <p className="font-display text-base leading-tight text-[#1d3a6e]">Empty all dumpsters now</p>
+                <p className="text-xs leading-tight text-[#5b6f93]">
+                  {snap.dumpsterAdIn > 0 ? (
+                    `Ready again in ${Math.ceil(snap.dumpsterAdIn / 60)} min`
+                  ) : (
+                    <>
+                      Every plot, paid straight away <span className="font-bold text-[#2a9a3a]">+🧱{formatNumber(snap.dumpsterValue)}</span>
+                    </>
+                  )}
+                </p>
+              </div>
+              {snap.dumpsterAdIn === 0 && (
+                <RewardedAdButton
+                  rewardBricks={snap.dumpsterValue}
+                  onReward={() => {
+                    engine.emptyDumpstersByAd()
+                    engine.notify()
+                  }}
+                  className="shrink-0 rounded-xl bg-[#3fbf4a] px-3 py-2 font-display text-sm text-white shadow-[0_3px_0_#2a8a33] active:translate-y-[3px] active:shadow-none disabled:opacity-70"
+                >
+                  ▶ Watch ad
+                </RewardedAdButton>
+              )}
+            </div>
+          )}
           <div className="flex items-center justify-between gap-3 rounded-2xl bg-[#eef2f8] p-3">
             <div className="min-w-0">
               <p className="font-display text-base leading-tight text-[#1d3a6e]">{DUMPSTER_UPGRADE.label}</p>

@@ -29,6 +29,8 @@ function Viewer({ engine }: { engine: Engine }) {
         onPlotAction={(plot) => setFlyTo((f) => ({ plot, nonce: f.nonce + 1 }))}
         onLoadProgress={noop}
         onOpenBonus={noop}
+        onSelectManager={noop}
+        onNeed={noop}
       />
       {snap.plots.length > 1 && (
         <div className="pointer-events-auto absolute inset-x-0 bottom-4 flex justify-center gap-1.5">

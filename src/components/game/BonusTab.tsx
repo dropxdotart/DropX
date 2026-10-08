@@ -95,16 +95,20 @@ export default function BonusTab({
             </>
           )}
           <div className="flex items-start justify-between">
-            <p className="font-display text-xl leading-tight">A truck dropped its load!</p>
+            <p className="font-display text-xl leading-tight">{drop.chest ? 'A chest fell off a truck!' : 'A truck dropped its load!'}</p>
             <button onClick={() => setOpen(false)} className="-mr-1 -mt-1 rounded-full bg-white/20 p-1.5" aria-label="Close">
               <X className="h-4 w-4" />
             </button>
           </div>
-          <p className="mt-1 text-sm text-white/85">Watch an ad and the crew tips them straight into your dumpster — even if it&apos;s full.</p>
-          <p className="mt-2 text-center font-display text-3xl">+{formatNumber(drop.amount)} 🧱</p>
+          <p className="mt-1 text-sm text-white/85">
+            {drop.chest
+              ? 'Watch an ad and it’s yours — open it in Team.'
+              : 'Watch an ad and the crew tips them straight into your dumpster — even if it’s full.'}
+          </p>
+          <p className="mt-2 text-center font-display text-3xl">{drop.chest ? (drop.chest === 'iron' ? '🧰 Iron chest' : '🧰 Wooden chest') : `+${formatNumber(drop.amount)} 🧱`}</p>
           <RewardedAdButton
             onStart={() => setWatching(true)}
-            rewardBricks={drop.amount}
+            rewardBricks={drop.chest ? 0 : drop.amount}
             onReward={() => {
               setWatching(false)
               engine.claimBonusDrop()
@@ -121,8 +125,8 @@ export default function BonusTab({
           onClick={() => setOpen(true)}
           className="flex flex-col items-center gap-0.5 rounded-l-2xl border-[3px] border-r-0 border-white bg-[#2f8fe8] py-2 pl-2.5 pr-2 text-white shadow-[0_5px_0_#1d5fa8] active:translate-x-1"
         >
-          <span className="text-3xl leading-none">🧱</span>
-          <span className="font-display text-base leading-none">+{formatNumber(drop?.amount ?? 0)}</span>
+          <span className="text-3xl leading-none">{drop?.chest ? '🧰' : '🧱'}</span>
+          <span className="font-display text-base leading-none">{drop?.chest ? 'Chest' : `+${formatNumber(drop?.amount ?? 0)}`}</span>
           <span className="mt-1 rounded-full bg-[#1d3a6e] px-1.5 font-display text-xs tabular-nums">{drop?.secondsLeft ?? 0}s</span>
         </button>
       )}

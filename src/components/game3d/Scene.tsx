@@ -5,7 +5,7 @@ import { Canvas, useFrame, useThree } from '@react-three/fiber'
 import { Html, OrthographicCamera, useProgress } from '@react-three/drei'
 import * as THREE from 'three'
 import { getBuilding, sizeFor } from '@/lib/game/buildings'
-import { BRICK, DUMPSTER_SLOTS, LOT_HALF, stats, type Engine, type Snapshot } from '@/lib/game/engine'
+import { BRICK, DUMPSTER_SLOTS, LOT_HALF, PAY_RATE, stats, type Engine, type Snapshot } from '@/lib/game/engine'
 import { PLOT_SLOTS } from '@/lib/game/plots'
 import { ISLANDS, islandRect } from '@/lib/game/islands'
 import { STATIONS, dumpstersAffordable, fleetAffordable, upgradeReady, yardUpgrades, getStation, tierFor, truckLevel, type StationId } from '@/lib/game/stations'
@@ -14,6 +14,9 @@ import Building from './Building'
 import Worker, { vestMaterial } from './Worker'
 import World from './World'
 import BonusDrop from './BonusDrop'
+import ManagerWalkers from './ManagerWalkers'
+import NeedsYou, { ToolFx, type Need } from './NeedsYou'
+import type { Slot } from '@/lib/game/managers'
 import { Sky } from './Scenery'
 import { BrickYard, CrewStation, DumpsterStation, Fleet, ToolStation, TruckDepot } from './Stations'
 import { pointer } from './drag'
@@ -171,7 +174,7 @@ function PlotLabels({ snap, onPlotAction }: { snap: Snapshot; onPlotAction: (plo
         const owned = snap.plots[slot.id]
         let label: React.ReactNode = null
         if (owned?.phase === 'cleared') {
-          const bonus = getBuilding(owned.buildingId).bonus
+          const bonus = Math.round(getBuilding(owned.buildingId).bonus * PAY_RATE)
           label = (
             <button onClick={tap(slot.id)} className="animate-bounce rounded-2xl border-[3px] border-white bg-[#ff6b1a] px-4 py-2 font-display text-white shadow-[0_4px_0_#c94e0a]">
               <span className="block text-xl leading-none">CLEARED!</span>
@@ -185,7 +188,7 @@ function PlotLabels({ snap, onPlotAction }: { snap: Snapshot; onPlotAction: (plo
               <span className="block text-xs leading-tight opacity-90">Tap to start a demolition</span>
             </button>
           )
-        } else if (slot.id === snap.plots.length && snap.islands.find((i) => i.id === slot.island)?.open) {
+        } else if (slot.id === snap.plots.length && (snap.islands.find((i) => i.id === slot.island)?.stage ?? -1) >= slot.stage) {
           // Only the next plot up for sale gets a bubble; later ones just
           // show their sign so the map stays clean.
           const locked = snap.level < slot.requiredLevel
@@ -221,6 +224,8 @@ export default function Scene({
   onPlotAction,
   onLoadProgress,
   onOpenBonus,
+  onSelectManager,
+  onNeed,
 }: {
   engine: Engine
   snap: Snapshot
@@ -234,6 +239,8 @@ export default function Scene({
   onPlotAction: (plot: number) => void
   onLoadProgress: (progress: number) => void
   onOpenBonus: () => void
+  onSelectManager: (slot: Slot) => void
+  onNeed: (need: Need) => void
 }) {
   const center = useRef(new THREE.Vector3(0, 0, 1.5))
   const zoomRef = useRef(20)
@@ -268,16 +275,18 @@ export default function Scene({
   const pinchDist = useRef(0)
 
   const openIslands = snap.islands.filter((i) => i.open).length
+  // Panning stays over the land you have (it grows with the islands).
+  const grownKey = snap.islands.map((i) => i.stage).join(',')
   const pan = useMemo(() => {
-    const rects = ISLANDS.filter((s) => snap.islands[s.index]?.open).map(islandRect)
+    const rects = ISLANDS.filter((s) => snap.islands[s.index]?.open).map((s) => islandRect(s, snap.islands[s.index].stage))
     return {
       x0: Math.min(...rects.map((r) => r.x0)) - PAN_PEEK,
       x1: Math.max(...rects.map((r) => r.x1)) + PAN_PEEK,
       z0: Math.min(...rects.map((r) => r.z0)) - PAN_PEEK,
       z1: Math.max(...rects.map((r) => r.z1)) + PAN_PEEK,
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- only when an island opens
-  }, [openIslands])
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only when the land grows
+  }, [grownKey])
   const minZoom = MIN_ZOOM_BY_ISLANDS[Math.max(0, Math.min(MIN_ZOOM_BY_ISLANDS.length - 1, openIslands - 1))]
   const zoomBy = (factor: number) => {
     zoomMul.current = THREE.MathUtils.clamp(zoomMul.current * factor, minZoom, MAX_ZOOM)
@@ -318,7 +327,6 @@ export default function Scene({
     const c = center.current
     c.addScaledVector(GROUND_RIGHT, -dx / zoom)
     c.addScaledVector(GROUND_FORWARD, dy / (zoom * CAMERA_DIR.y))
-    // The harbour district sticks out on the right.
     c.x = THREE.MathUtils.clamp(c.x, pan.x0, pan.x1)
     c.z = THREE.MathUtils.clamp(c.z, pan.z0, pan.z1)
   }
@@ -358,8 +366,8 @@ export default function Scene({
         <Suspense fallback={null}>
           <World
             ownedPlots={snap.plots.length}
-            openIslands={snap.islands.filter((i) => i.open).map((i) => i.id)}
-            bridgeBuilding={snap.bridgeBuild?.to ?? null}
+            grownKey={grownKey}
+            landBuild={snap.landBuild ? `${snap.landBuild.island}:${snap.landBuild.stage}` : null}
           />
           {engine.plots.map((site) => {
             const slot = PLOT_SLOTS[site.id]
@@ -367,6 +375,7 @@ export default function Scene({
             return (
               <group key={site.id} position={[slot.x, 0, slot.z]}>
                 <Building engine={engine} site={site} onBreakTap={onBreakTap} />
+                {snap.toolFx?.plot === site.id && <ToolFx key={snap.toolFx.at} fx={snap.toolFx} />}
                 {site.dumpsters.map((_, i) => (
                   <DumpsterStation
                     key={i}
@@ -415,6 +424,8 @@ export default function Scene({
           })}
           <Fleet engine={engine} tiers={snap.trucks.map((t) => tierFor(truckLevel(t)))} onSelect={onSelectTruck} />
           <PlotLabels snap={snap} onPlotAction={onPlotAction} />
+          <ManagerWalkers snap={snap} onTap={onSelectManager} />
+          <NeedsYou engine={engine} snap={snap} onNeed={onNeed} />
           <SceneReady onReady={() => onLoadProgress(100)} />
         </Suspense>
       </Canvas>

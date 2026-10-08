@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useSyncExternalStore } from 'react'
-import { CUSTOM_BUILDINGS_KEY, getEngine, PENDING_GRANTS_KEY, setTuning, type Engine, type Snapshot } from './engine'
+import { CUSTOM_BUILDINGS_KEY, getEngine, PENDING_GRANTS_KEY, type Engine, type Snapshot } from './engine'
 import { registerCustomBuildings } from './buildings'
 import { getCustomBuildings, syncPlayer } from '@/app/playerActions'
 import { playerId } from '@/lib/player'
@@ -67,7 +67,7 @@ function resumeSession(hiddenMs: number) {
 async function syncCloud(engine: Engine) {
   const activity = engine.takeActivity()
   try {
-    const { shortId, username, grants, ban, live, tuning } = await syncPlayer(
+    const { shortId, username, grants, ban, live } = await syncPlayer(
       playerId(),
       engine.cloudSummary(),
       engine.saveData(),
@@ -77,7 +77,6 @@ async function syncCloud(engine: Engine) {
     engine.setUsername(username)
     engine.setBan(ban)
     engine.setLive(live.events, live.broadcasts)
-    setTuning(tuning)
     engine.markDirty()
     engine.markSynced()
     if (shortId && shortId !== engine.shortId) {

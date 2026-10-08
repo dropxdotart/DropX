@@ -1,33 +1,46 @@
-// The world is a chain of islands on one shared grid of blocks (BLOCK
-// apart, with a road just past each block's front and right side). The
-// Houses island is where everyone starts; the City and the Industrial
-// island are reached over bridges a player builds. Each island has its own
-// themed yard where trucks unload.
+// The world is a chain of islands on one shared grid of blocks. Each island
+// is a set of blocks that grows in stages: you start on a small bit of the
+// Houses island and expand it (new land rises from the sea); once it's
+// fully grown you can bridge over to the City, which also starts small and
+// grows, and so on.
 //
-// Block (i, j) sits at world (i·BLOCK, j·BLOCK). Roads run along the
-// lines x = i·BLOCK + 11.5 and z = j·BLOCK + 11.5 (ROAD_Z = 11.5).
+// Block (i, j) is centred on world (i·BLOCK, j·BLOCK). Roads run along the
+// block edges — every block is ringed by streets — so a block's front road
+// (+z) is at z = j·BLOCK + R and its right road (+x) at x = i·BLOCK + R.
 
 export const BLOCK = 23
-const R = 11.5 // ROAD_Z: a block's centre to the road in front of it
+const R = 11.5 // ROAD_Z: a block's centre to the road in front of it (= BLOCK / 2)
 
 export type IslandId = 'houses' | 'city' | 'industrial'
 export type YardTheme = 'timber' | 'brick' | 'smelter'
+export type FillerKind = 'suburb' | 'park' | 'shops' | 'downtown' | 'industrial' | 'quay'
+
+// What a block is: a plot (bought in order), the island's yard, or filler.
+export type CellWhat = 'plot' | 'harbour' | 'yard' | FillerKind
+export type Cell = { i: number; j: number; stage: number; what: CellWhat }
+
+// Growing an island to a stage: unlock level, price and build time. Stage 0
+// of every island but the first is reached by building a bridge to it.
+export type Stage = { level: number; cost: number; buildMinutes: number }
 
 export type Island = {
   id: IslandId
   index: number
   name: string
   emoji: string
-  i0: number
-  i1: number
-  j0: number
-  j1: number
-  // Reached over a bridge the player builds (null: you start here).
-  unlock: { level: number; cost: number; buildMinutes: number } | null
-  // The island's yard: its block, look and setting. 'shore' and 'pier'
-  // yards grow back (north) over the water; an 'inland' one is hemmed in
-  // by streets, so it stays within its block.
-  yard: { x: number; z: number; theme: YardTheme; name: string; setting: 'shore' | 'inland' | 'pier'; maxSize: number }
+  cells: Cell[]
+  // stages[0] is null for the island you start on (it's simply there).
+  stages: (Stage | null)[]
+  // The island's yard. A 'shore' yard grows back (−z) over the water onto a
+  // pier — the block behind it is always sea; an 'inland' one stays within
+  // its block.
+  yard: { x: number; z: number; theme: YardTheme; name: string; setting: 'shore' | 'inland'; maxSize: number }
+}
+
+// Shorthand for the layouts below: [i, j, what] per stage.
+type Row = [number, number, CellWhat]
+function cells(stages: Row[][]): Cell[] {
+  return stages.flatMap((rows, stage) => rows.map(([i, j, what]) => ({ i, j, stage, what })))
 }
 
 export const ISLANDS: Island[] = [
@@ -36,98 +49,203 @@ export const ISLANDS: Island[] = [
     index: 0,
     name: 'Houses island',
     emoji: '🏡',
-    i0: -2,
-    i1: 2,
-    j0: 4,
-    j1: 8,
-    unlock: null,
-    // In town, next to the home lot.
-    yard: { x: BLOCK, z: 7 * BLOCK, theme: 'timber', name: 'Timber & Recycling Yard', setting: 'inland', maxSize: 3 },
+    // A plus: home lot, a second plot, the yard and a couple of streets of
+    // houses → a 3×3 town → a wide island with a point facing the City.
+    // The yard never borders a plot.
+    cells: cells([
+      [
+        [0, 6, 'plot'],
+        [-1, 6, 'plot'],
+        [0, 5, 'suburb'],
+        [1, 5, 'yard'],
+        [0, 7, 'shops'],
+      ],
+      [
+        [-1, 5, 'plot'],
+        [-1, 7, 'plot'],
+        [1, 6, 'park'],
+        [-2, 6, 'suburb'],
+        [1, 7, 'suburb'],
+      ],
+      [
+        [2, 7, 'plot'],
+        [-2, 5, 'plot'],
+        [2, 6, 'suburb'],
+        [2, 5, 'suburb'],
+        [-2, 7, 'park'],
+        [0, 4, 'suburb'],
+      ],
+    ]),
+    stages: [null, { level: 3, cost: 600, buildMinutes: 2 }, { level: 6, cost: 6_000, buildMinutes: 5 }],
+    yard: { x: BLOCK, z: 5 * BLOCK, theme: 'timber', name: 'Timber & Recycling Yard', setting: 'inland', maxSize: 3 },
   },
   {
     id: 'city',
     index: 1,
     name: 'City',
     emoji: '🏙️',
-    i0: -2,
-    i1: 2,
-    j0: -2,
-    j1: 2,
-    unlock: { level: 8, cost: 50_000, buildMinutes: 10 },
-    // On the north-east waterfront corner.
-    yard: { x: 2 * BLOCK, z: -2 * BLOCK, theme: 'brick', name: 'Brick & Concrete Yard', setting: 'shore', maxSize: 10 },
+    // The yard sits on an inlet (block (1, 0) stays sea) so it can grow
+    // out over the water, with downtown all round it. The last stage is
+    // the harbour quay.
+    cells: cells([
+      [
+        [-1, 2, 'plot'],
+        [-1, 1, 'plot'],
+        [1, 1, 'yard'],
+        [0, 1, 'downtown'],
+        [0, 2, 'downtown'],
+        [1, 2, 'shops'],
+      ],
+      [
+        [0, 0, 'plot'],
+        [-2, 1, 'plot'],
+        [-1, 0, 'downtown'],
+        [2, 2, 'downtown'],
+        [2, 1, 'park'],
+        [-2, 2, 'downtown'],
+      ],
+      [
+        [0, -1, 'plot'],
+        [-1, -1, 'plot'],
+        [-2, 0, 'park'],
+        [2, 0, 'downtown'],
+      ],
+      [
+        [3, 1, 'harbour'],
+        [3, 2, 'harbour'],
+        [3, 0, 'quay'],
+      ],
+    ]),
+    stages: [
+      { level: 8, cost: 50_000, buildMinutes: 10 },
+      { level: 10, cost: 150_000, buildMinutes: 15 },
+      { level: 12, cost: 600_000, buildMinutes: 20 },
+      { level: 14, cost: 2_500_000, buildMinutes: 30 },
+    ],
+    yard: { x: BLOCK, z: BLOCK, theme: 'brick', name: 'Brick & Concrete Yard', setting: 'shore', maxSize: 10 },
   },
   {
     id: 'industrial',
     index: 2,
     name: 'Industrial island',
     emoji: '🏭',
-    i0: -6,
-    i1: -4,
-    j0: -1,
-    j1: 1,
-    unlock: { level: 15, cost: 20_000_000, buildMinutes: 60 },
-    // Out on a pier off the north shore, reached by a dock road.
-    yard: { x: -4 * BLOCK, z: -2 * BLOCK, theme: 'smelter', name: 'Steel Smelter', setting: 'pier', maxSize: 10 },
+    // Block (−4, −1) stays sea for the smelter's pier.
+    cells: cells([
+      [
+        [-5, 1, 'plot'],
+        [-4, 2, 'plot'],
+        [-4, 0, 'yard'],
+        [-4, 1, 'industrial'],
+        [-5, 0, 'industrial'],
+      ],
+      [
+        [-6, 1, 'plot'],
+        [-6, 0, 'plot'],
+        [-5, 2, 'industrial'],
+        [-6, 2, 'industrial'],
+        [-5, -1, 'industrial'],
+      ],
+      [
+        [-7, 1, 'plot'],
+        [-4, 3, 'plot'],
+        [-7, 0, 'industrial'],
+        [-6, -1, 'industrial'],
+        [-5, 3, 'industrial'],
+        [-7, 2, 'industrial'],
+      ],
+    ]),
+    stages: [
+      { level: 16, cost: 4_000_000, buildMinutes: 60 },
+      { level: 18, cost: 10_000_000, buildMinutes: 45 },
+      { level: 20, cost: 25_000_000, buildMinutes: 60 },
+    ],
+    yard: { x: -4 * BLOCK, z: 0, theme: 'smelter', name: 'Steel Smelter', setting: 'shore', maxSize: 10 },
   },
 ]
+
+// No plot may border its island's yard (side by side) — checked here so a
+// layout edit can't slip one in.
+for (const s of ISLANDS) {
+  const y = s.cells.find((c) => c.what === 'yard')!
+  for (const c of s.cells)
+    if ((c.what === 'plot' || c.what === 'harbour') && Math.abs(c.i - y.i) + Math.abs(c.j - y.j) === 1)
+      throw new Error(`${s.id}: plot (${c.i}, ${c.j}) is right next to the yard`)
+}
 
 export function island(id: IslandId): Island {
   return ISLANDS.find((s) => s.id === id)!
 }
 
-// The harbour district: big lots on a quay off the City's east side.
-export const HARBOUR = { i: 3, j0: -1, j1: 1 }
-export const HARBOUR_X = HARBOUR.i * BLOCK
+export const lastStage = (s: Island) => s.stages.length - 1
 
-// Bridges between islands: the road they carry and the island they open.
+// ── What's grown ─────────────────────────────────────────────────────────
+//
+// How far each island has grown: −1 = not reached yet, 0 = its first bit,
+// up to lastStage. The engine sets this; roads and routing follow it.
+
+export type Grown = Record<IslandId, number>
+export const START_GROWN: Grown = { houses: 0, city: -1, industrial: -1 }
+
+let grown: Grown = { ...START_GROWN }
+let grownVersion = 0
+
+export function setGrown(g: Grown) {
+  if (ISLANDS.every((s) => g[s.id] === grown[s.id])) return
+  grown = { ...g }
+  grownVersion++
+  graphCache = null
+}
+
+export function getGrown(): Grown {
+  return grown
+}
+
+export const cellOpen = (s: Island, c: Cell, g: Grown = grown) => c.stage <= g[s.id]
+
+// ── Bridges ──────────────────────────────────────────────────────────────
+
+// Bridges between islands: the road they carry and the island they reach.
 export type Bridge = { to: IslandId; axis: 'x' | 'z'; line: number; from: number; until: number }
-// On screen "up" is the map's north-west, so each new island sits higher
-// up: Houses at the bottom (south), the City above it, Industrial above
-// that (west).
 export const BRIDGES: Bridge[] = [
-  // Houses → City up a cross street.
+  // Houses (its north point, block (0, 4)) → City (block (0, 2)), up x = R.
   { to: 'city', axis: 'x', line: R, from: 2 * BLOCK + R, until: 3 * BLOCK + R },
-  // City → Industrial along the road in front of the middle row.
-  { to: 'industrial', axis: 'z', line: R, from: -4 * BLOCK + R, until: -3 * BLOCK + R },
+  // City (block (−2, 1)) → Industrial (block (−4, 1)), along z = BLOCK + R.
+  { to: 'industrial', axis: 'z', line: BLOCK + R, from: -4 * BLOCK + R, until: -3 * BLOCK + R },
 ]
 
 // ── Road network ─────────────────────────────────────────────────────────
 
 // A straight road: along x at height `line` (z), or along z at `line` (x).
-export type Segment = { axis: 'x' | 'z'; line: number; from: number; until: number; bridge?: IslandId; harbour?: boolean; island?: IslandId }
+// Island roads are one block edge long, tagged with the stage that builds
+// them; bridges carry `bridge`.
+export type Segment = { axis: 'x' | 'z'; line: number; from: number; until: number; bridge?: IslandId; island?: IslandId; stage?: number }
 
 function islandRoads(s: Island): Segment[] {
-  const out: Segment[] = []
-  const west = (s.i0 - 1) * BLOCK + R
-  const east = s.i1 * BLOCK + R
-  const north = (s.j0 - 1) * BLOCK + R
-  const south = s.j1 * BLOCK + R
-  // Front roads of each row (none along the north shore).
-  for (let j = s.j0; j <= s.j1; j++) out.push({ axis: 'z', line: j * BLOCK + R, from: west, until: east, island: s.id })
-  // Cross streets from the north shore to the south edge.
-  for (let i = s.i0 - 1; i <= s.i1; i++) out.push({ axis: 'x', line: i * BLOCK + R, from: north, until: south, island: s.id })
-  return out
+  const edges = new Map<string, Segment>()
+  const add = (key: string, seg: Segment) => {
+    const have = edges.get(key)
+    if (!have || seg.stage! < have.stage!) edges.set(key, seg)
+  }
+  for (const c of s.cells) {
+    const x = c.i * BLOCK
+    const z = c.j * BLOCK
+    add(`z${c.j * 2 + 1},${c.i}`, { axis: 'z', line: z + R, from: x - R, until: x + R, island: s.id, stage: c.stage })
+    add(`z${c.j * 2 - 1},${c.i}`, { axis: 'z', line: z - R, from: x - R, until: x + R, island: s.id, stage: c.stage })
+    add(`x${c.i * 2 + 1},${c.j}`, { axis: 'x', line: x + R, from: z - R, until: z + R, island: s.id, stage: c.stage })
+    add(`x${c.i * 2 - 1},${c.j}`, { axis: 'x', line: x - R, from: z - R, until: z + R, island: s.id, stage: c.stage })
+  }
+  // No road behind a shore yard: that's where it grows out over the water.
+  if (s.yard.setting === 'shore') edges.delete(`z${Math.round(s.yard.z / BLOCK) * 2 - 1},${Math.round(s.yard.x / BLOCK)}`)
+  return [...edges.values()]
 }
 
-export const ROADS: Segment[] = [
-  ...ISLANDS.flatMap(islandRoads),
-  // Harbour: the City's middle rows run on out to it, with a street along
-  // the far side.
-  ...[-2, -1, 0, 1].map((j) => ({
-    axis: 'z' as const,
-    line: j * BLOCK + R,
-    from: 2 * BLOCK + R,
-    until: HARBOUR.i * BLOCK + R,
-    harbour: true,
-    island: 'city' as const,
-  })),
-  { axis: 'x', line: HARBOUR.i * BLOCK + R, from: -2 * BLOCK + R, until: 1 * BLOCK + R, harbour: true, island: 'city' },
-  // The Industrial island's dock road along its north shore, out to the
-  // smelter's pier.
-  { axis: 'z', line: -1 * BLOCK - R, from: -5 * BLOCK + R, until: -4 * BLOCK + R, island: 'industrial' },
-  ...BRIDGES.map((b) => ({ axis: b.axis, line: b.line, from: b.from, until: b.until, bridge: b.to })),
-]
+export const ROADS: Segment[] = [...ISLANDS.flatMap(islandRoads), ...BRIDGES.map((b) => ({ axis: b.axis, line: b.line, from: b.from, until: b.until, bridge: b.to }))]
+
+// Is this road there (its island grown far enough / its bridge built)?
+export function roadOpen(seg: Segment, g: Grown = grown): boolean {
+  if (seg.bridge) return g[seg.bridge] >= 0
+  return !!seg.island && (seg.stage ?? 0) <= g[seg.island]
+}
 
 export type Point = { x: number; z: number }
 
@@ -136,13 +254,12 @@ type Node = Point
 const EPS = 0.01
 const key = (p: Point) => `${Math.round(p.x * 100)},${Math.round(p.z * 100)}`
 
-function pointsOn(seg: Segment, extra: Point[] = []): Point[] {
+function pointsOn(seg: Segment, roads: Segment[], extra: Point[] = []): Point[] {
   const pts: Point[] = []
   const at = (t: number): Point => (seg.axis === 'z' ? { x: t, z: seg.line } : { x: seg.line, z: t })
   pts.push(at(seg.from), at(seg.until))
-  for (const o of ROADS) {
+  for (const o of roads) {
     if (o.axis === seg.axis) continue
-    // o crosses seg at (o.line along seg) if within both.
     if (o.line < seg.from - EPS || o.line > seg.until + EPS) continue
     if (seg.line < o.from - EPS || seg.line > o.until + EPS) continue
     pts.push(at(o.line))
@@ -156,15 +273,24 @@ function pointsOn(seg: Segment, extra: Point[] = []): Point[] {
   return pts.sort((a, b) => along(a) - along(b))
 }
 
-function buildGraph(extra: Point[]): Map<string, { p: Node; edges: { to: string; d: number }[] }> {
-  const g = new Map<string, { p: Node; edges: { to: string; d: number }[] }>()
+type Graph = Map<string, { p: Node; edges: { to: string; d: number }[] }>
+let graphCache: { version: number; roads: Segment[] } | null = null
+
+function openRoads(): Segment[] {
+  if (!graphCache || graphCache.version !== grownVersion) graphCache = { version: grownVersion, roads: ROADS.filter((r) => roadOpen(r)) }
+  return graphCache.roads
+}
+
+function buildGraph(extra: Point[]): Graph {
+  const roads = openRoads()
+  const g: Graph = new Map()
   const node = (p: Point) => {
     const k = key(p)
     if (!g.has(k)) g.set(k, { p, edges: [] })
     return k
   }
-  for (const seg of ROADS) {
-    const pts = pointsOn(seg, extra)
+  for (const seg of roads) {
+    const pts = pointsOn(seg, roads, extra)
     for (let n = 0; n + 1 < pts.length; n++) {
       const a = node(pts[n])
       const b = node(pts[n + 1])
@@ -177,7 +303,7 @@ function buildGraph(extra: Point[]): Map<string, { p: Node; edges: { to: string;
   return g
 }
 
-// Shortest way along the roads between two road points, as corners.
+// Shortest way along the open roads between two road points, as corners.
 export function roadPath(from: Point, to: Point): Point[] {
   const g = buildGraph([from, to])
   const start = key(from)
@@ -219,21 +345,124 @@ export function roadPath(from: Point, to: Point): Point[] {
   })
 }
 
-// Which island a world point is on (or null in the water / harbour).
+// ── Where things are ─────────────────────────────────────────────────────
+
+// Which island a world point is on (any stage), or null in the water.
 export function islandAt(x: number, z: number): Island | null {
-  return (
-    ISLANDS.find(
-      (s) => x >= (s.i0 - 0.5) * BLOCK - 3 && x <= (s.i1 + 0.5) * BLOCK + 3 && z >= (s.j0 - 0.5) * BLOCK - 3 && z <= (s.j1 + 0.5) * BLOCK + 3
-    ) ?? null
-  )
+  const i = Math.round(x / BLOCK)
+  const j = Math.round(z / BLOCK)
+  return ISLANDS.find((s) => s.cells.some((c) => c.i === i && c.j === j)) ?? null
 }
 
-// An island's land rectangle (edge to edge; the north edge is its beach).
-export function islandRect(s: Island) {
+// The bounds of an island's land up to a stage (all of it by default).
+export function islandRect(s: Island, stage = lastStage(s)) {
+  const cs = s.cells.filter((c) => c.stage <= stage)
+  const pad = R + 2.7
   return {
-    x0: (s.i0 - 0.5) * BLOCK - 2.7,
-    x1: (s.i1 + 0.5) * BLOCK + 2.7 + (s.id === 'city' ? (HARBOUR.i - s.i1) * BLOCK : 0),
-    z0: (s.j0 - 0.5) * BLOCK - 1.2,
-    z1: (s.j1 + 0.5) * BLOCK + 2.7,
+    x0: Math.min(...cs.map((c) => c.i)) * BLOCK - pad,
+    x1: Math.max(...cs.map((c) => c.i)) * BLOCK + pad,
+    z0: Math.min(...cs.map((c) => c.j)) * BLOCK - pad,
+    z1: Math.max(...cs.map((c) => c.j)) * BLOCK + pad,
   }
+}
+
+// ── Coastlines ───────────────────────────────────────────────────────────
+//
+// An island's outline as smooth loops: the union of its blocks, pushed out
+// by `margin` and with every corner rounded off by `radius` — so a plus of
+// blocks becomes a soft, organic shape. Used for the grass (small margin,
+// just past the outer roads), the beach and the shallows (wider, rounder).
+
+export function coastline(cs: { i: number; j: number }[], margin: number, radius: number): Point[][] {
+  const has = new Set(cs.map((c) => `${c.i},${c.j}`))
+  const h = BLOCK / 2
+  // Boundary edges, each with the land on its left (x right, z up).
+  type E = { a: Point; b: Point }
+  const edges: E[] = []
+  for (const c of cs) {
+    const x = c.i * BLOCK
+    const z = c.j * BLOCK
+    if (!has.has(`${c.i},${c.j - 1}`)) edges.push({ a: { x: x - h, z: z - h }, b: { x: x + h, z: z - h } })
+    if (!has.has(`${c.i + 1},${c.j}`)) edges.push({ a: { x: x + h, z: z - h }, b: { x: x + h, z: z + h } })
+    if (!has.has(`${c.i},${c.j + 1}`)) edges.push({ a: { x: x + h, z: z + h }, b: { x: x - h, z: z + h } })
+    if (!has.has(`${c.i - 1},${c.j}`)) edges.push({ a: { x: x - h, z: z + h }, b: { x: x - h, z: z - h } })
+  }
+  const from = new Map<string, E[]>()
+  for (const e of edges) {
+    const k = key(e.a)
+    from.set(k, [...(from.get(k) ?? []), e])
+  }
+  const used = new Set<E>()
+  const loops: Point[][] = []
+  for (const start of edges) {
+    if (used.has(start)) continue
+    const corners: Point[] = []
+    let e = start
+    while (!used.has(e)) {
+      used.add(e)
+      corners.push(e.a)
+      const dir = { x: Math.sign(e.b.x - e.a.x), z: Math.sign(e.b.z - e.a.z) }
+      const next = (from.get(key(e.b)) ?? []).filter((n) => !used.has(n) || n === start)
+      if (!next.length) break
+      // At a pinch (two ways on), keep turning the same way round.
+      next.sort((p, q) => turn(dir, p) - turn(dir, q))
+      e = next[0]
+    }
+    loops.push(simplify(corners))
+  }
+  return loops.map((loop) => round(offset(loop, margin), radius))
+}
+
+function turn(dir: Point, e: { a: Point; b: Point }) {
+  const d = { x: Math.sign(e.b.x - e.a.x), z: Math.sign(e.b.z - e.a.z) }
+  // Prefer a left turn, then straight, then right.
+  const cross = dir.x * d.z - dir.z * d.x
+  return cross > 0 ? 0 : cross === 0 ? 1 : 2
+}
+
+// Drop points in the middle of straight runs.
+function simplify(pts: Point[]): Point[] {
+  return pts.filter((p, n) => {
+    const a = pts[(n - 1 + pts.length) % pts.length]
+    const c = pts[(n + 1) % pts.length]
+    return !((Math.abs(a.x - p.x) < EPS && Math.abs(p.x - c.x) < EPS) || (Math.abs(a.z - p.z) < EPS && Math.abs(p.z - c.z) < EPS))
+  })
+}
+
+// Push every edge of a right-angled loop outward by m (land on the left).
+function offset(pts: Point[], m: number): Point[] {
+  const n = pts.length
+  return pts.map((p, k) => {
+    const a = pts[(k - 1 + n) % n]
+    const c = pts[(k + 1) % n]
+    const d1 = { x: Math.sign(p.x - a.x), z: Math.sign(p.z - a.z) }
+    const d2 = { x: Math.sign(c.x - p.x), z: Math.sign(c.z - p.z) }
+    // Outward = right of travel: (dz, −dx).
+    return { x: p.x + m * (d1.z + d2.z), z: p.z + m * (-d1.x - d2.x) }
+  })
+}
+
+// Round each corner with a curve of up to `r` (less on short edges).
+function round(pts: Point[], r: number): Point[] {
+  const n = pts.length
+  const out: Point[] = []
+  for (let k = 0; k < n; k++) {
+    const a = pts[(k - 1 + n) % n]
+    const p = pts[k]
+    const c = pts[(k + 1) % n]
+    const la = Math.hypot(p.x - a.x, p.z - a.z)
+    const lc = Math.hypot(c.x - p.x, c.z - p.z)
+    const rr = Math.min(r, la / 2, lc / 2)
+    const s = { x: p.x + ((a.x - p.x) / la) * rr, z: p.z + ((a.z - p.z) / la) * rr }
+    const e = { x: p.x + ((c.x - p.x) / lc) * rr, z: p.z + ((c.z - p.z) / lc) * rr }
+    const STEPS = 6
+    for (let t = 0; t <= STEPS; t++) {
+      const u = t / STEPS
+      out.push({
+        x: (1 - u) * (1 - u) * s.x + 2 * (1 - u) * u * p.x + u * u * e.x,
+        z: (1 - u) * (1 - u) * s.z + 2 * (1 - u) * u * p.z + u * u * e.z,
+      })
+    }
+  }
+  return out
 }

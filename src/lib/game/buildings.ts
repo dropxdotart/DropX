@@ -1,5 +1,5 @@
 import type { IslandId } from './islands'
-import { getBlueprintSize, getBricks, type Brick } from './blueprints'
+import { DESIGN, getBlueprintSize, getBricks, type Brick } from './blueprints'
 import { bricksFromCells, decodeCells, type Shape, type ShapeSize } from './shapes'
 
 // Demolition jobs. You need the player level to see a job as available AND
@@ -25,18 +25,28 @@ export type BuildingDef = {
 }
 
 export const BUILDINGS: BuildingDef[] = [
-  { id: 'shed', island: 'houses', name: 'Garden Shed', blueprint: 0, requiredLevel: 1, contractCost: 0, brickValue: 1, bonus: 50 },
-  { id: 'house', island: 'houses', name: 'Old House', blueprint: 1, requiredLevel: 3, contractCost: 250, brickValue: 2, bonus: 400 },
-  { id: 'warehouse', name: 'Warehouse', blueprint: 2, requiredLevel: 5, contractCost: 2_500, brickValue: 5, bonus: 3_000 },
-  { id: 'tower', name: 'Office Tower', blueprint: 3, requiredLevel: 8, contractCost: 20_000, brickValue: 12, bonus: 25_000 },
-  { id: 'mall', name: 'Shopping Mall', blueprint: 4, requiredLevel: 11, contractCost: 120_000, brickValue: 30, bonus: 150_000 },
-  { id: 'stadium', name: 'Stadium', blueprint: 5, requiredLevel: 14, contractCost: 700_000, brickValue: 80, bonus: 900_000, toughness: 1.25, harbour: true },
-  { id: 'ship', name: 'Cruise Ship', blueprint: 6, requiredLevel: 17, contractCost: 4_000_000, brickValue: 220, bonus: 5_000_000, toughness: 1.9, harbour: true },
+  // Houses island (prices are placeholders until the rebalance pass)
+  { id: 'shed', island: 'houses', name: 'Garden Shed', blueprint: DESIGN.shed, requiredLevel: 1, contractCost: 0, brickValue: 1, bonus: 50 },
+  { id: 'garage', island: 'houses', name: 'Garage', blueprint: DESIGN.garage, requiredLevel: 2, contractCost: 100, brickValue: 1, bonus: 150 },
+  { id: 'cottage', island: 'houses', name: 'Cottage', blueprint: DESIGN.cottage, requiredLevel: 3, contractCost: 300, brickValue: 1, bonus: 400 },
+  { id: 'house', island: 'houses', name: 'Old House', blueprint: DESIGN.oldHouse, requiredLevel: 4, contractCost: 800, brickValue: 2, bonus: 900 },
+  { id: 'shop', island: 'houses', name: 'Corner Shop', blueprint: DESIGN.cornerShop, requiredLevel: 5, contractCost: 2_000, brickValue: 2, bonus: 2_000 },
+  { id: 'townhouses', island: 'houses', name: 'Townhouses', blueprint: DESIGN.townhouses, requiredLevel: 6, contractCost: 5_000, brickValue: 3, bonus: 5_000 },
+  { id: 'school', island: 'houses', name: 'School', blueprint: DESIGN.school, requiredLevel: 7, contractCost: 12_000, brickValue: 4, bonus: 12_000 },
+  // City
+  { id: 'warehouse', name: 'Warehouse', blueprint: DESIGN.warehouse, requiredLevel: 8, contractCost: 25_000, brickValue: 5, bonus: 25_000 },
+  { id: 'apartments', name: 'Apartments', blueprint: DESIGN.apartments, requiredLevel: 9, contractCost: 50_000, brickValue: 6, bonus: 50_000 },
+  { id: 'tower', name: 'Office Tower', blueprint: DESIGN.officeTower, requiredLevel: 10, contractCost: 100_000, brickValue: 8, bonus: 100_000 },
+  { id: 'hotel', name: 'Hotel', blueprint: DESIGN.hotel, requiredLevel: 11, contractCost: 250_000, brickValue: 12, bonus: 250_000 },
+  { id: 'mall', name: 'Shopping Mall', blueprint: DESIGN.mall, requiredLevel: 12, contractCost: 600_000, brickValue: 20, bonus: 600_000 },
+  { id: 'hospital', name: 'Hospital', blueprint: DESIGN.hospital, requiredLevel: 13, contractCost: 1_500_000, brickValue: 35, bonus: 1_500_000 },
+  { id: 'stadium', name: 'Stadium', blueprint: DESIGN.stadium, requiredLevel: 14, contractCost: 4_000_000, brickValue: 60, bonus: 4_000_000, toughness: 1.25, harbour: true },
+  { id: 'ship', name: 'Cruise Ship', blueprint: DESIGN.cruiseShip, requiredLevel: 15, contractCost: 10_000_000, brickValue: 120, bonus: 10_000_000, toughness: 1.5, harbour: true },
   // Industrial island
-  { id: 'factory', island: 'industrial', name: 'Factory', blueprint: 12, requiredLevel: 15, contractCost: 2_000_000, brickValue: 120, bonus: 2_500_000, toughness: 1.3 },
-  { id: 'power', island: 'industrial', name: 'Power Plant', blueprint: 13, requiredLevel: 17, contractCost: 6_000_000, brickValue: 260, bonus: 7_000_000, toughness: 1.5 },
-  { id: 'refinery', island: 'industrial', name: 'Refinery', blueprint: 14, requiredLevel: 19, contractCost: 18_000_000, brickValue: 500, bonus: 20_000_000, toughness: 1.7 },
-  { id: 'steel', island: 'industrial', name: 'Steel Mill', blueprint: 15, requiredLevel: 21, contractCost: 50_000_000, brickValue: 900, bonus: 60_000_000, toughness: 2 },
+  { id: 'factory', island: 'industrial', name: 'Factory', blueprint: DESIGN.factory, requiredLevel: 16, contractCost: 1_500_000, brickValue: 250, bonus: 3_000_000, toughness: 1.3 },
+  { id: 'power', island: 'industrial', name: 'Power Plant', blueprint: DESIGN.powerPlant, requiredLevel: 17, contractCost: 3_000_000, brickValue: 400, bonus: 6_000_000, toughness: 1.5 },
+  { id: 'refinery', island: 'industrial', name: 'Refinery', blueprint: DESIGN.refinery, requiredLevel: 19, contractCost: 6_000_000, brickValue: 700, bonus: 12_000_000, toughness: 1.7 },
+  { id: 'steel', island: 'industrial', name: 'Steel Mill', blueprint: DESIGN.steelMill, requiredLevel: 21, contractCost: 12_000_000, brickValue: 1_200, bonus: 24_000_000, toughness: 2 },
 ]
 
 // Admin-made buildings known to this game (from the server, the local
@@ -128,12 +138,21 @@ export function suggestPricing(level: number, bricks: number) {
   }
 }
 
-// Level n needs 60·(n−1)² hauled bricks total: level 2 at 60, level 3 at
-// 240, level 5 at 960, level 10 at ~4.9k, level 20 at ~21.7k.
-export function levelForXp(xp: number): number {
-  return Math.floor(Math.sqrt(xp / 60)) + 1
-}
+// Hauled bricks needed for each level (index = level). Fitted to a
+// simulated idle player so the Houses island is the first day, the City
+// opens around day 1 and the Steel Mill (Lv 21) about day 7. Past the
+// table, levels keep getting harder at the same rate.
+export const XP_TABLE: number[] = [0, 0, 120, 560, 1_700, 3_700, 9_700, 42_000, 220_000, 380_000, 560_000, 820_000, 1_100_000, 1_450_000, 1_800_000, 2_150_000, 2_550_000, 2_900_000, 3_250_000, 3_600_000, 4_000_000, 4_500_000]
 
 export function xpForLevel(level: number): number {
-  return 60 * (level - 1) * (level - 1)
+  if (level <= 1) return 0
+  if (level < XP_TABLE.length) return XP_TABLE[level]
+  const last = XP_TABLE[XP_TABLE.length - 1]
+  return Math.round(last * Math.pow(1.18, level - (XP_TABLE.length - 1)))
+}
+
+export function levelForXp(xp: number): number {
+  let level = 1
+  while (xpForLevel(level + 1) <= xp && level < 999) level++
+  return level
 }

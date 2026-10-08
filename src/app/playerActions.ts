@@ -65,9 +65,9 @@ export async function syncPlayer(
   save: unknown,
   session?: SessionInfo,
   activity: ActivityIn[] = []
-): Promise<{ shortId: string | null; username: string | null; grants: Grant[]; ban: Ban | null; live: LiveInfo; tuning: unknown }> {
+): Promise<{ shortId: string | null; username: string | null; grants: Grant[]; ban: Ban | null; live: LiveInfo }> {
   const noLive: LiveInfo = { events: [], broadcasts: [] }
-  if (!UUID.test(id)) return { shortId: null, username: null, grants: [], ban: null, live: noLive, tuning: null }
+  if (!UUID.test(id)) return { shortId: null, username: null, grants: [], ban: null, live: noLive }
   const shortId = await ensurePlayer(id)
   const admin = createAdminClient()
   const num = (n: number) => (Number.isFinite(n) ? n : 0)
@@ -118,11 +118,10 @@ export async function syncPlayer(
   // Gifts to everyone: each live one is claimed once per player (the
   // claim's primary key makes a second claim a no-op).
   const nowIso = new Date().toISOString()
-  const [{ data: liveGifts }, { data: liveEvents }, { data: broadcasts }, { data: tuningRow }] = await Promise.all([
+  const [{ data: liveGifts }, { data: liveEvents }, { data: broadcasts }] = await Promise.all([
     admin.from('global_gifts').select('id, kind, amount, upgrade, message').eq('active', true).lte('starts_at', nowIso).gt('ends_at', nowIso),
     admin.from('live_events').select('id, kind, value, starts_at, ends_at').eq('active', true).lte('starts_at', nowIso).gt('ends_at', nowIso),
     admin.from('broadcasts').select('id, title, body, style, ends_at').eq('active', true).lte('starts_at', nowIso).gt('ends_at', nowIso),
-    admin.from('game_settings').select('value').eq('key', 'tuning').maybeSingle(),
   ])
   if (liveGifts?.length) {
     const { data: claimed } = await admin
@@ -148,7 +147,7 @@ export async function syncPlayer(
   const { data: me } = await admin.from('players').select('username, ban_until, ban_permanent, ban_reason').eq('id', id).maybeSingle()
   const banned = me && (me.ban_permanent || (me.ban_until && new Date(me.ban_until).getTime() > Date.now()))
   const ban = banned ? { until: me.ban_permanent ? null : me.ban_until, reason: me.ban_reason ?? '' } : null
-  return { shortId, username: me?.username ?? null, grants, ban, live, tuning: tuningRow?.value ?? null }
+  return { shortId, username: me?.username ?? null, grants, ban, live }
 }
 
 // Sets this player's username: 3–16 letters/numbers/_, no banned words,

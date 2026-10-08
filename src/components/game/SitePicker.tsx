@@ -5,7 +5,7 @@ import { Lock, X } from 'lucide-react'
 import { brickCount, pickableBuildings } from '@/lib/game/buildings'
 import { timeLeft } from '@/lib/liveEvents'
 import { PLOT_SLOTS } from '@/lib/game/plots'
-import { buildPrice, type Engine, type Snapshot } from '@/lib/game/engine'
+import { buildPrice, PAY_RATE, type Engine, type Snapshot } from '@/lib/game/engine'
 import { formatNumber } from './format'
 import { plotName } from './PlotsSheet'
 
@@ -70,7 +70,7 @@ export default function SitePicker({
             const needsHarbour = !!b.harbour && !PLOT_SLOTS[plot]?.harbour
             const locked = snap.level < b.requiredLevel || needsHarbour
             const affordable = snap.scrap >= buildPrice(b.contractCost)
-            const payout = bricks * b.brickValue + b.bonus
+            const payout = Math.round((bricks * b.brickValue + b.bonus) * PAY_RATE)
             return (
               <div
                 key={b.id}

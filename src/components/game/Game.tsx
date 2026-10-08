@@ -1,12 +1,14 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import dynamic from 'next/dynamic'
-import { ArrowBigUpDash, Map as MapIcon, UserRound, X } from 'lucide-react'
+import { ArrowBigUpDash, Map as MapIcon, X } from 'lucide-react'
 import { useEngine } from '@/lib/game/useEngine'
 import { getBuilding, xpForLevel } from '@/lib/game/buildings'
 import BannerAd from './BannerAd'
 import InterstitialAd from './InterstitialAd'
+import RewardedAdButton from './RewardedAdButton'
+import { AD_BOOST_MINUTES, BOOST_SECONDS, HELPERS, HELPER_MINUTES } from '@/lib/game/engine'
 import StationPanel from './StationPanel'
 import CrewSheet from './CrewSheet'
 import { eventInfo, eventTitle, timeLeft } from '@/lib/liveEvents'
@@ -18,6 +20,11 @@ import LoadingScreen from './LoadingScreen'
 import BonusTab from './BonusTab'
 import PlotsSheet, { plotName } from './PlotsSheet'
 import ProfileSheet from './ProfileSheet'
+import ManagersSheet from './ManagersSheet'
+import GoalsSheet from './GoalsSheet'
+import { CatchBricksGame, FixTruckGame } from './MiniGames'
+import type { Need } from '@/components/game3d/NeedsYou'
+import type { Slot } from '@/lib/game/managers'
 import UsernameForm from './UsernameForm'
 import type { StationFocus } from '@/components/game3d/Scene'
 import { formatNumber } from './format'
@@ -29,6 +36,10 @@ const Scene = dynamic(() => import('@/components/game3d/Scene'), { ssr: false })
 type Pop = { id: number; text: string; x: number; y: number }
 
 const NAME_PROMPT_KEY = 'rubble-name-prompted'
+
+// Ids and a little left-right scatter for the floating pop-up texts.
+let popSeq = 0
+const jitter = (spread: number) => (((popSeq * 37) % 11) / 10 - 0.5) * spread
 
 export default function Game() {
   const game = useEngine()
@@ -43,6 +54,26 @@ export default function Game() {
   const [bonusOpen, setBonusOpen] = useState(false)
   const [plotsOpen, setPlotsOpen] = useState(false)
   const [profileOpen, setProfileOpen] = useState(false)
+  // The Team sheet (managers and chests), optionally on one slot.
+  const [team, setTeam] = useState<{ slot: Slot | null } | null>(null)
+  const [goalsOpen, setGoalsOpen] = useState(false)
+  const [boostsOpen, setBoostsOpen] = useState(false)
+  const [toolShop, setToolShop] = useState<'ball' | 'dynamite' | null>(null)
+  const [mini, setMini] = useState<{ kind: 'truck'; id: number } | { kind: 'catch' } | null>(null)
+  // Holding BREAK! is the jackhammer: a brick every beat until it overheats.
+  const hammer = useRef<ReturnType<typeof setInterval> | null>(null)
+  const [heat, setHeat] = useState(0)
+  const heatRef = useRef(0)
+  const [overheated, setOverheated] = useState(false)
+  // The jackhammer cools down when you let go.
+  useEffect(() => {
+    const t = setInterval(() => {
+      if (hammer.current || heatRef.current <= 0) return
+      heatRef.current = Math.max(0, heatRef.current - 6)
+      setHeat(heatRef.current)
+    }, 200)
+    return () => clearInterval(t)
+  }, [])
   const [crewOpen, setCrewOpen] = useState(false)
   // First play: ask for a username once (skippable; they can set it later
   // in Profile).
@@ -122,7 +153,7 @@ export default function Game() {
   }
 
   const pop = (text: string, x: number, y: number) => {
-    const id = Date.now() + Math.random()
+    const id = ++popSeq
     setPops((prev) => [...prev.slice(-8), { id, text, x, y }])
     setTimeout(() => setPops((prev) => prev.filter((p) => p.id !== id)), 800)
   }
@@ -141,10 +172,53 @@ export default function Game() {
   }
 
   const handleBreak = (e: React.PointerEvent<HTMLButtonElement>) => {
-    if (engine.breakTap(plot.id) === 0) return
+    if (overheated || engine.breakTap(plot.id) === 0) return
     const rect = e.currentTarget.getBoundingClientRect()
-    pop('CRACK!', rect.left + rect.width / 2 + (Math.random() - 0.5) * 60, rect.top)
+    pop('CRACK!', rect.left + rect.width / 2 + jitter(60), rect.top)
+    // Keep holding: the jackhammer takes over after a moment.
+    stopHammer()
+    const plotId = plot.id
+    let n = 0
+    hammer.current = setInterval(() => {
+      if (++n < 3) return
+      heatRef.current = Math.min(100, heatRef.current + 3)
+      setHeat(heatRef.current)
+      if (heatRef.current >= 100) {
+        stopHammer()
+        setOverheated(true)
+        setTimeout(() => setOverheated(false), 4000)
+        pop('TOO HOT!', rect.left + rect.width / 2, rect.top - 20)
+        return
+      }
+      if (engine.breakTap(plotId) > 0) {
+        engine.boost()
+        if (n % 3 === 0) pop('BRRT', rect.left + rect.width / 2 + jitter(70), rect.top)
+      }
+    }, 110)
   }
+  const stopHammer = () => {
+    if (hammer.current) clearInterval(hammer.current)
+    hammer.current = null
+  }
+
+  const fireTool = (kind: 'ball' | 'dynamite', e: React.MouseEvent<HTMLButtonElement>) => {
+    const n = kind === 'ball' ? engine.swingBall(plot.id) : engine.blast(plot.id)
+    engine.notify()
+    if (!n) return
+    const rect = e.currentTarget.getBoundingClientRect()
+    pop(kind === 'ball' ? 'SMASH!' : 'BOOM!', rect.left + rect.width / 2, rect.top - 10)
+  }
+
+  const onNeed = (need: Need) => {
+    if (need.kind === 'truck') setMini({ kind: 'truck', id: need.id })
+    else {
+      const got = need.kind === 'worker' ? engine.wakeWorker(need.id) : engine.clearJam()
+      engine.notify()
+      if (got) pop(need.kind === 'worker' ? 'Back to work!' : `+🧱${formatNumber(got)}`, window.innerWidth / 2, window.innerHeight / 2)
+    }
+  }
+  const goalsReady =
+    snap.goals.some((g) => !g.claimed && g.progress >= g.target) || snap.goalsBonusReady || (!!snap.contract && snap.contract.progress >= snap.contract.target)
 
 
   return (
@@ -169,6 +243,8 @@ export default function Game() {
             setSelected(id === 'truck' ? { id, plot: plotId, truck: 0 } : { id, plot: plotId, index })
           }}
           onBreakTap={tapBuilding}
+          onSelectManager={(slot) => setTeam({ slot })}
+          onNeed={onNeed}
           onSelectTruck={(truck) => {
             setMapOpen(false)
             setFromList(false)
@@ -200,50 +276,38 @@ export default function Game() {
       ))}
 
       <div className="pointer-events-none absolute inset-0 z-10 flex flex-col pt-[max(env(safe-area-inset-top),12px)]">
+        {/* Top: the money capsule and level, the building card on the right */}
         <div className="flex items-start justify-between gap-2 px-3">
-          <div className="space-y-1.5">
-            <div className="rounded-2xl bg-black/55 px-3 py-2 backdrop-blur-sm">
-              <p className="font-display text-2xl leading-none text-white">🧱 {formatNumber(snap.scrap)}</p>
-              <p className="mt-1 font-display text-sm leading-none text-[#7dff7a]">+{formatNumber(snap.incomePerMinute)} / min</p>
+          <div className="flex items-center gap-1.5">
+            <div className="rounded-2xl border-[3px] border-[#1d3a6e] bg-white px-2.5 py-1 shadow-[0_3px_0_#1d3a6e]">
+              <p className="flex items-baseline gap-2 whitespace-nowrap font-display leading-none text-[#1d3a6e]">
+                <span className="text-xl">🧱 {formatNumber(snap.scrap)}</span>
+                <span className="text-sm text-[#1b6fa8]">💎 {formatNumber(snap.gems)}</span>
+              </p>
+              <p className="mt-0.5 font-display text-[11px] leading-none text-[#2a9a3a]">+{formatNumber(snap.incomePerMinute)} / min</p>
             </div>
-            <div className="flex items-center gap-1.5">
-              <div className="flex items-center gap-1.5 rounded-full bg-black/55 py-1 pl-1 pr-2.5 backdrop-blur-sm">
-                <span className="flex h-6 w-6 items-center justify-center rounded-full bg-[#ffc93c] font-display text-xs text-[#5a3d00]">
-                  {snap.level}
-                </span>
-                <div className="h-2 w-20 overflow-hidden rounded-full bg-white/25">
-                  <div className="h-full bg-[#ffc93c]" style={{ width: `${Math.min(100, levelProgress * 100)}%` }} />
-                </div>
-              </div>
-              {/* Profile: player ID and redeem codes */}
-              <button
-                onClick={() => setProfileOpen(true)}
-                aria-label="Profile and codes"
-                className="pointer-events-auto flex h-8 w-8 items-center justify-center rounded-full bg-black/55 backdrop-blur-sm active:scale-95"
-              >
-                <UserRound className="h-4.5 w-4.5 text-white" />
-              </button>
-            </div>
-            {/* Crew boost timer (tapping the building tops it up). */}
-            {snap.boostLeft > 0 ? (
-              <div className="inline-flex items-center gap-1 rounded-full bg-[#ffd23c] px-2.5 py-1 font-display text-xs text-[#5a3d00] shadow-[0_2px_0_#c99a00]">
-                ⚡ Crew boost · {snap.boostLeft}s
-              </div>
-            ) : null}
+            {/* Level: a ring that fills toward the next level (tap: profile) */}
+            <button onClick={() => setProfileOpen(true)} aria-label={`Level ${snap.level} — profile and codes`} className="pointer-events-auto relative h-12 w-12 shrink-0 active:scale-95">
+              <svg viewBox="0 0 48 48" className="absolute inset-0 h-full w-full -rotate-90">
+                <circle cx="24" cy="24" r="20" fill="#ffc93c" stroke="#1d3a6e" strokeWidth="5" />
+                <circle cx="24" cy="24" r="20" fill="none" stroke="#ffffff" strokeWidth="3.5" strokeDasharray={`${Math.min(1, levelProgress) * 125.7} 125.7`} strokeLinecap="round" />
+              </svg>
+              <span className="relative font-display text-base text-[#5a3d00]">{snap.level}</span>
+            </button>
           </div>
-          <div className="pointer-events-auto min-w-[165px] rounded-2xl bg-white px-3 py-2 shadow-[0_3px_0_rgba(0,0,0,0.15)]">
+          <div className="pointer-events-auto min-w-[150px] max-w-[48%] rounded-2xl border-[3px] border-[#1d3a6e] bg-white px-3 py-1.5 shadow-[0_3px_0_#1d3a6e]">
             {snap.plots.length > 1 && (
               <p className="font-display text-[10px] uppercase leading-none tracking-wider text-[#5b6f93]">{plotName(plot.id)}</p>
             )}
             {plot.phase === 'demolishing' ? (
               // Tap for the crew: who's working where.
               <button onClick={() => setCrewOpen(true)} className="block w-full text-left" aria-label="Crew">
-                <p className="font-display text-base leading-tight text-[#1d3a6e]">{building.name}</p>
-                <div className="mt-1.5 h-4 overflow-hidden rounded-full bg-[#1d3a6e]">
+                <p className="truncate font-display text-base leading-tight text-[#1d3a6e]">{building.name}</p>
+                <div className="mt-1 h-3.5 overflow-hidden rounded-full bg-[#1d3a6e]">
                   <div className="h-full bg-[#2d7ff9] transition-[width] duration-300" style={{ width: `${progress * 100}%` }} />
                 </div>
-                <p className="mt-1 text-center font-display text-xs text-[#1d3a6e]">
-                  {formatNumber(plot.bricksLeft)} bricks left
+                <p className="mt-0.5 text-center font-display text-[11px] text-[#1d3a6e]">
+                  {formatNumber(plot.bricksLeft)} left
                   {plot.rubbleLeft > 0 && ` · ${formatNumber(plot.rubbleLeft)} on ground`}
                 </p>
               </button>
@@ -256,6 +320,85 @@ export default function Game() {
                   {plot.phase === 'cleared' ? 'Tap to claim your bonus' : 'Tap to pick a building'}
                 </p>
               </button>
+            )}
+          </div>
+        </div>
+
+        {/* Under the top: timers and offers on the left, the side rail on the right */}
+        <div className="mt-2 flex items-start justify-between gap-2 px-3">
+          <div className="flex min-w-0 flex-col items-start gap-1.5">
+            {snap.boostLeft > BOOST_SECONDS && (
+              <div className="inline-flex items-center gap-1 rounded-full border-2 border-white bg-[#ffd23c] px-2.5 py-0.5 font-display text-xs tabular-nums text-[#5a3d00]">
+                ⚡ 2× crew · {snap.boostLeft >= 60 ? `${Math.floor(snap.boostLeft / 60)}m ${String(snap.boostLeft % 60).padStart(2, '0')}s` : `${snap.boostLeft}s`}
+              </div>
+            )}
+            {snap.helpersLeft > 0 && (
+              <div className="inline-flex items-center gap-1 rounded-full border-2 border-white bg-[#2d7ff9] px-2.5 py-0.5 font-display text-xs tabular-nums text-white">
+                👷 +{HELPERS} fast · {Math.floor(snap.helpersLeft / 60)}m {String(snap.helpersLeft % 60).padStart(2, '0')}s
+              </div>
+            )}
+            {snap.catchOffer > 0 && !mini && (
+              <button
+                onClick={() => {
+                  engine.takeCatchOffer()
+                  setMini({ kind: 'catch' })
+                }}
+                className="needs-you pointer-events-auto block rounded-full border-2 border-white bg-[#c4553a] px-2.5 py-1 font-display text-xs text-white"
+              >
+                🧱 Bricks falling! Catch them · {snap.catchOffer}s
+              </button>
+            )}
+          </div>
+          <div className="relative flex flex-col items-end gap-2">
+            {([
+              ['Team', '👔', '#9b59d0', '#6c3a99', () => setTeam({ slot: null }), snap.freeChestIn === 0 || snap.chests.wood + snap.chests.iron + snap.chests.gold > 0],
+              ['Goals', '🎯', '#3fbf4a', '#2a8a33', () => setGoalsOpen(true), goalsReady],
+              ['Boosts', '⚡', '#2d7ff9', '#1b5bbd', () => setBoostsOpen((o) => !o), snap.boostLeft <= BOOST_SECONDS || snap.helpersLeft === 0],
+            ] as const).map(([label, emoji, bg, shade, onClick, dot]) => (
+              <button
+                key={label}
+                onClick={onClick}
+                aria-label={label}
+                className="pointer-events-auto relative flex h-12 w-12 flex-col items-center justify-center rounded-2xl border-[3px] border-white active:translate-y-0.5"
+                style={{ background: bg, boxShadow: `0 3px 0 ${shade}` }}
+              >
+                <span className="text-lg leading-none">{emoji}</span>
+                <span className="font-display text-[9px] leading-none text-white">{label}</span>
+                {dot && <span className="absolute -right-1 -top-1 h-3.5 w-3.5 rounded-full border-2 border-white bg-[#ff6b1a]" />}
+              </button>
+            ))}
+            {boostsOpen && (
+              <div className="pointer-events-auto absolute right-14 top-[7.5rem] w-52 space-y-1.5 rounded-2xl border-[3px] border-[#1d3a6e] bg-white p-2 shadow-[0_3px_0_#1d3a6e]">
+                <p className="font-display text-sm text-[#1d3a6e]">Boosts</p>
+                {snap.boostLeft > BOOST_SECONDS ? (
+                  <p className="rounded-xl bg-[#fff4d6] px-2 py-1.5 font-display text-xs text-[#5a3d00]">⚡ 2× crew running</p>
+                ) : (
+                  <RewardedAdButton
+                    onReward={() => {
+                      engine.adBoost()
+                      engine.notify()
+                      setBoostsOpen(false)
+                    }}
+                    className="w-full rounded-xl bg-[#3fbf4a] px-2 py-1.5 text-left font-display text-xs text-white disabled:opacity-70"
+                  >
+                    ▶ 2× crew · {AD_BOOST_MINUTES} min
+                  </RewardedAdButton>
+                )}
+                {snap.helpersLeft > 0 ? (
+                  <p className="rounded-xl bg-[#e6f1fb] px-2 py-1.5 font-display text-xs text-[#1b5bbd]">👷 Fast workers on site</p>
+                ) : (
+                  <RewardedAdButton
+                    onReward={() => {
+                      engine.adHelpers()
+                      engine.notify()
+                      setBoostsOpen(false)
+                    }}
+                    className="w-full rounded-xl bg-[#2d7ff9] px-2 py-1.5 text-left font-display text-xs text-white disabled:opacity-70"
+                  >
+                    ▶ +{HELPERS} fast workers · {HELPER_MINUTES} min
+                  </RewardedAdButton>
+                )}
+              </div>
             )}
           </div>
         </div>
@@ -314,6 +457,16 @@ export default function Game() {
             <p className="font-display text-sm text-[#1d3a6e]">
               Your crew kept hauling — <span className="text-[#e8701f]">+🧱{formatNumber(snap.offlineEarnings)}</span> while you were away!
             </p>
+            <RewardedAdButton
+              rewardBricks={snap.offlineEarnings}
+              onReward={() => {
+                engine.doubleOffline()
+                engine.notify()
+              }}
+              className="shrink-0 rounded-xl bg-[#3fbf4a] px-3 py-2 font-display text-sm text-white shadow-[0_3px_0_#2a8a33] active:translate-y-[3px] active:shadow-none disabled:opacity-70"
+            >
+              ▶ Double it
+            </RewardedAdButton>
             <button
               onClick={() => {
                 engine.dismissOffline()
@@ -328,29 +481,99 @@ export default function Game() {
 
         <div className="flex-1" />
 
-        <div className="flex items-end justify-between gap-2 px-4 pb-[max(env(safe-area-inset-bottom),12px)]">
-          <button onClick={() => setMapOpen(true)} className="pointer-events-auto flex flex-col items-center gap-1">
-            <span className="flex h-16 w-16 items-center justify-center rounded-full border-[3px] border-white bg-[#2d7ff9] text-white shadow-[0_4px_0_#1b5bbd] active:translate-y-1 active:shadow-none">
-              <ArrowBigUpDash className="h-8 w-8" />
-            </span>
-            <span className="font-display text-xs text-white [text-shadow:0_1px_2px_rgba(0,0,0,0.6)]">Upgrades</span>
-          </button>
+        {/* Bottom dock: Upgrades, BREAK! (raised, tools above it), Plots */}
+        <div className="relative mt-16">
+          <div className="pointer-events-auto relative flex items-end justify-between rounded-t-[28px] bg-[#1d3a6e] px-6 pb-[max(env(safe-area-inset-bottom),10px)] pt-2.5 shadow-[0_-3px_0_rgba(0,0,0,0.15)]">
+            {/* A strip of hazard tape along the top edge */}
+            <span className="hazard-tape absolute -top-1.5 left-10 right-10 h-2.5 rounded-full" aria-hidden />
+            <button onClick={() => setMapOpen(true)} className="flex flex-col items-center gap-0.5">
+              <span className="flex h-14 w-14 items-center justify-center rounded-full border-[3px] border-white bg-[#2d7ff9] text-white shadow-[0_4px_0_#0f2347] active:translate-y-1 active:shadow-none">
+                <ArrowBigUpDash className="h-7 w-7" />
+              </span>
+              <span className="font-display text-xs text-white">Upgrades</span>
+            </button>
 
-          <button
-            onPointerDown={handleBreak}
-            disabled={plot.phase !== 'demolishing' || plot.bricksLeft === 0}
-            className={`pointer-events-auto relative mb-1 flex h-24 w-24 flex-col items-center justify-center rounded-full border-4 border-white bg-[#ff6b1a] font-display text-white shadow-[0_6px_0_#c94e0a] active:translate-y-1.5 active:shadow-none disabled:bg-[#b9c2cf] disabled:shadow-[0_6px_0_#97a1ae]`}
-          >
-            <span className="text-2xl leading-none">BREAK!</span>
-          </button>
+            <div className="relative -mt-12">
+              {/* Tools: the wrecking ball and dynamite, on cooldowns */}
+              {plot.phase === 'demolishing' && (
+                <div className="absolute -top-14 left-1/2 flex -translate-x-1/2 gap-12">
+                  {([
+                    ['ball', '🏗️', snap.tools.ballIn, snap.tools.ballCharges],
+                    ['dynamite', '🧨', snap.tools.dynamiteIn, snap.tools.dynamiteCharges],
+                  ] as const).map(([kind, emoji, wait, charges]) => (
+                    <button
+                      key={kind}
+                      // On cooldown with no bought uses left: offer a pack.
+                      onClick={(e) => (wait > 0 && charges === 0 ? setToolShop(toolShop === kind ? null : kind) : fireTool(kind, e))}
+                      aria-label={kind === 'ball' ? 'Wrecking ball' : 'Dynamite'}
+                      className={`relative flex h-12 w-12 flex-col items-center justify-center rounded-full border-[3px] border-white text-xl shadow-[0_3px_0_#0f2347] active:translate-y-[3px] active:shadow-none ${wait > 0 && charges === 0 ? 'bg-[#5b6f93]' : 'bg-[#1d3a6e]'}`}
+                    >
+                      <span className="leading-none">{emoji}</span>
+                      {wait > 0 && charges === 0 && <span className="font-display text-[10px] leading-none text-white">{wait >= 60 ? `${Math.ceil(wait / 60)}m` : `${wait}s`}</span>}
+                      {charges > 0 && (
+                        <span className="absolute -right-1.5 -top-1.5 rounded-full border-2 border-white bg-[#ff6b1a] px-1.5 font-display text-[10px] leading-4 text-white">×{charges}</span>
+                      )}
+                    </button>
+                  ))}
+                  {toolShop && (
+                    <div className="absolute bottom-16 left-1/2 w-56 -translate-x-1/2 rounded-2xl border-[3px] border-[#1d3a6e] bg-white p-2.5 shadow-[0_3px_0_#1d3a6e]">
+                      <p className="font-display text-sm text-[#1d3a6e]">
+                        {toolShop === 'ball' ? '🏗️ 3 more swings' : '🧨 3 more sticks'}
+                        <span className="text-xs text-[#5b6f93]"> · use them any time</span>
+                      </p>
+                      <div className="mt-1.5 flex gap-1.5">
+                        {(['gems', 'bricks'] as const).map((pay) => {
+                          const price = toolShop === 'ball' ? snap.tools.ballPack : snap.tools.dynamitePack
+                          const afford = pay === 'gems' ? snap.gems >= price.gems : snap.scrap >= price.bricks
+                          return (
+                            <button
+                              key={pay}
+                              disabled={!afford}
+                              onClick={() => {
+                                engine.buyToolPack(toolShop, pay)
+                                engine.notify()
+                                setToolShop(null)
+                              }}
+                              className="flex-1 rounded-xl bg-[#3fbf4a] py-1.5 font-display text-xs text-white shadow-[0_3px_0_#2a8a33] active:translate-y-[3px] active:shadow-none disabled:bg-[#b9c2cf] disabled:shadow-[0_3px_0_#97a1ae]"
+                            >
+                              {pay === 'gems' ? `💎 ${price.gems}` : `🧱 ${formatNumber(price.bricks)}`}
+                            </button>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+              {/* Caution tape round the button */}
+              <span className="caution-ring pointer-events-none absolute -inset-2 rounded-full" aria-hidden />
+              <button
+                onPointerDown={handleBreak}
+                onPointerUp={stopHammer}
+                onPointerLeave={stopHammer}
+                onPointerCancel={stopHammer}
+                disabled={plot.phase !== 'demolishing' || plot.bricksLeft === 0}
+                className={`relative flex h-24 w-24 touch-none flex-col items-center justify-center rounded-full border-[5px] border-white font-display text-white shadow-[0_6px_0_#0f2347] active:translate-y-1.5 active:shadow-none disabled:bg-[#b9c2cf] ${overheated ? 'bg-[#e23f3f]' : 'bg-[#ff6b1a]'}`}
+              >
+                <span className="text-2xl leading-none">{overheated ? 'HOT!' : 'BREAK!'}</span>
+                <span className="mt-0.5 text-[9px] leading-none opacity-80">hold to jackhammer</span>
+                {/* Jackhammer heat */}
+                {heat > 0 && (
+                  <span className="absolute bottom-2 left-1/2 h-1.5 w-12 -translate-x-1/2 overflow-hidden rounded-full bg-white/30">
+                    <span className="block h-full rounded-full bg-white" style={{ width: `${heat}%` }} />
+                  </span>
+                )}
+              </button>
+            </div>
 
-          <button onClick={() => setPlotsOpen(true)} className="pointer-events-auto relative flex flex-col items-center gap-1">
-            <span className="flex h-16 w-16 items-center justify-center rounded-full border-[3px] border-white bg-[#3fbf4a] text-white shadow-[0_4px_0_#2a8a33] active:translate-y-1 active:shadow-none">
-              <MapIcon className="h-7 w-7" />
-            </span>
-            {plotNeedsYou && <span className="absolute right-0 top-0 h-4 w-4 rounded-full border-2 border-white bg-[#ff6b1a]" />}
-            <span className="font-display text-xs text-white [text-shadow:0_1px_2px_rgba(0,0,0,0.6)]">Plots</span>
-          </button>
+            <button onClick={() => setPlotsOpen(true)} className="relative flex flex-col items-center gap-0.5">
+              <span className="flex h-14 w-14 items-center justify-center rounded-full border-[3px] border-white bg-[#3fbf4a] text-white shadow-[0_4px_0_#0f2347] active:translate-y-1 active:shadow-none">
+                <MapIcon className="h-6 w-6" />
+              </span>
+              {plotNeedsYou && <span className="absolute right-0 top-0 h-4 w-4 rounded-full border-2 border-white bg-[#ff6b1a]" />}
+              <span className="font-display text-xs text-white">Plots</span>
+            </button>
+          </div>
         </div>
 
         <BannerAd />
@@ -416,6 +639,30 @@ export default function Game() {
       )}
       {crewOpen && <CrewSheet engine={engine} snap={snap} focus={plot.id} onClose={() => setCrewOpen(false)} />}
       {profileOpen && <ProfileSheet engine={engine} snap={snap} onClose={() => setProfileOpen(false)} />}
+      {goalsOpen && <GoalsSheet engine={engine} snap={snap} onClose={() => setGoalsOpen(false)} />}
+      {mini?.kind === 'truck' && (
+        <FixTruckGame
+          onDone={() => {
+            const got = engine.fixTruck(mini.id)
+            engine.notify()
+            setMini(null)
+            if (got) pop(`Fixed! +🧱${formatNumber(got)}`, window.innerWidth / 2, window.innerHeight / 2)
+          }}
+          onCancel={() => setMini(null)}
+        />
+      )}
+      {mini?.kind === 'catch' && (
+        <CatchBricksGame
+          unit={engine.catchUnit()}
+          onDone={(caught) => {
+            const got = engine.claimCatch(caught)
+            engine.notify()
+            setMini(null)
+            if (got) pop(`+🧱${formatNumber(got)}`, window.innerWidth / 2, window.innerHeight / 2)
+          }}
+        />
+      )}
+      {team && <ManagersSheet engine={engine} snap={snap} focusSlot={team.slot} onClose={() => setTeam(null)} />}
       {loadingGone && snap.synced && !snap.username && !namePrompted && !snap.notice && (
         <div className="pointer-events-auto fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-6">
           <div className="w-full max-w-xs rounded-3xl bg-white p-5 shadow-[0_6px_0_rgba(0,0,0,0.15)]">
@@ -450,7 +697,8 @@ export default function Game() {
         </div>
       )}
       <BonusTab engine={engine} snap={snap} open={bonusOpen && !!snap.bonusDrop} onOpenChange={setBonusOpen} />
-      <InterstitialAd trigger={snap.sitesCleared} />
+      {/* After each cleared building and each plot bought. */}
+      <InterstitialAd trigger={snap.sitesCleared + snap.plots.length} />
       {/* Banned by an admin: covers the whole game until the ban ends or is lifted */}
       {snap.ban && (
         <div className="pointer-events-auto fixed inset-0 z-[60] flex items-center justify-center bg-[#1d3a6e]/95 p-6">

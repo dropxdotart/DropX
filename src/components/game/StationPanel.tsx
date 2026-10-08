@@ -122,16 +122,31 @@ export default function StationPanel({
                       )
                     })}
                   </div>
-                  <button
-                    disabled={!affordable}
-                    onClick={() => {
-                      engine.buyUpgrade(key, yard)
-                      engine.notify()
-                    }}
-                    className="shrink-0 rounded-xl bg-[#3fbf4a] px-3 py-2 font-display text-sm text-white shadow-[0_3px_0_#2a8a33] active:translate-y-[3px] active:shadow-none disabled:bg-[#b9c2cf] disabled:shadow-[0_3px_0_#97a1ae]"
-                  >
-                    {lock ? `🔒 ${lock}` : `🧱 ${formatNumber(cost)}`}
-                  </button>
+                  <div className="flex shrink-0 flex-col items-end gap-1">
+                    <button
+                      disabled={!affordable}
+                      onClick={() => {
+                        engine.buyUpgrade(key, yard)
+                        engine.notify()
+                      }}
+                      className="rounded-xl bg-[#3fbf4a] px-3 py-2 font-display text-sm text-white shadow-[0_3px_0_#2a8a33] active:translate-y-[3px] active:shadow-none disabled:bg-[#b9c2cf] disabled:shadow-[0_3px_0_#97a1ae]"
+                    >
+                      {lock ? `🔒 ${lock}` : `🧱 ${formatNumber(cost)}`}
+                    </button>
+                    {/* Can't afford it yet: one free upgrade for an ad, every so often. */}
+                    {!lock && !affordable && key !== 'yardSize' && snap.freeUpgradeIn === 0 && (
+                      <RewardedAdButton
+                        rewardBricks={cost}
+                        onReward={() => {
+                          engine.freeUpgrade(key, yard)
+                          engine.notify()
+                        }}
+                        className="rounded-lg bg-[#2f8fe8] px-2 py-1 font-display text-xs text-white shadow-[0_2px_0_#1d5fa8] active:translate-y-0.5 active:shadow-none disabled:opacity-70"
+                      >
+                        ▶ Free
+                      </RewardedAdButton>
+                    )}
+                  </div>
                 </div>
               </div>
             )

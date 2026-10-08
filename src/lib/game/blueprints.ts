@@ -7,6 +7,8 @@
 // side — the two faces the isometric camera sees — so doors, signs and
 // windows go there.
 
+import { CITY_DESIGNS, HOUSE_DESIGNS, INDUSTRIAL_DESIGNS } from './designs'
+
 export const BRICK_COLORS = {
   brick: '#c4553a',
   brickDark: '#9e3f2a',
@@ -40,6 +42,14 @@ export const BRICK_COLORS = {
   patinaDark: '#4f8a76',
   gold: '#e3b33c',
   stone: '#d8c79a',
+  // Interiors (2026-10-08).
+  water: '#4fb7e6',
+  tile: '#e9e4d6',
+  green: '#3f9a4f',
+  cream: '#efe3c2',
+  purple: '#7a4f8f',
+  pink: '#e98fa8',
+  carpet: '#a8433f',
 } as const
 
 export type BrickColor = keyof typeof BRICK_COLORS
@@ -608,6 +618,13 @@ const BLUEPRINTS: Blueprint[] = [
     },
   },
 ]
+
+// The 2026-10 redesign: buildings with insides (see designs.ts), from
+// index 16 on.
+export const DESIGN_BASE = BLUEPRINTS.length
+const ALL_DESIGNS = { ...HOUSE_DESIGNS, ...CITY_DESIGNS, ...INDUSTRIAL_DESIGNS }
+for (const make of Object.values(ALL_DESIGNS)) BLUEPRINTS.push(make())
+export const DESIGN = Object.fromEntries(Object.keys(ALL_DESIGNS).map((k, i) => [k, DESIGN_BASE + i])) as Record<keyof typeof ALL_DESIGNS, number>
 
 export const BLUEPRINT_COUNT = BLUEPRINTS.length
 

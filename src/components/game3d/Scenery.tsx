@@ -3,7 +3,7 @@
 import { useLayoutEffect, useMemo, useRef } from 'react'
 import { useFrame, useThree } from '@react-three/fiber'
 import * as THREE from 'three'
-import { BLOCK, ISLANDS, ROADS, islandRect, type IslandId, type Segment } from '@/lib/game/islands'
+import { BLOCK, ISLANDS, islandRect, type Grown, type Segment } from '@/lib/game/islands'
 import Prop from './Prop'
 
 // Dressing for the world: street furniture, what's in the blocks, life on
@@ -115,28 +115,44 @@ function Rain() {
 
 // ── Streets: crosswalks, streetlights, traffic lights ────────────────────
 
-function crossings(segs: Segment[]) {
-  const out: { x: number; z: number }[] = []
-  for (const a of segs)
+// Every junction on the open roads, with the directions a street leaves
+// it in (an L-bend on the outer ring has two, a crossroads four).
+function junctions(segs: Segment[]) {
+  const pts = new Map<string, { x: number; z: number }>()
+  const add = (x: number, z: number) => pts.set(`${Math.round(x * 10)},${Math.round(z * 10)}`, { x, z })
+  for (const a of segs) {
+    if (a.axis === 'z') {
+      add(a.from, a.line)
+      add(a.until, a.line)
+    } else {
+      add(a.line, a.from)
+      add(a.line, a.until)
+    }
     for (const b of segs) {
       if (a.axis !== 'z' || b.axis !== 'x') continue
       if (b.line < a.from - 0.1 || b.line > a.until + 0.1 || a.line < b.from - 0.1 || a.line > b.until + 0.1) continue
-      out.push({ x: b.line, z: a.line })
+      add(b.line, a.line)
     }
-  return out
+  }
+  const covers = (x: number, z: number) =>
+    segs.some((s) => (s.axis === 'z' ? Math.abs(z - s.line) < 0.1 && x >= s.from - 0.1 && x <= s.until + 0.1 : Math.abs(x - s.line) < 0.1 && z >= s.from - 0.1 && z <= s.until + 0.1))
+  return [...pts.values()].map((p) => ({
+    ...p,
+    arms: ([[0, 2.4], [0, -2.4], [2.4, 0], [-2.4, 0]] as [number, number][]).filter(([dx, dz]) => covers(p.x + dx, p.z + dz)),
+  }))
 }
 
-export function Streets({ open }: { open: Set<IslandId> }) {
-  const segs = useMemo(() => ROADS.filter((r) => !r.bridge && r.island && open.has(r.island)), [open])
-  const xs = useMemo(() => crossings(segs), [segs])
+export function Streets({ segs }: { segs: Segment[] }) {
+  const xs = useMemo(() => junctions(segs), [segs])
   const stripes = useRef<THREE.InstancedMesh>(null)
   const poles = useRef<THREE.InstancedMesh>(null)
   const heads = useRef<THREE.InstancedMesh>(null)
   const lampMat = useMemo(() => new THREE.MeshStandardMaterial({ color: '#fff6d8', emissive: '#ffd27a', emissiveIntensity: 0.2 }), [])
   const stripeData = useMemo(() => {
     const out: { x: number; z: number; r: number }[] = []
-    for (const p of xs)
-      for (const [dx, dz] of [[0, 2.4], [0, -2.4], [2.4, 0], [-2.4, 0]])
+    // Zebra crossings on each arm of a real junction (not on bends).
+    for (const p of xs.filter((j) => j.arms.length >= 3))
+      for (const [dx, dz] of p.arms)
         for (let k = -2; k <= 2; k++) {
           const along = dz !== 0 // crossing the street that runs along x
           out.push({ x: p.x + dx + (along ? k * 0.55 : 0), z: p.z + dz + (along ? 0 : k * 0.55), r: along ? 0 : Math.PI / 2 })
@@ -167,8 +183,8 @@ export function Streets({ open }: { open: Set<IslandId> }) {
   useFrame(() => {
     lampMat.emissiveIntensity = 0.2 + env.night * 2.2
   })
-  // A set of traffic lights at every third crossing.
-  const signals = xs.filter((_, i) => i % 3 === 1)
+  // Traffic lights at every other crossroads.
+  const signals = xs.filter((j) => j.arms.length === 4).filter((_, i) => i % 2 === 1)
   return (
     <group>
       <instancedMesh key={`s${stripeData.length}`} ref={stripes} args={[undefined, undefined, stripeData.length]} frustumCulled={false}>
@@ -374,7 +390,7 @@ export function Sea() {
 
 // Glints on the water, seagulls, a lighthouse and pier on the Houses
 // island, rocks along the other islands' quays.
-export function Waterside({ open }: { open: Set<IslandId> }) {
+export function Waterside({ grown }: { grown: Grown }) {
   const glints = useRef<THREE.InstancedMesh>(null)
   const glintMat = useMemo(() => new THREE.MeshBasicMaterial({ color: '#ffffff', transparent: true, opacity: 0.5 }), [])
   const spots = useMemo(() => Array.from({ length: 360 }, (_, i) => ({ x: -190 + seeded(i) * 300, z: -100 + seeded(i + 500) * 300, p: seeded(i + 900) * 6 })), [])
@@ -407,16 +423,10 @@ export function Waterside({ open }: { open: Set<IslandId> }) {
     if (beam.current) beam.current.rotation.y = t * 0.8
     lampMat.emissiveIntensity = 0.4 + env.night * 3
   })
-  const houses = islandRect(ISLANDS[0])
-  const rocks = useMemo(() => {
-    const out: [number, number, number][] = []
-    for (const s of ISLANDS) {
-      if (s.id === 'houses' || !open.has(s.id)) continue
-      const r = islandRect(s)
-      for (let x = r.x0 + 4; x < r.x1 - 4; x += 7) out.push([x + seeded(x) * 2, r.z1 + 1.2, 0.6 + seeded(x + 1) * 0.6])
-    }
-    return out
-  }, [open])
+  // Gulls over the town; the lighthouse and pier on the first bit of
+  // beach (block (0, 7)'s south shore), so they're there from the start.
+  const houses = islandRect(ISLANDS[0], Math.max(0, grown.houses))
+  const beachZ = 7 * BLOCK + 11.5 + 2.7 + 3.5
   return (
     <group>
       <instancedMesh ref={glints} args={[undefined, glintMat, spots.length]} frustumCulled={false}>
@@ -438,7 +448,7 @@ export function Waterside({ open }: { open: Set<IslandId> }) {
         ))}
       </group>
       {/* Lighthouse on the Houses island's south-west beach */}
-      <group position={[houses.x0 - 3, 0, houses.z1 + 3]}>
+      <group position={[-7, 0, beachZ]}>
         {Array.from({ length: 6 }, (_, k) => (
           <mesh key={k} position={[0, 0.6 + k * 1.2, 0]} castShadow>
             <cylinderGeometry args={[1.1 - k * 0.08, 1.2 - k * 0.08, 1.2, 14]} />
@@ -460,7 +470,7 @@ export function Waterside({ open }: { open: Set<IslandId> }) {
         </group>
       </group>
       {/* A wooden pier off the Houses island's south beach */}
-      <group position={[(houses.x0 + houses.x1) / 2 + 20, 0, houses.z1 + 3]}>
+      <group position={[7, 0, beachZ - 1]}>
         <mesh position={[0, 0.1, 6]}>
           <boxGeometry args={[2, 0.2, 14]} />
           <meshStandardMaterial color="#a07a52" />
@@ -472,12 +482,6 @@ export function Waterside({ open }: { open: Set<IslandId> }) {
           </mesh>
         )))}
       </group>
-      {rocks.map(([x, z, s], i) => (
-        <mesh key={i} position={[x, 0.1, z]} scale={s} castShadow>
-          <dodecahedronGeometry args={[0.9, 0]} />
-          <meshStandardMaterial color="#8a8d92" roughness={1} />
-        </mesh>
-      ))}
     </group>
   )
 }

@@ -1,7 +1,26 @@
 import { type Brick, type BrickColor } from './blueprints'
 import { BUILDINGS, brickCount, bricksFor, getBuilding, legacyOf, levelForXp, registerCustomBuildings, sizeFor, xpForLevel, type BuildingDef } from './buildings'
 import { PLOT_SLOTS } from './plots'
-import { ISLANDS, islandAt, type IslandId } from './islands'
+import {
+  ABILITIES,
+  FREE_CHEST_HOURS,
+  GOLD_CHEST_GEMS,
+  boostsAt,
+  cardsToLevel,
+  chestBrickPrice,
+  fits,
+  levelUpCost,
+  manager,
+  rollChest,
+  type AbilityId,
+  type ChestType,
+  type OutfitId,
+  type Pull,
+  type Slot,
+} from './managers'
+import { OUTFITS } from './managers'
+import { ZERO_COUNTERS, dailyGoals, dayKey, type Contract, type Counter, type Counters } from './goals'
+import { ISLANDS, START_GROWN, islandAt, lastStage, setGrown, type Grown, type IslandId } from './islands'
 import {
   dockPoint,
   MAX_DOCKS,
@@ -35,11 +54,10 @@ import {
 
 import { BRICK, DUMPSTER, DUMPSTER_SLOTS, LOT_HALF, MAX_DUMPSTERS } from './layout'
 import { eventDetail, eventInfo, eventTitle, type LiveEventKind } from '../liveEvents'
-import { cleanTuning, DEFAULT_TUNING, type TuneKey, type Tuning } from '../tuning'
 export { BRICK, DUMPSTER, DUMPSTER_SLOTS, LOT_HALF, MAX_DUMPSTERS, ROAD_Z, TRUCK_STOP } from './layout'
 
 // v6: the island world (a fresh start, pre-launch).
-const SAVE_KEY = 'rubble-save-v6'
+const SAVE_KEY = 'rubble-save-v7' // v7: islands that grow in stages (fresh start)
 const LEGACY_SAVE_KEY = 'rubble-save-v4'
 // Set when an admin reset wipes the save, so the fresh game can say so;
 // gifts sent after the reset wait here to be applied to the fresh game.
@@ -62,6 +80,14 @@ const BREAK_FALL_SECONDS = 0.7
 // Tapping rubble gives the whole crew a short speed burst. No cooldown:
 // every tap tops it back up to the full few seconds, so you can spam it.
 export const BOOST_SECONDS = 3
+// Rewarded-ad perks: 2× crew for this long, and how often the free upgrade
+// and the instant dumpster empty can be watched for.
+export const AD_BOOST_MINUTES = 5
+// The ad for extra hands: this many fast workers, for this long.
+export const HELPERS = 4
+export const HELPER_MINUTES = 3
+export const FREE_UPGRADE_COOLDOWN_MINUTES = 30
+export const DUMPSTER_AD_COOLDOWN_MINUTES = 10
 const BOOST_FACTOR = 2
 
 // Bonus drop: every few minutes a trailer passes on the front road and
@@ -82,11 +108,12 @@ export type Upgrades = {
   fleet: number
   yardSize: number // Brick Yard expansions (size = 1 + this)
   yardMax?: number // the size this yard can't grow past (set per yard)
+  yardIndex?: number // which island's yard these are (set per yard)
   yardDocks: number // extra unloading docks (docks = 1 + this)
   yardSpeed: number
   yardBonus: number
 }
-export type UpgradeKey = Exclude<keyof Upgrades, 'yardMax'>
+export type UpgradeKey = Exclude<keyof Upgrades, 'yardMax' | 'yardIndex'>
 
 export const UPGRADE_INFO: Record<UpgradeKey, { label: string; base: number; growth: number }> = {
   tools: { label: 'Better tools', base: 15, growth: 1.5 },
@@ -101,34 +128,21 @@ export const UPGRADE_INFO: Record<UpgradeKey, { label: string; base: number; gro
 
 // Each dumpster is bought per plot and sized up on its own.
 export const DUMPSTER_UPGRADE = { label: 'Bigger dumpster', base: 30, growth: 1.5 }
-// ── Balance sliders (admin, see tuning.ts) ──────────────────────────────
+// ── Pace ─────────────────────────────────────────────────────────────────
+// The game's fixed pace, as factors on the built-in numbers. Not adjustable
+// from admin — live events give temporary boosts on top. Crew and trucks at
+// 0.8 and pay at 0.8 make progress about 1.5× slower than the raw numbers.
+const PACE = { crew: 0.8, truck: 0.8, pay: 0.8 }
+// Manager boosts (and abilities) in force right now, as multipliers — set
+// by Engine.recalcManagers. Yard boosts are per yard.
+const MGR = { walk: 1, pick: 1, truckSpeed: 1, truckLoad: 1, dumpster: 1, unload: [1, 1, 1], pay: [1, 1, 1] }
 
-let tuning: Tuning = { ...DEFAULT_TUNING }
-const TUNING_KEY = 'rubble-tuning'
-// A slider as a factor: 1 = as designed.
-const T = (k: TuneKey) => tuning[k] / 100
-
-export function setTuning(raw: unknown) {
-  tuning = cleanTuning(raw)
-  try {
-    localStorage.setItem(TUNING_KEY, JSON.stringify(tuning))
-  } catch {
-    // fine — the next sync sends it again
-  }
-}
-
-function loadTuning() {
-  try {
-    const raw = localStorage.getItem(TUNING_KEY)
-    if (raw) tuning = cleanTuning(JSON.parse(raw))
-  } catch {
-    // defaults
-  }
-}
+// What each brick / completion bonus is actually worth (for payout labels).
+export const PAY_RATE = PACE.pay
 
 // What a building contract / a plot costs right now.
 export function buildPrice(cost: number) {
-  return Math.round(cost * T('buildPrices'))
+  return Math.round(cost)
 }
 
 // ── Live events (admin-scheduled, see liveEvents.ts) ────────────────────
@@ -160,7 +174,7 @@ function saleFactor(): number {
 }
 
 // Upgrade prices: the slider and any sale.
-const priceFactor = () => T('upgradePrices') * saleFactor()
+const priceFactor = () => saleFactor()
 
 export function dumpsterUpgradeCost(level: number): number {
   return Math.round(DUMPSTER_UPGRADE.base * Math.pow(DUMPSTER_UPGRADE.growth, level) * priceFactor())
@@ -282,19 +296,19 @@ export const stats = {
   carry: (u: Upgrades) => 1 + milestonesReached(1 + u.workers + u.speed),
   // Pickup time: how long a worker spends working a brick loose (or
   // picking one up) before carrying it off. Starts slow; tools speed it up.
-  pullSeconds: (u: Upgrades) => 3 / (1 + 0.15 * u.tools) / T('pickupSpeed'),
-  walkSpeed: (u: Upgrades) => 2 * (1 + 0.15 * u.speed) * T('walkSpeed'),
-  workerCount: (u: Upgrades) => 1 + u.workers,
-  dumpsterCapacity: (level: number) => 8 + 6 * level,
+  pullSeconds: (u: Upgrades) => 3 / (1 + 0.15 * u.tools) / PACE.crew / MGR.pick,
+  walkSpeed: (u: Upgrades) => 2 * (1 + 0.15 * u.speed) * PACE.crew * MGR.walk,
+  workerCount: (u: Upgrades) => 3 + u.workers, // a crew of three to start
+  dumpsterCapacity: (level: number) => Math.round((20 + 10 * level) * MGR.dumpster),
   truckCount: (u: Upgrades) => 1 + u.fleet,
   // The Brick Yard's size sets how many trucks you can buy (2 bays a size).
   yardSize: (u: Upgrades) => Math.min(u.yardMax ?? YARD_MAX_SIZE, 1 + u.yardSize),
   yardCapacity: (u: Upgrades) => yardCapacity(Math.min(u.yardMax ?? YARD_MAX_SIZE, 1 + u.yardSize)),
   docks: (u: Upgrades) => Math.min(MAX_DOCKS, 1 + u.yardDocks),
   // Per truck, from that truck's own levels.
-  truckCargo: (loadLevel: number) => Math.max(1, Math.round((8 + 6 * loadLevel) * T('truckLoad'))),
-  truckSpeed: (speedLevel: number) => 6 * (1 + 0.12 * speedLevel) * T('truckSpeed'),
-  unloadSeconds: (u: Upgrades) => Math.max(0.4, 2 * Math.pow(0.88, u.yardSpeed)) / T('unloadSpeed'),
+  truckCargo: (loadLevel: number) => Math.max(1, Math.round((20 + 10 * loadLevel) * MGR.truckLoad)),
+  truckSpeed: (speedLevel: number) => 6 * (1 + 0.12 * speedLevel) * PACE.truck * MGR.truckSpeed,
+  unloadSeconds: (u: Upgrades) => Math.max(0.2, (2 * Math.pow(0.88, u.yardSpeed)) / (MGR.unload[u.yardIndex ?? 0] ?? 1)),
   priceBonus: (u: Upgrades) => 0.05 * u.yardBonus,
 }
 
@@ -316,6 +330,8 @@ export type Worker = {
   carrying: BrickColor | null
   held: number
   dumpster: number // which of the plot's dumpsters they're heading to / lined up at
+  onBreak?: number // seconds sat down on a break (needs you, or a crew manager)
+  fast?: boolean // a temporary helper from an ad: twice the speed
   via: { x: number; z: number }[] // corners to walk past first (around the building)
 }
 
@@ -349,6 +365,7 @@ export type Truck = {
   timer: number
   cargo: number
   cargoValue: number
+  broken: number // seconds broken down at the roadside (0 = running)
 }
 
 export type EngineEvent =
@@ -391,7 +408,7 @@ export type Snapshot = {
   incomePerMinute: number
   offlineEarnings: number
   sitesCleared: number
-  bonusDrop: { amount: number; secondsLeft: number } | null
+  bonusDrop: { amount: number; secondsLeft: number; chest: ChestType | null } | null
   // Seconds of crew boost left (0 = off).
   boostLeft: number
   notice: Notice | null
@@ -402,9 +419,36 @@ export type Snapshot = {
   ban: Ban | null
   raining: boolean
   yardBuild: { yard: number; toSize: number; secondsLeft: number; totalSeconds: number } | null
-  islands: { id: IslandId; open: boolean; yard: YardLevels }[]
+  islands: { id: IslandId; open: boolean; stage: number; yard: YardLevels }[]
   truckCapacity: number
-  bridgeBuild: { to: IslandId; secondsLeft: number; totalSeconds: number } | null
+  // You on site: tools, things needing you, goals.
+  tools: { ballIn: number; dynamiteIn: number; ballCharges: number; dynamiteCharges: number; ballPack: { gems: number; bricks: number }; dynamitePack: { gems: number; bricks: number } }
+  toolFx: { plot: number; kind: 'ball' | 'dynamite'; at: number } | null
+  needs: { brokenTruck: number | null; restingWorker: number | null; jam: boolean }
+  catchOffer: number // seconds left on a "bricks are falling" offer (0 = none)
+  helpersLeft: number // seconds left of the ad's extra fast workers
+  goals: { text: string; progress: number; target: number; gems: number; claimed: boolean }[]
+  goalsBonusReady: boolean
+  goalsBonusClaimed: boolean
+  contract: { name: string; progress: number; target: number; chest: 'iron' | 'gold'; gems: number } | null
+  // Managers, chests and gems.
+  gems: number
+  chests: Record<ChestType, number>
+  freeChestIn: number // seconds until the free chest (0 = ready)
+  adChestIn: number
+  ironChestPrice: number
+  managers: Record<string, { level: number; cards: number }>
+  assigned: Partial<Record<Slot, string>>
+  abilities: Partial<Record<Slot, { readyIn: number; activeLeft: number }>>
+  outfit: OutfitId
+  outfits: OutfitId[]
+  // Land being raised: an island's next stage (stage 0 = the bridge to it).
+  landBuild: { island: IslandId; stage: number; secondsLeft: number; totalSeconds: number } | null
+  // Seconds until each once-in-a-while ad reward is offered again (0 = ready).
+  freeUpgradeIn: number
+  dumpsterAdIn: number
+  // What emptying every dumpster right now would pay.
+  dumpsterValue: number
   events: LiveEvent[]
   banners: Broadcast[]
   synced: boolean
@@ -434,8 +478,29 @@ export type SaveData = {
   lastSeen: number
   yardBuild?: YardBuild | null
   yards?: YardLevels[]
-  bridges?: IslandId[]
-  bridgeBuild?: BridgeBuild | null
+  grown?: Grown
+  landBuild?: LandBuild | null
+  you?: {
+    toolReady: { ball: number; dynamite: number }
+    toolCharges?: { ball: number; dynamite: number }
+    counters: Counters
+    goalDay: { day: string; base: Counters; claimed: boolean[]; bonus: boolean }
+    contract: Contract | null
+    clearedById: Record<string, number>
+    helpersUntil?: number
+  }
+  mgr?: {
+    managers: Record<string, { level: number; cards: number }>
+    assigned: Partial<Record<Slot, string>>
+    abilityReady: Partial<Record<Slot, number>>
+    chests: Record<ChestType, number>
+    freeChestAt: number
+    gems: number
+    outfit: OutfitId
+    outfits: OutfitId[]
+    rewardedLevel: number
+  }
+  adCooldowns?: { freeUpgrade: number; dumpsters: number; chest?: number }
 }
 
 // A yard expansion under construction: real-world times (ms), so it keeps
@@ -448,9 +513,9 @@ export const YARD_KEYS = ['yardSize', 'yardDocks', 'yardSpeed', 'yardBonus'] as 
 const YARD_FIELD: Record<(typeof YARD_KEYS)[number], keyof YardLevels> = { yardSize: 'size', yardDocks: 'docks', yardSpeed: 'speed', yardBonus: 'bonus' }
 export const isYardKey = (k: UpgradeKey): k is (typeof YARD_KEYS)[number] => (YARD_KEYS as readonly string[]).includes(k)
 
-// A bridge to the next island being built (real-world times, ms).
-export type BridgeBuild = { to: IslandId; startedAt: number; endsAt: number }
-export const BRIDGE_AD_SHARE = 0.25
+// Land being raised on an island (real-world times, ms).
+export type LandBuild = { island: IslandId; stage: number; startedAt: number; endsAt: number }
+export const LAND_AD_SHARE = 0.25
 
 // How long building the yard up to each size takes (sizes 2–10).
 const YARD_BUILD_MINUTES = [5, 15, 30, 60, 120, 180, 240, 300, 360]
@@ -810,11 +875,558 @@ export class Engine {
   // ── Islands and yards ─────────────────────────────────────────────────
 
   yardLevels: YardLevels[] = ISLANDS.map(() => ({ size: 0, docks: 0, speed: 0, bonus: 0 }))
-  bridges: IslandId[] = []
-  bridgeBuild: BridgeBuild | null = null
+  // How far each island has grown (−1 = not reached) and what's being raised.
+  grown: Grown = { ...START_GROWN }
+  landBuild: LandBuild | null = null
+  // When each ad reward can be watched again (ms timestamps).
+  adCooldowns = { freeUpgrade: 0, dumpsters: 0, chest: 0 }
+
+  // ── You on site: tools, hiccups, goals ───────────────────────────────
+
+  toolReady = { ball: 0, dynamite: 0 } // ms
+  // Bought uses: spent instead of waiting out the cooldown.
+  toolCharges = { ball: 0, dynamite: 0 }
+
+  // A pack of 3 uses, for gems or bricks (bricks scale with level).
+  toolPackPrice(kind: 'ball' | 'dynamite') {
+    const gems = kind === 'ball' ? 10 : 15
+    const bricks = Math.round((chestBrickPrice(levelForXp(this.xp)) * (kind === 'ball' ? 0.6 : 0.9)) / 100) * 100
+    return { gems, bricks }
+  }
+  buyToolPack(kind: 'ball' | 'dynamite', pay: 'gems' | 'bricks'): string | null {
+    const p = this.toolPackPrice(kind)
+    if (pay === 'gems') {
+      if (this.gems < p.gems) return 'Not enough gems'
+      this.gems -= p.gems
+    } else {
+      if (this.scrap < p.bricks) return 'Not enough bricks'
+      this.scrap -= p.bricks
+    }
+    this.toolCharges[kind] += 3
+    this.save()
+    this.markDirty()
+    return null
+  }
+  // Ready now, or a bought use to spend? (Spends it.)
+  private useToolTurn(kind: 'ball' | 'dynamite', cooldownMs: number) {
+    if (Date.now() >= this.toolReady[kind]) {
+      this.toolReady[kind] = Date.now() + cooldownMs
+      return true
+    }
+    if (this.toolCharges[kind] > 0) {
+      this.toolCharges[kind]--
+      return true
+    }
+    return false
+  }
+  toolFx: { plot: number; kind: 'ball' | 'dynamite'; at: number } | null = null
+  counters: Counters = { ...ZERO_COUNTERS }
+  goalDay = { day: '', base: { ...ZERO_COUNTERS }, claimed: [false, false, false], bonus: false }
+  contract: Contract | null = null
+  clearedById: Record<string, number> = {}
+  jamSince = -1 // sim seconds; -1 = no jam
+  private nextHiccupAt = 240
+  catchOfferUntil = 0 // ms
+  private nextCatchAt = Date.now() + 6 * 60_000
+
+  count(kind: Counter, n = 1) {
+    this.counters[kind] += n
+  }
+
+  // Watched an ad: four fast extra workers join for a few minutes.
+  helpersUntil = 0 // ms
+  adHelpers() {
+    this.helpersUntil = Math.max(Date.now(), this.helpersUntil) + HELPER_MINUTES * 60_000
+    this.syncHelpers()
+    this.markDirty()
+  }
+
+  // Adds the helpers while they're hired, lets them go when time's up
+  // (anything they were carrying is left on the ground).
+  private syncHelpers() {
+    const active = Date.now() < this.helpersUntil
+    if (active && this.workers.filter((w) => w.fast).length < HELPERS) {
+      const start = this.plots.find((p) => p.phase === 'demolishing') ?? this.home
+      for (let k = this.workers.filter((w) => w.fast).length; k < HELPERS; k++) {
+        const w = this.newWorker(1000 + k, start.id)
+        w.fast = true
+        this.workers.push(w)
+      }
+    }
+    if (!active && this.workers.some((w) => w.fast)) {
+      for (const w of this.workers.filter((x) => x.fast)) {
+        this.releaseTarget(w)
+        const site = this.plots[w.plot]
+        if (site && w.carrying) for (let k = 0; k < w.held; k++) site.spawnRubble(w.carrying, this.time)
+      }
+      this.workers = this.workers.filter((w) => !w.fast)
+      for (const site of this.plots) for (const d of site.dumpsters) d.queue = d.queue.filter((id) => id < 1000)
+    }
+  }
+
+  // A small reward for sorting something out: about half a minute's income.
+  private fixReward() {
+    return Math.max(25, Math.round((this.snapshot?.incomePerMinute ?? 0) * 0.5))
+  }
+
+  // Knock a share of a building's bricks into rubble at once, starting
+  // nearest `near` (local, world units).
+  private knock(site: Site, share: number, min: number, near: { x: number; z: number } | null) {
+    const n = Math.min(site.bricksLeft, Math.max(min, Math.ceil(site.bricksLeft * share)))
+    for (let k = 0; k < n; k++) {
+      const b = site.pickTopBrick(near)
+      if (b < 0) break
+      this.breakBrick(site, b)
+    }
+    return n
+  }
+
+  // The wrecking ball: a swing takes a chunk off the front corner.
+  swingBall(plot: number): number {
+    const site = this.plots[plot]
+    if (!site || site.phase !== 'demolishing' || !this.useToolTurn('ball', 90_000)) return 0
+    const n = this.knock(site, 0.05, 12, { x: site.halfX, z: site.halfZ })
+    this.toolFx = { plot, kind: 'ball', at: Date.now() }
+    this.count('tool')
+    this.save()
+    this.markDirty()
+    return n
+  }
+
+  // Dynamite: a bigger blast from the middle out.
+  blast(plot: number): number {
+    const site = this.plots[plot]
+    if (!site || site.phase !== 'demolishing' || !this.useToolTurn('dynamite', 240_000)) return 0
+    const n = this.knock(site, 0.1, 25, null)
+    this.toolFx = { plot, kind: 'dynamite', at: Date.now() }
+    this.count('tool')
+    this.save()
+    this.markDirty()
+    return n
+  }
+
+  fixTruck(id: number): number {
+    const t = this.trucks[id]
+    if (!t || !t.broken) return 0
+    t.broken = 0
+    const reward = this.fixReward()
+    this.scrap += reward
+    this.count('fix')
+    this.markDirty()
+    return reward
+  }
+
+  wakeWorker(id: number): number {
+    const w = this.workers.find((x) => x.id === id)
+    if (!w || !w.onBreak) return 0
+    w.onBreak = 0
+    this.count('fix')
+    this.markDirty()
+    return 1
+  }
+
+  clearJam(): number {
+    if (this.jamSince < 0) return 0
+    this.jamSince = -1
+    this.recalcManagers()
+    const reward = this.fixReward()
+    this.scrap += reward
+    this.count('fix')
+    this.markDirty()
+    return reward
+  }
+
+  // The "bricks are falling" game: each catch is worth a few seconds of income.
+  catchUnit() {
+    return Math.max(3, Math.round((this.snapshot?.incomePerMinute ?? 0) / 12))
+  }
+  claimCatch(caught: number): number {
+    if (Date.now() > this.catchOfferUntil + 60_000) return 0
+    this.catchOfferUntil = 0
+    const reward = Math.max(0, Math.min(60, caught)) * this.catchUnit()
+    this.scrap += reward
+    this.markDirty()
+    return reward
+  }
+  takeCatchOffer() {
+    // Started: the offer stays valid while they play.
+    this.catchOfferUntil = Date.now() + 30_000
+  }
+
+  // Now and then something needs you: a truck breaks down, a worker sits
+  // down for a break, or traffic jams up. A manager on the right station
+  // sorts it out by themselves after a while.
+  private tickHiccups(dt: number) {
+    const hasTruckMgr = !!this.assigned.truck
+    const hasCrewMgr = !!this.assigned.crew
+    // Left alone, things sort themselves out eventually — just slower:
+    // a manager on that station is much quicker than waiting.
+    for (const t of this.trucks) {
+      if (!t.broken) continue
+      t.broken += dt
+      if (t.broken > (hasTruckMgr ? 20 : 180)) t.broken = 0
+    }
+    for (const w of this.workers) {
+      if (!w.onBreak) continue
+      w.onBreak += dt
+      if (w.onBreak > (hasCrewMgr ? 15 : 120)) w.onBreak = 0
+    }
+    if (this.jamSince >= 0 && this.time - this.jamSince > (hasTruckMgr ? 30 : 300)) {
+      this.jamSince = -1
+      this.recalcManagers()
+    }
+    if (this.time < this.nextHiccupAt || this.home.phase !== 'demolishing') return
+    this.nextHiccupAt = this.time + 200 + Math.random() * 220
+    const roll = Math.random()
+    const driving = this.trucks.filter((t) => t.state === 'driving' && !t.broken)
+    if (roll < 0.4 && driving.length && !this.trucks.some((t) => t.broken)) {
+      driving[Math.floor(Math.random() * driving.length)].broken = 0.01
+    } else if (roll < 0.75 && this.workers.length > 1 && !this.workers.some((w) => w.onBreak)) {
+      const free = this.workers.filter((w) => !w.carrying && (w.state === 'idle' || w.state === 'toPick'))
+      const w = free[Math.floor(Math.random() * free.length)]
+      if (w) {
+        if (w.target) this.releaseTarget(w)
+        w.state = 'idle'
+        w.onBreak = 0.01
+      }
+    } else if (this.jamSince < 0 && this.trucks.length) {
+      this.jamSince = this.time
+      this.recalcManagers()
+    }
+    this.markDirty()
+  }
+
+  private tickGoals() {
+    const today = dayKey()
+    if (this.goalDay.day !== today) this.goalDay = { day: today, base: { ...this.counters }, claimed: [false, false, false], bonus: false }
+    if (!this.contract) this.newContract()
+    if (!this.catchOfferUntil && Date.now() >= this.nextCatchAt && this.home.phase === 'demolishing') {
+      this.catchOfferUntil = Date.now() + 30_000
+      this.nextCatchAt = Date.now() + (8 + Math.random() * 6) * 60_000
+      this.markDirty()
+    }
+    if (this.catchOfferUntil && Date.now() > this.catchOfferUntil + 60_000) this.catchOfferUntil = 0
+  }
+
+  todaysGoals() {
+    return dailyGoals(this.goalDay.day || dayKey(), levelForXp(this.xp))
+  }
+
+  goalProgress(i: number) {
+    const g = this.todaysGoals()[i]
+    return g ? Math.min(g.target, this.counters[g.kind] - (this.goalDay.base[g.kind] ?? 0)) : 0
+  }
+
+  claimGoal(i: number): string | null {
+    const g = this.todaysGoals()[i]
+    if (!g || this.goalDay.claimed[i]) return 'Already claimed'
+    if (this.goalProgress(i) < g.target) return 'Not done yet'
+    this.goalDay.claimed[i] = true
+    this.gems += g.gems
+    this.save()
+    this.markDirty()
+    return null
+  }
+
+  // All three done: a bonus Iron chest.
+  claimGoalBonus(): string | null {
+    if (this.goalDay.bonus || this.goalDay.claimed.some((c) => !c)) return 'Finish all three first'
+    this.goalDay.bonus = true
+    this.chests.iron++
+    this.save()
+    this.markDirty()
+    return null
+  }
+
+  // A contract: demolish one of the buildings you can do a few times.
+  private newContract() {
+    const level = levelForXp(this.xp)
+    const pool = BUILDINGS.filter((b) => b.requiredLevel <= level && b.requiredLevel >= level - 4)
+    const b = pool[Math.floor(Math.random() * pool.length)] ?? BUILDINGS[0]
+    const target = b.requiredLevel >= level - 1 ? 2 : 3
+    this.contract = { building: b.id, target, base: this.clearedById[b.id] ?? 0, chest: level >= 10 ? 'gold' : 'iron', gems: 10 + level }
+  }
+
+  contractProgress() {
+    const c = this.contract
+    return c ? Math.min(c.target, (this.clearedById[c.building] ?? 0) - c.base) : 0
+  }
+
+  claimContract(): string | null {
+    const c = this.contract
+    if (!c || this.contractProgress() < c.target) return 'Not done yet'
+    this.chests[c.chest]++
+    this.gems += c.gems
+    this.contract = null
+    this.newContract()
+    this.save()
+    this.markDirty()
+    return null
+  }
+
+  // ── Managers, chests, gems ────────────────────────────────────────────
+
+  managers: Record<string, { level: number; cards: number }> = {}
+  assigned: Partial<Record<Slot, string>> = {}
+  abilityReady: Partial<Record<Slot, number>> = {} // ms
+  activeAbilities: { slot: Slot; id: AbilityId; until: number }[] = [] // ms
+  chests: Record<ChestType, number> = { wood: 1, iron: 0, gold: 0 } // a first chest to open
+  freeChestAt = 0 // ms
+  gems = 0
+  outfit: OutfitId = 'suit'
+  outfits: OutfitId[] = ['suit']
+  rewardedLevel = 1
+  private automationAt = 0
+  private upgradeAutoAt = 0
+
+  // Boosts from the managers in their slots and any running abilities.
+  recalcManagers() {
+    const now = Date.now()
+    this.activeAbilities = this.activeAbilities.filter((a) => a.until > now)
+    MGR.walk = MGR.pick = MGR.truckSpeed = MGR.truckLoad = MGR.dumpster = 1
+    MGR.unload = ISLANDS.map(() => 1)
+    MGR.pay = ISLANDS.map(() => 1)
+    for (const [slot, id] of Object.entries(this.assigned) as [Slot, string][]) {
+      const m = manager(id)
+      const own = this.managers[id]
+      if (!m || !own) continue
+      const b = boostsAt(m, own.level, slot)
+      const y = slot.startsWith('yard') ? Number(slot.slice(4)) : null
+      MGR.walk *= b.walk ?? 1
+      MGR.pick *= b.pick ?? 1
+      MGR.truckSpeed *= b.truckSpeed ?? 1
+      MGR.truckLoad *= b.truckLoad ?? 1
+      MGR.dumpster *= b.dumpster ?? 1
+      if (y !== null) {
+        MGR.unload[y] *= b.unload ?? 1
+        MGR.pay[y] *= b.pay ?? 1
+      }
+    }
+    // A traffic jam slows every truck until someone waves it through.
+    if (this.jamSince >= 0) MGR.truckSpeed *= 0.6
+    for (const a of this.activeAbilities) {
+      if (a.id === 'rally' || a.id === 'bossMode') {
+        MGR.walk *= 3
+        MGR.pick *= 3
+      }
+      if (a.id === 'express' || a.id === 'bossMode') MGR.truckSpeed *= 3
+      if (a.id === 'bossMode') MGR.unload = MGR.unload.map((u) => u * 3)
+      if (a.id === 'market') MGR.pay = MGR.pay.map((p) => p * 2)
+    }
+  }
+
+  // Put a manager in a slot (taking them out of any other), or clear it.
+  assignManager(slot: Slot, id: string | null) {
+    if (id) {
+      const m = manager(id)
+      if (!m || !this.managers[id] || !fits(m, slot)) return false
+      for (const k of Object.keys(this.assigned) as Slot[]) if (this.assigned[k] === id) delete this.assigned[k]
+      this.assigned[slot] = id
+    } else delete this.assigned[slot]
+    this.recalcManagers()
+    this.save()
+    this.markDirty()
+    return true
+  }
+
+  levelUpManager(id: string): string | null {
+    const m = manager(id)
+    const own = this.managers[id]
+    if (!m || !own) return 'Not hired'
+    if (own.level >= 10) return 'Max level'
+    const need = cardsToLevel(m, own.level)
+    if (own.cards < need) return `Needs ${need} cards`
+    const cost = levelUpCost(m, own.level)
+    if (this.scrap < cost) return 'Not enough bricks'
+    this.scrap -= cost
+    own.cards -= need
+    own.level++
+    this.recalcManagers()
+    this.save()
+    this.markDirty()
+    return null
+  }
+
+  claimFreeChest(): boolean {
+    if (Date.now() < this.freeChestAt) return false
+    this.chests.wood++
+    this.freeChestAt = Date.now() + FREE_CHEST_HOURS * 3_600_000
+    this.save()
+    this.markDirty()
+    return true
+  }
+
+  // Watched an ad for a Wooden chest (every half hour).
+  adChest(): boolean {
+    if (Date.now() < this.adCooldowns.chest) return false
+    this.chests.wood++
+    this.adCooldowns.chest = Date.now() + 30 * 60_000
+    this.save()
+    this.markDirty()
+    return true
+  }
+
+  buyChest(type: ChestType): string | null {
+    if (type === 'iron') {
+      const price = chestBrickPrice(levelForXp(this.xp))
+      if (this.scrap < price) return 'Not enough bricks'
+      this.scrap -= price
+    } else if (type === 'gold') {
+      if (this.gems < GOLD_CHEST_GEMS) return 'Not enough gems'
+      this.gems -= GOLD_CHEST_GEMS
+    } else return 'Wooden chests are free'
+    this.chests[type]++
+    this.save()
+    this.markDirty()
+    return null
+  }
+
+  // Opens one chest: new managers join, duplicates become level-up cards.
+  openChest(type: ChestType): { pulls: (Pull & { isNew: boolean })[]; gems: number } | null {
+    if (this.chests[type] <= 0) return null
+    this.chests[type]--
+    const roll = rollChest(type)
+    const pulls = roll.pulls.map((p) => {
+      const own = this.managers[p.manager]
+      if (!own) {
+        this.managers[p.manager] = { level: 1, cards: 0 }
+        return { ...p, isNew: true }
+      }
+      own.cards++
+      return { ...p, isNew: false }
+    })
+    this.gems += roll.gems
+    this.count('chest')
+    // A brand-new manager goes straight into an empty slot that fits.
+    for (const p of pulls) {
+      if (!p.isNew) continue
+      const m = manager(p.manager)!
+      const slot = this.managerSlots().find((sl) => !this.assigned[sl] && fits(m, sl))
+      if (slot) this.assigned[slot] = m.id
+    }
+    this.recalcManagers()
+    this.save()
+    this.markDirty()
+    return { pulls, gems: roll.gems }
+  }
+
+  // The slots there are: the four stations plus each open island's yard.
+  managerSlots(): Slot[] {
+    return ['crew', 'truck', 'dumpster', 'tools', ...this.openYards().map((y) => `yard${y}` as Slot)]
+  }
+
+  useAbility(slot: Slot): string | null {
+    const id = this.assigned[slot]
+    const m = id ? manager(id) : null
+    if (!m?.ability) return 'No ability'
+    const ab = ABILITIES[m.ability]
+    if (Date.now() < (this.abilityReady[slot] ?? 0)) return 'Not ready yet'
+    if (ab.id === 'emptyAll') this.haulAllDumpsters()
+    else if (ab.id === 'charge') this.blastBuildings()
+    else this.activeAbilities.push({ slot, id: ab.id, until: Date.now() + ab.seconds * 1000 })
+    this.abilityReady[slot] = Date.now() + ab.cooldownMinutes * 60_000
+    this.recalcManagers()
+    this.save()
+    this.markDirty()
+    return null
+  }
+
+  // Every plot's dumpsters hauled away and paid for at once.
+  private haulAllDumpsters() {
+    let bricks = 0
+    let value = 0
+    for (const site of this.plots) {
+      const load = site.dumpsterLoad
+      if (!load) continue
+      const y = Math.max(0, ISLANDS.findIndex((s) => s.id === PLOT_SLOTS[site.id]?.island))
+      value += load * site.building.brickValue * (1 + stats.priceBonus(this.yardU(y))) * (MGR.pay[y] ?? 1)
+      bricks += load
+      for (const d of site.dumpsters) d.load = 0
+    }
+    if (bricks) this.pay(bricks, value)
+    for (const site of this.plots) this.checkCleared(site)
+  }
+
+  // A blast knocks a chunk (5%) off every building into rubble.
+  private blastBuildings() {
+    for (const site of this.plots) {
+      if (site.phase !== 'demolishing') continue
+      const n = Math.ceil(site.bricksLeft * 0.05)
+      for (let k = 0; k < n; k++) {
+        const b = site.pickTopBrick(null)
+        if (b < 0) break
+        const color = site.bricks[b].color
+        site.removeBrick(b)
+        site.spawnRubble(color, this.time)
+      }
+    }
+  }
+
+  // Managers running things for you, about once a second.
+  private runAutomation() {
+    const now = Date.now()
+    if (now < this.automationAt || !this.plots.length) return
+    this.automationAt = now + 1000
+    if (this.activeAbilities.some((a) => a.until <= now)) this.recalcManagers()
+    const auto = new Set<string>()
+    for (const id of Object.values(this.assigned)) for (const a of (id && manager(id)?.automation) || []) auto.add(a)
+    if (auto.has('claim'))
+      for (const site of this.plots) {
+        if (site.phase !== 'cleared') continue
+        const last = site.building.id
+        this.claimPlot(site.id)
+        // …and starts the same building again if it can.
+        if (auto.has('restart')) this.startBuilding(site.id, last)
+      }
+    if (auto.has('upgrade') && now >= this.upgradeAutoAt) {
+      this.upgradeAutoAt = now + 20_000
+      const keys: UpgradeKey[] = ['tools', 'speed', 'workers']
+      const best = keys
+        .filter((k) => !upgradeLock(k, this.upgrades, levelForXp(this.xp), this.truckCapacity()))
+        .map((k) => ({ k, cost: upgradeCost(k, this.upgrades[k]) }))
+        .sort((a, b) => a.cost - b.cost)[0]
+      // Only small purchases, so it never drains your bricks.
+      if (best && best.cost <= this.scrap * 0.2) this.buyUpgrade(best.k)
+    }
+  }
+
+  // Level-up rewards: gems and a chest each level, a better one every 5.
+  private checkLevelRewards() {
+    const level = levelForXp(this.xp)
+    while (this.rewardedLevel < level) {
+      this.rewardedLevel++
+      this.gems += 5
+      this.chests[this.rewardedLevel % 5 === 0 ? 'iron' : 'wood']++
+      if (!this.frozen)
+        this.notices.push({
+          title: `Level ${this.rewardedLevel}!`,
+          detail: `+5 gems and a ${this.rewardedLevel % 5 === 0 ? 'Iron' : 'Wooden'} chest`,
+          message: null,
+          emoji: '🎁',
+          button: 'Nice!',
+        })
+      this.markDirty()
+    }
+  }
+
+  buyOutfit(id: OutfitId): string | null {
+    if (this.outfits.includes(id)) {
+      this.outfit = id
+    } else {
+      const o = OUTFITS.find((x) => x.id === id)
+      if (!o) return 'No such outfit'
+      if (this.gems < o.gems) return 'Not enough gems'
+      this.gems -= o.gems
+      this.outfits = [...this.outfits, id]
+      this.outfit = id
+    }
+    this.save()
+    this.markDirty()
+    return null
+  }
 
   islandOpen(id: IslandId) {
-    return ISLANDS.find((s) => s.id === id)?.unlock === null || this.bridges.includes(id)
+    return this.grown[id] >= 0
   }
 
   openYards(): number[] {
@@ -824,7 +1436,7 @@ export class Engine {
   // The upgrades as seen from one yard (its own yard levels).
   yardU(y: number): Upgrades {
     const l = this.yardLevels[y] ?? { size: 0, docks: 0, speed: 0, bonus: 0 }
-    return { ...this.upgrades, yardSize: l.size, yardDocks: l.docks, yardSpeed: l.speed, yardBonus: l.bonus, yardMax: ISLANDS[y]?.yard.maxSize }
+    return { ...this.upgrades, yardSize: l.size, yardDocks: l.docks, yardSpeed: l.speed, yardBonus: l.bonus, yardMax: ISLANDS[y]?.yard.maxSize, yardIndex: y }
   }
 
   // Parking bays across every open yard.
@@ -880,6 +1492,7 @@ export class Engine {
       dock: 0,
       stuck: 0,
       squeeze: 0,
+      broken: 0,
       lap: 0,
       timer: 0,
       cargo: 0,
@@ -891,8 +1504,9 @@ export class Engine {
     while (this.trucks.length < stats.truckCount(this.upgrades)) this.trucks.push(this.newTruck(this.trucks.length))
     const want = stats.workerCount(this.upgrades)
     const start = this.plots.find((p) => p.phase === 'demolishing') ?? this.home
-    while (this.workers.length < want) {
-      const id = this.workers.length
+    // (Ad helpers don't count, and have their own ids from 1000.)
+    while (this.workers.filter((w) => !w.fast).length < want) {
+      const id = this.workers.filter((w) => !w.fast).length
       this.workers.push(this.newWorker(id, start.id))
     }
   }
@@ -903,10 +1517,12 @@ export class Engine {
     const wantTrucks = stats.truckCount(this.upgrades)
     if (this.trucks.length > wantTrucks) this.trucks = this.trucks.slice(0, wantTrucks)
     const want = stats.workerCount(this.upgrades)
-    if (this.workers.length <= want) return
-    for (const w of this.workers.slice(want)) this.releaseTarget(w)
-    this.workers = this.workers.slice(0, want)
-    for (const site of this.plots) for (const d of site.dumpsters) d.queue = d.queue.filter((id) => id < want)
+    const crew = this.workers.filter((w) => !w.fast)
+    if (crew.length <= want) return
+    const gone = new Set(crew.slice(want).map((w) => w.id))
+    for (const w of this.workers) if (gone.has(w.id)) this.releaseTarget(w)
+    this.workers = this.workers.filter((w) => !gone.has(w.id))
+    for (const site of this.plots) for (const d of site.dumpsters) d.queue = d.queue.filter((id) => !gone.has(id))
   }
 
   private newWorker(id: number, plot: number): Worker {
@@ -931,7 +1547,6 @@ export class Engine {
   // ── Persistence ───────────────────────────────────────────────────────
 
   load() {
-    loadTuning()
     try {
     } catch {
       // unreadable — the next sync says
@@ -1008,12 +1623,35 @@ export class Engine {
     this.upgrades = { ...this.upgrades, ...upgrades }
     this.sitesCleared = save.sitesCleared ?? 0
     this.yardBuild = save.yardBuild && typeof save.yardBuild.yard === 'number' ? save.yardBuild : null
-    this.bridges = save.bridges ?? []
-    this.bridgeBuild = save.bridgeBuild ?? null
+    this.grown = { ...START_GROWN, ...save.grown }
+    setGrown(this.grown)
+    this.landBuild = save.landBuild ?? null
+    this.adCooldowns = { freeUpgrade: 0, dumpsters: 0, chest: 0, ...save.adCooldowns }
+    if (save.you) {
+      this.toolReady = { ...{ ball: 0, dynamite: 0 }, ...save.you.toolReady }
+      this.toolCharges = { ...{ ball: 0, dynamite: 0 }, ...save.you.toolCharges }
+      this.counters = { ...ZERO_COUNTERS, ...save.you.counters }
+      this.goalDay = save.you.goalDay ?? this.goalDay
+      this.contract = save.you.contract ?? null
+      this.clearedById = save.you.clearedById ?? {}
+      this.helpersUntil = save.you.helpersUntil ?? 0
+    }
+    if (save.mgr) {
+      this.managers = save.mgr.managers ?? {}
+      this.assigned = save.mgr.assigned ?? {}
+      this.abilityReady = save.mgr.abilityReady ?? {}
+      this.chests = { ...{ wood: 0, iron: 0, gold: 0 }, ...save.mgr.chests }
+      this.freeChestAt = save.mgr.freeChestAt ?? 0
+      this.gems = save.mgr.gems ?? 0
+      this.outfit = save.mgr.outfit ?? 'suit'
+      this.outfits = save.mgr.outfits ?? ['suit']
+      this.rewardedLevel = save.mgr.rewardedLevel ?? levelForXp(save.xp ?? 0)
+    } else this.rewardedLevel = levelForXp(save.xp ?? 0)
+    this.recalcManagers()
     if (save.yards) this.yardLevels = ISLANDS.map((_, i) => ({ ...{ size: 0, docks: 0, speed: 0, bonus: 0 }, ...(save.yards![i] ?? {}) }))
-    if (this.yardBuild || this.bridgeBuild) {
+    if (this.yardBuild || this.landBuild) {
       this.checkYardBuild()
-      this.checkBridgeBuild()
+      this.checkLandBuild()
     }
     this.crewPlan = save.crewPlan ?? null
     this.trucks = (save.trucks ?? [{ load: oldTruckLevel ?? 0, speed: 0 }]).map((t, id) => this.newTruck(id, t))
@@ -1067,8 +1705,29 @@ export class Engine {
       lastSeen: Date.now(),
       yardBuild: this.yardBuild,
       yards: this.yardLevels,
-      bridges: this.bridges,
-      bridgeBuild: this.bridgeBuild,
+      grown: this.grown,
+      landBuild: this.landBuild,
+      adCooldowns: this.adCooldowns,
+      you: {
+        toolReady: this.toolReady,
+        toolCharges: this.toolCharges,
+        counters: this.counters,
+        goalDay: this.goalDay,
+        contract: this.contract,
+        clearedById: this.clearedById,
+        helpersUntil: this.helpersUntil,
+      },
+      mgr: {
+        managers: this.managers,
+        assigned: this.assigned,
+        abilityReady: this.abilityReady,
+        chests: this.chests,
+        freeChestAt: this.freeChestAt,
+        gems: this.gems,
+        outfit: this.outfit,
+        outfits: this.outfits,
+        rewardedLevel: this.rewardedLevel,
+      },
       trucks: this.trucks.map((t) => ({ load: t.load, speed: t.speed, home: t.home })),
       plots: this.plots.map((p) => ({
         phase: p.phase,
@@ -1311,7 +1970,7 @@ export class Engine {
   beginCatchUp(seconds: number) {
     // Banned time doesn't count as time away.
     if (this.ban) return
-    const away = Math.min(MAX_OFFLINE_SECONDS * T('offlineTime'), Math.max(0, seconds))
+    const away = Math.min(MAX_OFFLINE_SECONDS, Math.max(0, seconds))
     if (away < 5) return
     if (this.catchUpLeft > 0) {
       this.catchUpLeft += away
@@ -1420,7 +2079,7 @@ export class Engine {
   }
 
   private boostMul() {
-    return (this.boostActive() ? 1 + (BOOST_FACTOR - 1) * T('boostPower') : 1) * eventMultiplier('crew_boost')
+    return (this.boostActive() ? BOOST_FACTOR : 1) * eventMultiplier('crew_boost')
   }
 
   boost() {
@@ -1451,6 +2110,7 @@ export class Engine {
       this.breakBrick(site, i)
       broke++
     }
+    this.count('tap', broke)
     return broke
   }
 
@@ -1469,6 +2129,7 @@ export class Engine {
     }
     if (i < 0) return 0
     this.breakBrick(site, i)
+    this.count('tap')
     return 1
   }
 
@@ -1494,51 +2155,73 @@ export class Engine {
   // Rain an admin sent this player, until (real-world ms).
   rainUntil = 0
 
-  // ── Bridges (to the next island) ──────────────────────────────────────
+  // ── Growing the islands ───────────────────────────────────────────────
+  //
+  // Each island grows a stage at a time: pay, wait while the crew builds,
+  // and the new land rises from the sea. Stage 0 of the next island is the
+  // bridge to it, which needs the island before it fully grown.
 
-  // Why the bridge to an island can't be started now, if so.
-  bridgeLock(to: IslandId): string | null {
-    const s = ISLANDS.find((i) => i.id === to)
-    if (!s?.unlock) return 'Already open'
-    if (this.islandOpen(to)) return 'Already built'
-    const prev = ISLANDS[s.index - 1]
-    if (prev && !this.islandOpen(prev.id)) return `Open the ${prev.name} first`
-    if (this.bridgeBuild) return 'A bridge is already being built'
-    if (levelForXp(this.xp) < s.unlock.level) return `Lv ${s.unlock.level}`
-    if (this.scrap < buildPrice(s.unlock.cost)) return 'Not enough bricks'
+  // The next stage of an island, if it has one.
+  nextStage(id: IslandId): number | null {
+    const s = ISLANDS.find((i) => i.id === id)!
+    const next = this.grown[id] + 1
+    return next <= lastStage(s) ? next : null
+  }
+
+  // Why the island can't grow now, if so.
+  growLock(id: IslandId): string | null {
+    const s = ISLANDS.find((i) => i.id === id)!
+    const stage = this.nextStage(id)
+    if (stage === null) return 'Fully grown'
+    const st = s.stages[stage]
+    if (!st) return 'Fully grown'
+    if (stage === 0) {
+      const prev = ISLANDS[s.index - 1]
+      if (prev && this.grown[prev.id] < lastStage(prev)) return `Grow the ${prev.name} all the way first`
+    }
+    if (this.landBuild) return this.landBuild.island === id ? 'Building…' : 'Already building elsewhere'
+    if (levelForXp(this.xp) < st.level) return `Lv ${st.level}`
+    if (this.scrap < buildPrice(st.cost)) return 'Not enough bricks'
     return null
   }
 
-  buildBridge(to: IslandId): string | null {
-    const why = this.bridgeLock(to)
+  grow(id: IslandId): string | null {
+    const why = this.growLock(id)
     if (why) return why
-    const s = ISLANDS.find((i) => i.id === to)!
-    this.scrap -= buildPrice(s.unlock!.cost)
+    const s = ISLANDS.find((i) => i.id === id)!
+    const stage = this.nextStage(id)!
+    const st = s.stages[stage]!
+    this.scrap -= buildPrice(st.cost)
     const now = Date.now()
-    this.bridgeBuild = { to, startedAt: now, endsAt: now + s.unlock!.buildMinutes * 60_000 }
+    this.landBuild = { island: id, stage, startedAt: now, endsAt: now + st.buildMinutes * 60_000 }
     this.save()
     this.markDirty()
     return null
   }
 
-  private checkBridgeBuild() {
-    const b = this.bridgeBuild
+  private checkLandBuild() {
+    const b = this.landBuild
     if (!b || Date.now() < b.endsAt) return
-    this.bridgeBuild = null
-    if (!this.bridges.includes(b.to)) this.bridges = [...this.bridges, b.to]
-    const s = ISLANDS.find((i) => i.id === b.to)!
-    if (!this.frozen) this.notices.push({ title: `Bridge open!`, detail: `The ${s.name} is open — new plots, buildings and the ${s.yard.name}`, message: null, emoji: '🌉', button: "Let's go!" })
+    this.landBuild = null
+    this.grown = { ...this.grown, [b.island]: Math.max(this.grown[b.island], b.stage) }
+    setGrown(this.grown)
+    const s = ISLANDS.find((i) => i.id === b.island)!
+    if (!this.frozen)
+      this.notices.push(
+        b.stage === 0
+          ? { title: 'Bridge open!', detail: `The ${s.name} is open — new plots, buildings and the ${s.yard.name}`, message: null, emoji: '🌉', button: "Let's go!" }
+          : { title: `${s.name} grew!`, detail: 'New land rose from the sea — with new plots for sale', message: null, emoji: s.emoji, button: 'Nice!' }
+      )
     this.save()
     this.markDirty()
   }
 
-  // A watched ad: a quarter of the bridge's full build time off.
-  speedUpBridge() {
-    const b = this.bridgeBuild
+  // A watched ad: a quarter of the full build time off.
+  speedUpLand() {
+    const b = this.landBuild
     if (!b) return
-    const s = ISLANDS.find((i) => i.id === b.to)!
-    b.endsAt -= (s.unlock?.buildMinutes ?? 0) * 60_000 * BRIDGE_AD_SHARE
-    this.checkBridgeBuild()
+    b.endsAt -= (b.endsAt - b.startedAt) * LAND_AD_SHARE
+    this.checkLandBuild()
     this.save()
     this.markDirty()
   }
@@ -1577,6 +2260,7 @@ export class Engine {
       return true
     }
     this.scrap -= cost
+    this.count('upgrade')
     this.upgrades = { ...this.upgrades, [key]: this.upgrades[key] + 1 }
     this.syncWorkers()
     this.markDirty()
@@ -1609,7 +2293,7 @@ export class Engine {
   claimPlot(plot: number): number {
     const site = this.plots[plot]
     if (!site || site.phase !== 'cleared') return 0
-    const bonus = site.building.bonus
+    const bonus = Math.round(site.building.bonus * PACE.pay)
     this.scrap += bonus
     this.sitesCleared++
     site.phase = 'empty'
@@ -1623,7 +2307,7 @@ export class Engine {
   buyPlot(): string | null {
     const slot = PLOT_SLOTS[this.plots.length]
     if (!slot) return 'No more plots for sale'
-    if (!this.islandOpen(slot.island)) return `Build the bridge to the ${ISLANDS.find((s) => s.id === slot.island)!.name} first`
+    if (this.grown[slot.island] < slot.stage) return slot.stage === 0 ? `Build the bridge to the ${ISLANDS.find((s) => s.id === slot.island)!.name} first` : 'Grow the island to reach this plot'
     if (levelForXp(this.xp) < slot.requiredLevel) return `Reach level ${slot.requiredLevel} first`
     const price = buildPrice(slot.cost)
     if (this.scrap < price) return 'Not enough bricks'
@@ -1820,6 +2504,69 @@ export class Engine {
     this.markDirty()
   }
 
+  // ── Rewarded-ad perks ─────────────────────────────────────────────────
+
+  // Watched an ad on the "while you were away" banner: the same again.
+  doubleOffline() {
+    this.scrap += this.offlineEarnings
+    this.offlineEarnings = 0
+    this.save()
+    this.markDirty()
+  }
+
+  // Watched an ad for 2× crew: minutes of boost on top of what's running.
+  adBoost() {
+    this.boostUntil = Math.max(this.boostUntil, this.time) + AD_BOOST_MINUTES * 60
+    this.markDirty()
+  }
+
+  // Every plot's dumpsters, paid out as if a truck had hauled them in.
+  private dumpsterValue() {
+    let value = 0
+    for (const site of this.plots) {
+      const load = site.dumpsterLoad
+      if (!load) continue
+      const y = Math.max(0, ISLANDS.findIndex((s) => s.id === PLOT_SLOTS[site.id]?.island))
+      value += load * site.building.brickValue * (1 + stats.priceBonus(this.yardU(y))) * eventMultiplier('double_bricks') * PACE.pay
+    }
+    return value
+  }
+
+  emptyDumpstersByAd(): boolean {
+    if (Date.now() < this.adCooldowns.dumpsters) return false
+    let bricks = 0
+    let value = 0
+    for (const site of this.plots) {
+      const load = site.dumpsterLoad
+      if (!load) continue
+      const y = Math.max(0, ISLANDS.findIndex((s) => s.id === PLOT_SLOTS[site.id]?.island))
+      value += load * site.building.brickValue * (1 + stats.priceBonus(this.yardU(y)))
+      bricks += load
+      for (const d of site.dumpsters) d.load = 0
+    }
+    if (!bricks) return false
+    this.pay(bricks, value)
+    for (const site of this.plots) this.checkCleared(site)
+    this.adCooldowns.dumpsters = Date.now() + DUMPSTER_AD_COOLDOWN_MINUTES * 60_000
+    this.save()
+    return true
+  }
+
+  // One upgrade on the house (not yard expansions, which are built).
+  freeUpgrade(key: UpgradeKey, yard = 0): boolean {
+    if (key === 'yardSize' || Date.now() < this.adCooldowns.freeUpgrade) return false
+    const u = isYardKey(key) ? this.yardU(yard) : this.upgrades
+    const cost = upgradeCost(key, u[key])
+    this.scrap += cost
+    if (!this.buyUpgrade(key, yard)) {
+      this.scrap -= cost
+      return false
+    }
+    this.adCooldowns.freeUpgrade = Date.now() + FREE_UPGRADE_COOLDOWN_MINUTES * 60_000
+    this.save()
+    return true
+  }
+
   // ── Simulation ────────────────────────────────────────────────────────
 
   // Bricks per second the whole fleet can haul, lapping every plot.
@@ -1839,9 +2586,10 @@ export class Engine {
   }
 
   private pay(bricks: number, value: number) {
-    value *= eventMultiplier('double_bricks') * T('brickValue')
+    value *= eventMultiplier('double_bricks') * PACE.pay
     this.scrap += value
-    this.xp += bricks * eventMultiplier('double_xp') * T('xpRate')
+    this.count('haul', bricks)
+    this.xp += bricks * eventMultiplier('double_xp')
     this.recentHauls.push({ t: this.time, value })
     this.markDirty()
   }
@@ -1853,6 +2601,8 @@ export class Engine {
   private checkCleared(site: Site) {
     if (site.phase === 'demolishing' && this.siteEmpty(site) && site.dumpsterLoad === 0 && !this.loadingAt(site)) {
       site.phase = 'cleared'
+      this.count('clear')
+      this.clearedById[site.building.id] = (this.clearedById[site.building.id] ?? 0) + 1
       this.logActivity({ kind: 'building_finished', building: site.building.id, name: site.building.name, seconds: Math.round(site.worked) })
       this.save()
       this.markDirty()
@@ -1867,7 +2617,7 @@ export class Engine {
   }
 
   private moveToward(w: Worker, dt: number): boolean {
-    let step = stats.walkSpeed(this.upgrades) * this.boostMul() * dt
+    let step = stats.walkSpeed(this.upgrades) * this.boostMul() * dt * (w.fast ? 2 : 1)
     // Corners first (walking round the building), then the spot itself.
     while (w.via.length) {
       const c = w.via[0]
@@ -1993,13 +2743,19 @@ export class Engine {
     this.time += dt
     const u = this.upgrades
     if (this.yardBuild) this.checkYardBuild()
-    if (this.bridgeBuild) this.checkBridgeBuild()
+    if (this.landBuild) this.checkLandBuild()
+    this.runAutomation()
+    this.checkLevelRewards()
+    this.tickHiccups(dt)
+    if (this.helpersUntil) this.syncHelpers()
+    this.tickGoals()
     for (const site of this.plots) if (site.phase === 'demolishing') site.worked += dt
 
     this.rebalanceCrew()
 
     for (const w of this.workers) {
       const site = this.plots[w.plot]
+      if (w.onBreak) continue
       switch (w.state) {
         case 'idle':
           if (site.phase === 'demolishing') this.assignTarget(w, site)
@@ -2010,7 +2766,7 @@ export class Engine {
             const t = w.target
             // Bricks still in the building can be tougher (big late
             // buildings); rubble on the ground is always quick.
-            w.timer = (stats.pullSeconds(u) * (t?.kind === 'brick' ? (site.building.toughness ?? 1) : 1)) / this.boostMul()
+            w.timer = (stats.pullSeconds(u) * (t?.kind === 'brick' ? (site.building.toughness ?? 1) : 1)) / this.boostMul() / (w.fast ? 2 : 1)
             if (t?.kind === 'brick') {
               const b = site.bricks[t.index]
               w.heading = Math.atan2(b.x * BRICK - w.x, b.z * BRICK - w.z)
@@ -2124,7 +2880,7 @@ export class Engine {
 
   // ── Bonus drop ────────────────────────────────────────────────────────
 
-  bonusDrop: { amount: number; droppedAt: number; expiresAt: number } | null = null
+  bonusDrop: { amount: number; droppedAt: number; expiresAt: number; chest: ChestType | null } | null = null
   lastBonusClaim: { at: number; amount: number } | null = null
   private trailerStart = -1
   private trailerDropped = false
@@ -2146,7 +2902,9 @@ export class Engine {
       if (!this.trailerDropped && p >= TRAILER_DROP_AT) {
         this.trailerDropped = true
         this.bonusDrop = {
-          amount: Math.max(1, Math.round(stats.truckCargo(this.trucks[0]?.load ?? 0) * 2 * T('bonusDrop'))),
+          amount: Math.max(1, Math.round(stats.truckCargo(this.trucks[0]?.load ?? 0) * 2)),
+          // Now and then it's a chest that fell off instead of bricks.
+          chest: Math.random() < 0.3 ? (Math.random() < 0.8 ? 'wood' : 'iron') : null,
           droppedAt: this.time,
           expiresAt: this.time + BONUS_LIFETIME_SECONDS,
         }
@@ -2193,7 +2951,8 @@ export class Engine {
 
   claimBonusDrop() {
     if (!this.bonusDrop) return
-    this.home.dumpsters[0].load += this.bonusDrop.amount
+    if (this.bonusDrop.chest) this.chests[this.bonusDrop.chest]++
+    else this.home.dumpsters[0].load += this.bonusDrop.amount
     this.lastBonusClaim = { at: this.time, amount: this.bonusDrop.amount }
     this.bonusDrop = null
     this.bonusHeld = false
@@ -2314,6 +3073,7 @@ export class Engine {
 
   private tickTrucks(dt: number) {
     for (const truck of this.trucks) {
+      if (truck.broken) continue // broken down at the roadside
       switch (truck.state) {
         case 'parked':
           // Leave one at a time so the fleet drives in a line.
@@ -2348,7 +3108,7 @@ export class Engine {
         case 'unloading':
           truck.timer -= dt
           if (truck.timer <= 0) {
-            this.pay(truck.cargo, truck.cargoValue * (1 + stats.priceBonus(this.yardU(truck.yard))))
+            this.pay(truck.cargo, truck.cargoValue * (1 + stats.priceBonus(this.yardU(truck.yard))) * (MGR.pay[truck.yard] ?? 1))
             truck.cargo = 0
             truck.cargoValue = 0
             if (truck.lap >= this.plots.length) truck.lap = 0
@@ -2494,13 +3254,66 @@ export class Engine {
         username: this.username,
         synced: this.synced,
         ban: this.ban,
-        islands: ISLANDS.map((s) => ({ id: s.id, open: this.islandOpen(s.id), yard: this.yardLevels[s.index] })),
+        islands: ISLANDS.map((s) => ({ id: s.id, open: this.islandOpen(s.id), stage: this.grown[s.id], yard: this.yardLevels[s.index] })),
         truckCapacity: this.truckCapacity(),
-        bridgeBuild: this.bridgeBuild
+        freeUpgradeIn: Math.max(0, Math.ceil((this.adCooldowns.freeUpgrade - Date.now()) / 1000)),
+        dumpsterAdIn: Math.max(0, Math.ceil((this.adCooldowns.dumpsters - Date.now()) / 1000)),
+        dumpsterValue: Math.round(this.dumpsterValue()),
+        tools: {
+          ballIn: Math.max(0, Math.ceil((this.toolReady.ball - Date.now()) / 1000)),
+          dynamiteIn: Math.max(0, Math.ceil((this.toolReady.dynamite - Date.now()) / 1000)),
+          ballCharges: this.toolCharges.ball,
+          dynamiteCharges: this.toolCharges.dynamite,
+          ballPack: this.toolPackPrice('ball'),
+          dynamitePack: this.toolPackPrice('dynamite'),
+        },
+        toolFx: this.toolFx,
+        needs: {
+          brokenTruck: this.trucks.find((t) => t.broken)?.id ?? null,
+          restingWorker: this.workers.find((w) => w.onBreak)?.id ?? null,
+          jam: this.jamSince >= 0,
+        },
+        catchOffer: Math.max(0, Math.ceil((this.catchOfferUntil - Date.now()) / 1000)),
+        helpersLeft: Math.max(0, Math.ceil((this.helpersUntil - Date.now()) / 1000)),
+        goals: this.todaysGoals().map((g, i) => ({ text: g.text, progress: this.goalProgress(i), target: g.target, gems: g.gems, claimed: !!this.goalDay.claimed[i] })),
+        goalsBonusReady: this.goalDay.claimed.every(Boolean) && !this.goalDay.bonus,
+        goalsBonusClaimed: this.goalDay.bonus,
+        contract: this.contract
           ? {
-              to: this.bridgeBuild.to,
-              secondsLeft: Math.max(0, Math.ceil((this.bridgeBuild.endsAt - Date.now()) / 1000)),
-              totalSeconds: (ISLANDS.find((s) => s.id === this.bridgeBuild!.to)?.unlock?.buildMinutes ?? 0) * 60,
+              name: BUILDINGS.find((b) => b.id === this.contract!.building)?.name ?? 'Building',
+              progress: this.contractProgress(),
+              target: this.contract.target,
+              chest: this.contract.chest,
+              gems: this.contract.gems,
+            }
+          : null,
+        gems: this.gems,
+        chests: { ...this.chests },
+        freeChestIn: Math.max(0, Math.ceil((this.freeChestAt - Date.now()) / 1000)),
+        adChestIn: Math.max(0, Math.ceil((this.adCooldowns.chest - Date.now()) / 1000)),
+        ironChestPrice: chestBrickPrice(levelForXp(this.xp)),
+        managers: Object.fromEntries(Object.entries(this.managers).map(([k, v]) => [k, { ...v }])),
+        assigned: { ...this.assigned },
+        abilities: Object.fromEntries(
+          this.managerSlots().map((slot) => {
+            const active = this.activeAbilities.find((a) => a.slot === slot)
+            return [
+              slot,
+              {
+                readyIn: Math.max(0, Math.ceil(((this.abilityReady[slot] ?? 0) - Date.now()) / 1000)),
+                activeLeft: active ? Math.max(0, Math.ceil((active.until - Date.now()) / 1000)) : 0,
+              },
+            ]
+          })
+        ),
+        outfit: this.outfit,
+        outfits: [...this.outfits],
+        landBuild: this.landBuild
+          ? {
+              island: this.landBuild.island,
+              stage: this.landBuild.stage,
+              secondsLeft: Math.max(0, Math.ceil((this.landBuild.endsAt - Date.now()) / 1000)),
+              totalSeconds: Math.round((this.landBuild.endsAt - this.landBuild.startedAt) / 1000),
             }
           : null,
         yardBuild: this.yardBuild
@@ -2515,7 +3328,7 @@ export class Engine {
         raining: Date.now() < this.rainUntil || eventsLive('rain', Date.now()).length > 0,
         banners: this.banners,
         bonusDrop: this.bonusDrop
-          ? { amount: this.bonusDrop.amount, secondsLeft: Math.ceil(this.bonusDrop.expiresAt - this.time) }
+          ? { amount: this.bonusDrop.amount, secondsLeft: Math.ceil(this.bonusDrop.expiresAt - this.time), chest: this.bonusDrop.chest }
           : null,
       }
     }

@@ -5,21 +5,36 @@ import { useFrame } from '@react-three/fiber'
 import { Html, useGLTF } from '@react-three/drei'
 import * as THREE from 'three'
 import { LOT_HALF } from '@/lib/game/engine'
-import { BLOCK, BRIDGES, HARBOUR, HARBOUR_X, ISLANDS, ROADS, islandRect, type Island, type IslandId, type Segment } from '@/lib/game/islands'
-import { PLOT_SLOTS, isReservedBlock } from '@/lib/game/plots'
+import {
+  BLOCK,
+  BRIDGES,
+  ISLANDS,
+  ROADS,
+  coastline,
+  islandRect,
+  roadOpen,
+  type Cell,
+  type FillerKind,
+  type Grown,
+  type Island,
+  type IslandId,
+  type Point,
+  type Segment,
+} from '@/lib/game/islands'
+import { PLOT_SLOTS } from '@/lib/game/plots'
 import Prop from './Prop'
 import { Billboard } from './SiteProps'
+import { RoofBillboard } from './WorldAds'
 import { BlockDressing, Sea, Streets, Waterside } from './Scenery'
 
-// The world: islands on one grid of blocks, roads between the blocks and
-// bridges between the islands. Owned plots get a construction lot, plots
-// still for sale a fenced grass lot, and every other block is filler —
-// suburbs on the Houses island, downtown on the City, works and sheds on
-// the Industrial island.
+// The world: islands of blocks that grow a stage at a time (new land rises
+// from the sea), ringed by streets, joined by bridges. Owned plots are
+// construction lots, plots for sale tidy gravel lots, and every other block
+// is filler — streets of houses, parks and shops on the Houses island,
+// downtown on the City, works and sheds on the Industrial island.
 
 const ROAD_WIDTH = 3
-const QUAY = 2.7 // land past the outer roads
-const BEACH_WIDTH = 6
+const GRASS_MARGIN = 2.7 // land past the outer roads
 
 // Deterministic pseudo-random so the world looks the same each load.
 function seeded(i: number) {
@@ -27,23 +42,32 @@ function seeded(i: number) {
   return x - Math.floor(x)
 }
 
-// An island's land, edge to edge (north edge is the beach).
-function landRect(s: Island) {
-  return {
-    x0: (s.i0 - 0.5) * BLOCK - QUAY,
-    x1: (s.i1 + 0.5) * BLOCK + QUAY,
-    z0: (s.j0 - 0.5) * BLOCK - 1.2,
-    z1: (s.j1 + 0.5) * BLOCK + QUAY,
-  }
+const parseGrown = (key: string): Grown => {
+  const [houses, city, industrial] = key.split(',').map(Number)
+  return { houses, city, industrial }
 }
 
-const FENCE_SEGMENTS: { pos: [number, number, number]; rot: number }[] = []
-for (let t = -LOT_HALF + 1; t <= LOT_HALF - 1; t += 2) {
-  FENCE_SEGMENTS.push({ pos: [t, 0, -LOT_HALF], rot: Math.PI / 2 })
-  FENCE_SEGMENTS.push({ pos: [-LOT_HALF, 0, t], rot: 0 })
-  // Leave an entrance gap on the front side for trucks.
-  if (Math.abs(t) > 2.5) FENCE_SEGMENTS.push({ pos: [t, 0, LOT_HALF], rot: Math.PI / 2 })
-  FENCE_SEGMENTS.push({ pos: [LOT_HALF, 0, t], rot: 0 })
+// Collinear, touching road pieces joined into whole streets.
+function mergeSegments(segs: Segment[]): Segment[] {
+  const groups = new Map<string, Segment[]>()
+  for (const s of segs) {
+    const k = `${s.axis}${s.line}`
+    groups.set(k, [...(groups.get(k) ?? []), s])
+  }
+  const out: Segment[] = []
+  for (const list of groups.values()) {
+    list.sort((a, b) => a.from - b.from)
+    let cur = { ...list[0] }
+    for (const s of list.slice(1)) {
+      if (s.from <= cur.until + 0.01) cur.until = Math.max(cur.until, s.until)
+      else {
+        out.push(cur)
+        cur = { ...s }
+      }
+    }
+    out.push(cur)
+  }
+  return out
 }
 
 // ── Roads ────────────────────────────────────────────────────────────────
@@ -51,8 +75,7 @@ for (let t = -LOT_HALF + 1; t <= LOT_HALF - 1; t += 2) {
 const asphalt = new THREE.MeshStandardMaterial({ color: '#646b76', roughness: 0.95 })
 const paint = new THREE.MeshStandardMaterial({ color: '#eef1f4', roughness: 0.8 })
 
-function Roads({ built }: { built: (s: Segment) => boolean }) {
-  const segs = ROADS.filter((r) => !r.bridge && built(r))
+function Roads({ segs, all }: { segs: Segment[]; all: Segment[] }) {
   const dashes = useRef<THREE.InstancedMesh>(null)
 
   // Centre dashes, skipping crossings.
@@ -60,13 +83,13 @@ function Roads({ built }: { built: (s: Segment) => boolean }) {
     const out: { x: number; z: number; alongX: boolean }[] = []
     for (const seg of segs) {
       for (let t = seg.from + 1; t <= seg.until - 1; t += 2) {
-        const crossing = ROADS.some((o) => o.axis !== seg.axis && Math.abs(o.line - t) < ROAD_WIDTH && seg.line >= o.from - 1 && seg.line <= o.until + 1)
+        const crossing = all.some((o) => o.axis !== seg.axis && Math.abs(o.line - t) < ROAD_WIDTH && seg.line >= o.from - 1 && seg.line <= o.until + 1)
         if (crossing) continue
         out.push(seg.axis === 'z' ? { x: t, z: seg.line, alongX: true } : { x: seg.line, z: t, alongX: false })
       }
     }
     return out
-  }, [segs])
+  }, [segs, all])
 
   useLayoutEffect(() => {
     const mesh = dashes.current
@@ -87,12 +110,7 @@ function Roads({ built }: { built: (s: Segment) => boolean }) {
         const len = seg.until - seg.from + ROAD_WIDTH
         const mid = (seg.from + seg.until) / 2
         return (
-          <mesh
-            key={i}
-            material={asphalt}
-            position={seg.axis === 'z' ? [mid, 0.02, seg.line] : [seg.line, 0.021, mid]}
-            receiveShadow
-          >
+          <mesh key={i} material={asphalt} position={seg.axis === 'z' ? [mid, 0.02, seg.line] : [seg.line, 0.021, mid]} receiveShadow>
             <boxGeometry args={seg.axis === 'z' ? [len, 0.04, ROAD_WIDTH] : [ROAD_WIDTH, 0.04, len]} />
           </mesh>
         )
@@ -144,7 +162,78 @@ function Bridge({ b, state }: { b: (typeof BRIDGES)[number]; state: 'built' | 'b
   )
 }
 
-// ── Shorelines ───────────────────────────────────────────────────────────
+// ── Land ─────────────────────────────────────────────────────────────────
+
+// A flat piece of ground in the shape of some coastline loops.
+function Ground({ loops, color, y, rough = 0.9 }: { loops: Point[][]; color: string; y: number; rough?: number }) {
+  const geometry = useMemo(() => {
+    const shapes = loops.map((loop) => new THREE.Shape(loop.map((p) => new THREE.Vector2(p.x, -p.z))))
+    return new THREE.ShapeGeometry(shapes, 4)
+  }, [loops])
+  return (
+    <mesh geometry={geometry} rotation={[-Math.PI / 2, 0, 0]} position={[0, y, 0]} receiveShadow>
+      <meshStandardMaterial color={color} roughness={rough} />
+    </mesh>
+  )
+}
+
+const LOOK: Record<IslandId, { grass: string; shore: string; shoreWidth: number }> = {
+  // A beach town: sand all the way round.
+  houses: { grass: '#8fcf72', shore: '#ecd9a6', shoreWidth: 6 },
+  // A stone promenade along the water.
+  city: { grass: '#86c56b', shore: '#cfc8b8', shoreWidth: 2.4 },
+  // Concrete quays.
+  industrial: { grass: '#a9b39a', shore: '#b9b2a4', shoreWidth: 2.4 },
+}
+
+// An island's land up to a stage: shallows, then the shore (beach or
+// quay), then grass — each a rounded, organic outline of its blocks.
+function Land({ s, cells }: { s: Island; cells: Cell[] }) {
+  const look = LOOK[s.id]
+  const shallows = useMemo(() => coastline(cells, GRASS_MARGIN + look.shoreWidth + 5, 14), [cells, look.shoreWidth])
+  const shore = useMemo(() => coastline(cells, GRASS_MARGIN + look.shoreWidth, look.shoreWidth > 3 ? 9 : 4), [cells, look.shoreWidth])
+  const grass = useMemo(() => coastline(cells, GRASS_MARGIN, 3), [cells])
+  return (
+    <group>
+      <Ground loops={shallows} color="#7fcbe8" y={-0.045} rough={0.4} />
+      <Ground loops={shore} color={look.shore} y={-0.025} rough={1} />
+      <Ground loops={grass} color={look.grass} y={-0.01} />
+    </group>
+  )
+}
+
+// Beach umbrellas round the Houses island, and boats bobbing offshore.
+function BeachLife({ cells }: { cells: Cell[] }) {
+  const s = ISLANDS[0]
+  const umbrellas = useMemo(() => {
+    const ring = coastline(cells, GRASS_MARGIN + 3.2, 9)[0] ?? []
+    const out: [number, number][] = []
+    let walked = 0
+    for (let n = 1; n < ring.length; n++) {
+      walked += Math.hypot(ring[n].x - ring[n - 1].x, ring[n].z - ring[n - 1].z)
+      if (walked < 13) continue
+      walked = 0
+      const p = ring[n]
+      const nearYard = Math.hypot(p.x - s.yard.x, p.z - s.yard.z) < 18
+      const nearBridge = BRIDGES.some((b) => (b.axis === 'x' ? Math.abs(p.x - b.line) < 7 : Math.abs(p.z - b.line) < 7))
+      if (!nearYard && !nearBridge) out.push([p.x, p.z])
+    }
+    return out
+  }, [cells, s.yard.x, s.yard.z])
+  const boats = useMemo<[number, number, number][]>(() => {
+    const ring = coastline(cells, GRASS_MARGIN + 22, 20)[0] ?? []
+    const step = Math.max(1, Math.floor(ring.length / 6))
+    return ring.filter((_, n) => n % step === 3).map((p, n) => [p.x, p.z, seeded(n + 40) * 3])
+  }, [cells])
+  return (
+    <group>
+      {umbrellas.map(([x, z], i) => (
+        <Umbrella key={`${x},${z}`} x={x} z={z} i={i} />
+      ))}
+      <Boats spots={boats} />
+    </group>
+  )
+}
 
 const UMBRELLA_COLORS = ['#ff6b1a', '#2d7ff9', '#f2c230', '#3fbf4a']
 
@@ -201,168 +290,80 @@ function Boats({ spots }: { spots: [number, number, number][] }) {
   )
 }
 
-// An island's grass and its shores. The Houses island is a beach town with
-// sand and umbrellas all the way round; the others have a beach on the
-// north shore and stone quays on their other sides.
-function IslandLand({ s }: { s: Island }) {
-  const r = landRect(s)
-  const grass = s.id === 'industrial' ? '#a9b39a' : s.id === 'houses' ? '#8fcf72' : '#86c56b'
-  const quay = '#b9b2a4'
-  const sand = s.id === 'industrial' ? '#cfc6ad' : '#ecd9a6'
-  const beachTown = s.id === 'houses'
-  const w = r.x1 - r.x0
-  const d = r.z1 - r.z0
-  const cx = (r.x0 + r.x1) / 2
-  const cz = (r.z0 + r.z1) / 2
-  const B = BEACH_WIDTH
-  // Umbrellas along the beaches, away from the yard and the bridge.
-  const umbrellas = useMemo(() => {
-    const out: [number, number][] = []
-    const clear = (x: number, z: number) => Math.hypot(x - s.yard.x, z - s.yard.z) > 16 && !BRIDGES.some((b) => (b.axis === 'x' ? Math.abs(x - b.line) < 6 : Math.abs(z - b.line) < 6))
-    for (let x = r.x0 + 8; x < r.x1 - 6; x += 12) {
-      if (clear(x, r.z0)) out.push([x, r.z0 - 2.2 - (out.length % 2) * 1.6])
-      if (beachTown && clear(x, r.z1)) out.push([x, r.z1 + 2.2 + (out.length % 2) * 1.6])
-    }
-    if (beachTown)
-      for (let z = r.z0 + 8; z < r.z1 - 6; z += 12) {
-        out.push([r.x0 - 2.2 - (out.length % 2) * 1.6, z])
-        out.push([r.x1 + 2.2 + (out.length % 2) * 1.6, z])
-      }
-    return out
-  }, [r.x0, r.x1, r.z0, r.z1, s.yard.x, s.yard.z, beachTown])
-  const boats = useMemo<[number, number, number][]>(
-    () =>
-      beachTown
-        ? [
-            [r.x0 - 14, cz - 20, 0.4],
-            [r.x0 - 12, cz + 25, -0.3],
-            [r.x1 + 13, cz - 10, 1.2],
-            [r.x1 + 15, cz + 30, 0.2],
-            [cx - 30, r.z1 + 14, 1.5],
-            [cx + 20, r.z1 + 16, 1.7],
-          ]
-        : [],
-    [beachTown, r.x0, r.x1, r.z1, cx, cz]
-  )
-  const strip = (pos: [number, number], size: [number, number], color: string, y: number, key: string) => (
-    <mesh key={key} rotation={[-Math.PI / 2, 0, 0]} receiveShadow position={[pos[0], y, pos[1]]}>
-      <planeGeometry args={size} />
-      <meshStandardMaterial color={color} roughness={color === sand ? 1 : 0.4} />
-    </mesh>
-  )
+// Land being raised: a sandbar just under the surface with cranes, piles
+// and buoys, where the next stage's blocks will come up.
+function LandWorks({ cells }: { cells: Cell[] }) {
+  const bar = useMemo(() => coastline(cells, GRASS_MARGIN, 6), [cells])
+  const crane = useRef<THREE.Group>(null)
+  useFrame(({ clock }) => {
+    crane.current?.children.forEach((c, i) => {
+      c.rotation.y = Math.sin(clock.getElapsedTime() * 0.3 + i * 2) * 1.2
+    })
+  })
   return (
     <group>
-      {strip([cx, cz], [w, d], grass, -0.01, 'grass')}
-      {/* North shore: beach sloping into shallow water */}
-      {strip([cx, r.z0 - B / 2], [w + (beachTown ? 2 * B : 0), B], sand, -0.02, 'nb')}
-      {strip([cx, r.z0 - B - 2], [w + (beachTown ? 2 * B + 8 : 0), 4], '#7fcbe8', -0.04, 'nw')}
-      {beachTown ? (
-        <>
-          {strip([cx, r.z1 + B / 2], [w + 2 * B, B], sand, -0.02, 'sb')}
-          {strip([cx, r.z1 + B + 2], [w + 2 * B + 8, 4], '#7fcbe8', -0.04, 'sw')}
-          {strip([r.x0 - B / 2, cz], [B, d], sand, -0.02, 'wb')}
-          {strip([r.x0 - B - 2, cz], [4, d + 2 * B], '#7fcbe8', -0.04, 'ww')}
-          {strip([r.x1 + B / 2, cz], [B, d], sand, -0.02, 'eb')}
-          {strip([r.x1 + B + 2, cz], [4, d + 2 * B], '#7fcbe8', -0.04, 'ew')}
-        </>
-      ) : (
-        <>
-          {/* Quays: south, west, east */}
-          <mesh position={[cx, 0.03, r.z1 - 0.7]} receiveShadow>
-            <boxGeometry args={[w, 0.16, 1.4]} />
-            <meshStandardMaterial color={quay} roughness={0.9} />
-          </mesh>
-          {[r.x0 + 0.7, r.x1 - 0.7].map((x) => (
-            <mesh key={x} position={[x, 0.03, cz]} receiveShadow>
-              <boxGeometry args={[1.4, 0.16, d]} />
-              <meshStandardMaterial color={quay} roughness={0.9} />
-            </mesh>
-          ))}
-        </>
-      )}
-      {s.id !== 'industrial' && umbrellas.map(([x, z], i) => <Umbrella key={`${x},${z}`} x={x} z={z} i={i} />)}
-      <Boats spots={boats} />
-    </group>
-  )
-}
-
-// ── Harbour district ─────────────────────────────────────────────────────
-
-// Big lots on a concrete quay off the City's east side, for the biggest
-// buildings: cranes lean over the water and containers are stacked along
-// the edge. (Its streets are part of the road network.)
-const HARBOUR_Z0 = (HARBOUR.j0 - 0.5) * BLOCK - 13
-const HARBOUR_Z1 = (HARBOUR.j1 + 0.5) * BLOCK + 13
-const HARBOUR_X0 = (HARBOUR.i - 0.5) * BLOCK - 1.5
-const HARBOUR_EDGE_X = HARBOUR_X + BLOCK / 2 + 3.5
-const CONTAINER_COLORS = ['#d64545', '#2f5f9e', '#ef7d2d', '#3fa064', '#f2c230']
-
-function Harbour() {
-  const depth = HARBOUR_Z1 - HARBOUR_Z0
-  return (
-    <group>
-      <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow position={[(HARBOUR_X0 + HARBOUR_EDGE_X) / 2, -0.005, (HARBOUR_Z0 + HARBOUR_Z1) / 2]}>
-        <planeGeometry args={[HARBOUR_EDGE_X - HARBOUR_X0, depth]} />
-        <meshStandardMaterial color="#c4c0b6" roughness={0.95} />
-      </mesh>
-      <mesh position={[HARBOUR_EDGE_X - 0.5, 0.03, (HARBOUR_Z0 + HARBOUR_Z1) / 2]} receiveShadow>
-        <boxGeometry args={[1, 0.2, depth]} />
-        <meshStandardMaterial color="#9a958b" />
-      </mesh>
-      {[-BLOCK, 0.35 * BLOCK].map((z) => (
-        <group key={z} position={[HARBOUR_EDGE_X - 1.6, 0, z]}>
-          {[-1.4, 1.4].map((dz) => (
-            <mesh key={dz} position={[0, 4, dz]} castShadow>
-              <boxGeometry args={[0.4, 8, 0.4]} />
+      <Ground loops={bar} color="#d9c48f" y={-0.035} rough={1} />
+      <group ref={crane}>
+        {cells.slice(0, 3).map((c) => (
+          <group key={`${c.i},${c.j}`} position={[c.i * BLOCK, 0, c.j * BLOCK]}>
+            <mesh position={[0, 4.5, 0]} castShadow>
+              <boxGeometry args={[0.5, 9, 0.5]} />
               <meshStandardMaterial color="#e0b020" />
             </mesh>
-          ))}
-          <mesh position={[2.6, 8.2, 0]} castShadow>
-            <boxGeometry args={[9, 0.6, 3.4]} />
-            <meshStandardMaterial color="#f2c230" />
-          </mesh>
-          <mesh position={[-1.4, 8.6, 0]} castShadow>
-            <boxGeometry args={[1.8, 1.2, 2]} />
-            <meshStandardMaterial color="#5b6470" />
-          </mesh>
-        </group>
-      ))}
-      {Array.from({ length: 9 }, (_, i) => {
-        const z = HARBOUR_Z0 + 4 + i * ((depth - 8) / 8)
-        const h = 1 + ((i * 7) % 3)
-        return Array.from({ length: h }, (_, k) => (
-          <mesh key={`${i}-${k}`} position={[HARBOUR_EDGE_X - 2.4, 0.55 + k * 1.05, z]} castShadow>
-            <boxGeometry args={[1.1, 1, 3]} />
-            <meshStandardMaterial color={CONTAINER_COLORS[(i + k * 2) % CONTAINER_COLORS.length]} roughness={0.7} />
+            <mesh position={[3, 9, 0]} castShadow>
+              <boxGeometry args={[8, 0.5, 0.6]} />
+              <meshStandardMaterial color="#f2c230" />
+            </mesh>
+            <mesh position={[-1.4, 9.2, 0]}>
+              <boxGeometry args={[1.6, 1, 1.4]} />
+              <meshStandardMaterial color="#5b6470" />
+            </mesh>
+          </group>
+        ))}
+      </group>
+      {cells.flatMap((c, n) =>
+        [-1, 1].map((sd) => (
+          <mesh key={`${n}${sd}`} position={[c.i * BLOCK + sd * 6, 0.3, c.j * BLOCK + 5 * sd]}>
+            <cylinderGeometry args={[0.35, 0.35, 0.8, 10]} />
+            <meshStandardMaterial color={sd > 0 ? '#ef7d2d' : '#f4f1ea'} />
           </mesh>
         ))
-      })}
+      )}
     </group>
   )
 }
 
 // ── Lots ─────────────────────────────────────────────────────────────────
 
-function Sidewalk({ dirt }: { dirt: boolean }) {
+const FENCE_SEGMENTS: { pos: [number, number, number]; rot: number }[] = []
+for (let t = -LOT_HALF + 1; t <= LOT_HALF - 1; t += 2) {
+  FENCE_SEGMENTS.push({ pos: [t, 0, -LOT_HALF], rot: Math.PI / 2 })
+  FENCE_SEGMENTS.push({ pos: [-LOT_HALF, 0, t], rot: 0 })
+  // Leave an entrance gap on the front side for trucks.
+  if (Math.abs(t) > 2.5) FENCE_SEGMENTS.push({ pos: [t, 0, LOT_HALF], rot: Math.PI / 2 })
+  FENCE_SEGMENTS.push({ pos: [LOT_HALF, 0, t], rot: 0 })
+}
+
+function Sidewalk({ dirt, harbour }: { dirt: boolean; harbour?: boolean }) {
   return (
     <>
       <mesh position={[0, 0.0, 0]} receiveShadow>
         <boxGeometry args={[LOT_HALF * 2 + 2.4, 0.06, LOT_HALF * 2 + 2.4]} />
-        <meshStandardMaterial color="#d6d2c8" />
+        <meshStandardMaterial color={harbour ? '#c4c0b6' : '#d6d2c8'} />
       </mesh>
       <mesh position={[0, 0.02, 0]} receiveShadow>
         <boxGeometry args={[LOT_HALF * 2, 0.06, LOT_HALF * 2]} />
-        <meshStandardMaterial color={dirt ? '#c8ab7e' : '#93cc76'} />
+        <meshStandardMaterial color={dirt ? '#c8ab7e' : '#b8b3a6'} />
       </mesh>
     </>
   )
 }
 
 // An owned plot: the fenced dirt construction site.
-function ConstructionLot() {
+function ConstructionLot({ harbour }: { harbour?: boolean }) {
   return (
     <group>
-      <Sidewalk dirt />
+      <Sidewalk dirt harbour={harbour} />
       {FENCE_SEGMENTS.map((f, i) => (
         <Prop key={i} url="/models/roads/construction-fence.glb" size={0.9} position={f.pos} rotationY={f.rot} />
       ))}
@@ -374,48 +375,39 @@ function ConstructionLot() {
   )
 }
 
-// A plot you don't own yet: grass behind a low fence, with a For Sale board
-// (the price label itself is HTML, drawn by PlotLabels).
-function ForSaleLot() {
-  const e = LOT_HALF - 0.3
-  const rails: { pos: [number, number, number]; size: [number, number, number] }[] = [
-    { pos: [0, 0.45, e], size: [e * 2, 0.12, 0.12] },
-    { pos: [0, 0.45, -e], size: [e * 2, 0.12, 0.12] },
-    { pos: [e, 0.45, 0], size: [0.12, 0.12, e * 2] },
-    { pos: [-e, 0.45, 0], size: [0.12, 0.12, e * 2] },
-  ]
-  const posts: [number, number, number][] = []
-  for (let t = -e; t <= e + 0.01; t += (e * 2) / 6) {
-    posts.push([t, 0.3, e], [t, 0.3, -e], [e, 0.3, t], [-e, 0.3, t])
-  }
+// A plot for sale: a neat gravel lot with a kerb, a few bollards at the
+// front and a For Sale board (the price bubble is HTML, see PlotLabels).
+function ForSaleLot({ harbour }: { harbour?: boolean }) {
   return (
     <group>
-      <Sidewalk dirt={false} />
-      {rails.map((r, i) => (
-        <mesh key={i} position={r.pos} castShadow>
-          <boxGeometry args={r.size} />
-          <meshStandardMaterial color="#f4f1ea" />
+      <Sidewalk dirt={false} harbour={harbour} />
+      {[-LOT_HALF + 0.6, -2.4, 2.4, LOT_HALF - 0.6].map((x) => (
+        <mesh key={x} position={[x, 0.4, LOT_HALF - 0.4]} castShadow>
+          <cylinderGeometry args={[0.16, 0.16, 0.8, 8]} />
+          <meshStandardMaterial color="#f2c230" />
         </mesh>
       ))}
-      {posts.map((p, i) => (
-        <mesh key={i} position={p} castShadow>
-          <boxGeometry args={[0.16, 0.6, 0.16]} />
-          <meshStandardMaterial color="#f4f1ea" />
+      <group position={[3.5, 0, LOT_HALF - 1.4]}>
+        {[-0.9, 0.9].map((x) => (
+          <mesh key={x} position={[x, 0.9, 0]} castShadow>
+            <boxGeometry args={[0.14, 1.8, 0.14]} />
+            <meshStandardMaterial color="#7a5a3a" />
+          </mesh>
+        ))}
+        <mesh position={[0, 1.6, 0.05]} castShadow>
+          <boxGeometry args={[2.4, 1.1, 0.1]} />
+          <meshStandardMaterial color="#e23f3f" />
         </mesh>
-      ))}
-      <mesh position={[0, 0.9, LOT_HALF - 1.2]} castShadow>
-        <boxGeometry args={[0.15, 1.8, 0.15]} />
-        <meshStandardMaterial color="#7a5a3a" />
-      </mesh>
-      <mesh position={[0, 1.7, LOT_HALF - 1.1]} castShadow>
-        <boxGeometry args={[2.2, 1.1, 0.1]} />
-        <meshStandardMaterial color="#e23f3f" />
-      </mesh>
+        <mesh position={[0, 1.6, 0.11]}>
+          <planeGeometry args={[2, 0.25]} />
+          <meshStandardMaterial color="#ffffff" />
+        </mesh>
+      </group>
     </group>
   )
 }
 
-// ── Filler neighbourhood ─────────────────────────────────────────────────
+// ── Filler blocks ────────────────────────────────────────────────────────
 
 const DOWNTOWN = [
   { url: '/models/commercial/building-skyscraper-a.glb', size: 11 },
@@ -423,6 +415,7 @@ const DOWNTOWN = [
   { url: '/models/commercial/building-c.glb', size: 5 },
   { url: '/models/commercial/building-e.glb', size: 5 },
 ]
+const SHOPS = DOWNTOWN.filter((m) => !m.url.includes('skyscraper'))
 const SUBURB = [
   { url: '/models/suburban/building-type-a.glb', size: 3.5 },
   { url: '/models/suburban/building-type-c.glb', size: 4 },
@@ -475,47 +468,38 @@ function IndustrialBlock({ bx, bz, seed }: { bx: number; bz: number; seed: numbe
   )
 }
 
-const SHOPS = DOWNTOWN.filter((m) => !m.url.includes('skyscraper'))
-
-function FillerBlock({ bx, bz, seed, island }: { bx: number; bz: number; seed: number; island: IslandId }) {
-  // City blocks are mostly downtown. The Houses island is suburbs and parks,
-  // with a little shopping corner on the blocks next to the home lot.
-  const home = PLOT_SLOTS[0]
-  const byHome = island === 'houses' && Math.abs(bx - home.x) <= BLOCK && Math.abs(bz - home.z) <= BLOCK && bz <= home.z
-  const kind = byHome ? 'shops' : island === 'city' && seeded(seed) < 0.7 ? 'downtown' : seeded(seed + 1) < 0.78 ? 'suburb' : 'park'
+// A tidy block: one style of building per block (a street of matching
+// houses, a row of shops, a pair of towers), squared up and facing the
+// nearest street, with trees in neat rows.
+function FillerBlock({ bx, bz, seed, kind }: { bx: number; bz: number; seed: number; kind: 'suburb' | 'park' | 'shops' | 'downtown' }) {
   const items = useMemo(() => {
     const out: { url: string; size: number; pos: [number, number, number]; rot: number }[] = []
+    const pick = <T,>(list: T[], k: number) => list[Math.floor(seeded(seed + k) * list.length)]
+    const house = pick(SUBURB, 13)
+    const shop = pick(SHOPS, 17)
+    const tower = pick(DOWNTOWN, 19)
     SPOTS.forEach(([sx, sz], n) => {
-      const r = seeded(seed * 7 + n)
-      const pos: [number, number, number] = [sx + (r - 0.5) * 2, 0, sz + (seeded(seed * 3 + n) - 0.5) * 2]
-      // Face the nearest road (front +z or right +x side of the block).
+      const pos: [number, number, number] = [sx, 0, sz]
+      // Face the street on the block's front (+z) or right (+x) side.
       const rot = sz > 0 ? Math.PI : sx > 0 ? -Math.PI / 2 : 0
-      if (kind === 'downtown' && r < 0.85) {
-        const m = DOWNTOWN[Math.floor(seeded(seed + n * 13) * DOWNTOWN.length)]
-        out.push({ ...m, pos, rot })
-      } else if (kind === 'shops' && r < 0.9) {
-        const m = SHOPS[Math.floor(seeded(seed + n * 13) * SHOPS.length)]
-        out.push({ ...m, pos, rot })
-      } else if (kind === 'suburb' && r < 0.8) {
-        const m = SUBURB[Math.floor(seeded(seed + n * 17) * SUBURB.length)]
-        out.push({ ...m, pos, rot })
-      } else {
-        out.push({ url: r < 0.5 ? '/models/suburban/tree-large.glb' : '/models/suburban/tree-small.glb', size: 2 + r * 1.4, pos, rot: r * 6 })
-      }
+      if (kind === 'suburb') out.push({ ...house, pos, rot })
+      else if (kind === 'shops') out.push({ ...shop, pos, rot })
+      else if (kind === 'downtown') out.push({ ...(n % 3 === 0 ? tower : shop), pos, rot })
+      else out.push({ url: n % 2 ? '/models/suburban/tree-large.glb' : '/models/suburban/tree-small.glb', size: 2.6, pos, rot: n })
     })
-    // A few trees along the edges.
-    for (let n = 0; n < 3; n++) {
-      const a = seeded(seed * 11 + n)
-      const b = seeded(seed * 5 + n)
-      out.push({
-        url: '/models/suburban/tree-large.glb',
-        size: 1.6 + a * 1.2,
-        pos: [(a - 0.5) * 16, 0, b < 0.5 ? -9 : 9],
-        rot: b * 6,
-      })
-    }
+    // Trees in a row along the back edge.
+    if (kind !== 'downtown')
+      for (let n = 0; n < 4; n++) out.push({ url: '/models/suburban/tree-large.glb', size: 2 + seeded(seed * 11 + n) * 0.6, pos: [-7.5 + n * 5, 0, -9], rot: n })
     return out
   }, [kind, seed])
+  // Downtown and shop blocks: an ad billboard on one flat roof, facing the
+  // camera side (+z / +x) so it's readable.
+  const roofAd = useMemo(() => {
+    if ((kind !== 'downtown' && kind !== 'shops') || seeded(seed * 19) > 0.65) return null
+    const it = items.find((m) => m.url.includes('/commercial/') && !m.url.includes('skyscraper'))
+    if (!it) return null
+    return { pos: [it.pos[0], it.size, it.pos[2]] as [number, number, number], rot: it.pos[2] > 0 ? 0 : Math.PI / 2 }
+  }, [items, kind, seed])
 
   return (
     <group position={[bx, 0, bz]}>
@@ -523,11 +507,63 @@ function FillerBlock({ bx, bz, seed, island }: { bx: number; bz: number; seed: n
       {items.map((it, i) => (
         <Prop key={i} url={it.url} size={it.size} position={it.pos} rotationY={it.rot} />
       ))}
+      {roofAd && <RoofBillboard seed={seed} position={roofAd.pos} rotationY={roofAd.rot} width={3.6} />}
     </group>
   )
 }
 
-// ── Traffic ──────────────────────────────────────────────────────────────
+// The harbour quay's working block: cranes leaning over the water and
+// stacked containers.
+const CONTAINER_COLORS = ['#d64545', '#2f5f9e', '#ef7d2d', '#3fa064', '#f2c230']
+function QuayBlock({ bx, bz }: { bx: number; bz: number }) {
+  return (
+    <group position={[bx, 0, bz]}>
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.005, 0]} receiveShadow>
+        <planeGeometry args={[BLOCK - 2.8, BLOCK - 2.8]} />
+        <meshStandardMaterial color="#c4c0b6" roughness={0.95} />
+      </mesh>
+      {[-4, 4].map((z) => (
+        <group key={z} position={[6, 0, z]}>
+          {[-1.2, 1.2].map((dz) => (
+            <mesh key={dz} position={[0, 4, dz]} castShadow>
+              <boxGeometry args={[0.4, 8, 0.4]} />
+              <meshStandardMaterial color="#e0b020" />
+            </mesh>
+          ))}
+          <mesh position={[2.6, 8.2, 0]} castShadow>
+            <boxGeometry args={[9, 0.6, 3]} />
+            <meshStandardMaterial color="#f2c230" />
+          </mesh>
+          <mesh position={[-1.4, 8.6, 0]} castShadow>
+            <boxGeometry args={[1.8, 1.2, 2]} />
+            <meshStandardMaterial color="#5b6470" />
+          </mesh>
+        </group>
+      ))}
+      {Array.from({ length: 4 }, (_, i) =>
+        Array.from({ length: 1 + ((i * 7) % 3) }, (_, k) =>
+          Array.from({ length: 2 }, (_, c) => (
+            <mesh key={`${i}-${k}-${c}`} position={[-6 + c * 3.4, 0.55 + k * 1.05, -6 + i * 3.6]} castShadow>
+              <boxGeometry args={[3, 1, 1.2]} />
+              <meshStandardMaterial color={CONTAINER_COLORS[(i + k * 2 + c) % CONTAINER_COLORS.length]} roughness={0.7} />
+            </mesh>
+          ))
+        )
+      )}
+    </group>
+  )
+}
+
+function Filler({ c, s }: { c: Cell; s: Island }) {
+  const bx = c.i * BLOCK
+  const bz = c.j * BLOCK
+  const seed = (c.i + 20) * 31 + (c.j + 20)
+  const what = c.what as FillerKind
+  if (what === 'industrial') return <IndustrialBlock bx={bx} bz={bz} seed={seed} />
+  if (what === 'quay') return <QuayBlock bx={bx} bz={bz} />
+  void s
+  return <FillerBlock bx={bx} bz={bz} seed={seed} kind={what} />
+}
 
 // Background cars driving to and fro along the islands' streets. Trucks own
 // the near lane, so cars use the far one.
@@ -584,7 +620,7 @@ function Traffic({ segs }: { segs: Segment[] }) {
 // A cloud bank over an island you haven't reached yet, with a sign saying
 // what opens it. Fades away when the island opens.
 function FogBank({ s, show }: { s: Island; show: boolean }) {
-  const r = islandRect(s)
+  const r = islandRect(s, 0)
   const group = useRef<THREE.Group>(null)
   const fade = useRef(show ? 1 : 0)
   const puffs = useMemo(() => {
@@ -617,11 +653,11 @@ function FogBank({ s, show }: { s: Island; show: boolean }) {
           <sphereGeometry args={[p.r, 14, 10]} />
         </mesh>
       ))}
-      {show && s.unlock && (
+      {show && s.stages[0] && (
         <Html position={[(r.x0 + r.x1) / 2, 9, (r.z0 + r.z1) / 2]} center zIndexRange={[5, 0]}>
           <div className="pointer-events-none whitespace-nowrap rounded-2xl bg-white/90 px-3 py-1.5 text-center font-display text-sm text-[#1d3a6e] shadow">
             🔒 {s.emoji} {s.name}
-            <div className="text-xs text-[#5b6f93]">Lv {s.unlock.level} · build the bridge in Plots</div>
+            <div className="text-xs text-[#5b6f93]">Lv {s.stages[0].level} · build the bridge in Plots</div>
           </div>
         </Html>
       )}
@@ -629,87 +665,126 @@ function FogBank({ s, show }: { s: Island; show: boolean }) {
   )
 }
 
-// An island's contents. Open at load: just there. Opened while playing: it
-// rises out of the sea over a few seconds.
-function IslandReveal({ open, children }: { open: boolean; children: React.ReactNode }) {
-  const [openAtStart] = useState(open)
-  const rise = useRef(openAtStart ? 1 : 0)
+// A piece of the world that rises out of the sea if it appears while you
+// play (it's simply there if it was already open at load).
+function Rise({ children }: { children: React.ReactNode }) {
+  const [atStart] = useState(() => performance.now() < 8000 || !riseArmed)
+  const rise = useRef(atStart ? 1 : 0)
   const group = useRef<THREE.Group>(null)
   useFrame((_, dt) => {
-    if (!open || rise.current >= 1) return
+    if (rise.current >= 1) return
     rise.current = Math.min(1, rise.current + dt / 3)
     const k = 1 - Math.pow(1 - rise.current, 3)
     if (group.current) group.current.position.y = -12 * (1 - k)
   })
-  if (!open) return null
   return (
-    <group ref={group} position={[0, openAtStart ? 0 : -12, 0]}>
+    <group ref={group} position={[0, atStart ? 0 : -12, 0]}>
       {children}
     </group>
   )
 }
+// Set once the world has been drawn: anything mounting after that is new
+// land, so it rises.
+let riseArmed = false
 
-export default function World({
-  ownedPlots,
-  openIslands,
-  bridgeBuilding,
-}: {
-  ownedPlots: number
-  openIslands: IslandId[]
-  bridgeBuilding: IslandId | null
-}) {
-  const blocks = useMemo(() => {
-    const out: { x: number; z: number; seed: number; island: IslandId }[] = []
-    for (const s of ISLANDS)
-      for (let i = s.i0; i <= s.i1; i++)
-        for (let j = s.j0; j <= s.j1; j++) {
-          const x = i * BLOCK
-          const z = j * BLOCK
-          if (!isReservedBlock(x, z)) out.push({ x, z, seed: (i + 20) * 31 + (j + 20), island: s.id })
+// One island stage: its blocks and roads.
+function StageContents({ s, stage, ownedPlots, allRoads }: { s: Island; stage: number; ownedPlots: number; allRoads: Segment[] }) {
+  const cells = s.cells.filter((c) => c.stage === stage)
+  const roads = useMemo(() => mergeSegments(ROADS.filter((r) => r.island === s.id && r.stage === stage)), [s.id, stage])
+  return (
+    <Rise>
+      <Roads segs={roads} all={allRoads} />
+      {cells.map((c) => {
+        const key = `${c.i},${c.j}`
+        if (c.what === 'yard') return null
+        if (c.what === 'plot' || c.what === 'harbour') {
+          const slot = PLOT_SLOTS.find((p) => p.x === c.i * BLOCK && p.z === c.j * BLOCK)!
+          return (
+            <group key={key} position={[slot.x, 0, slot.z]}>
+              {slot.id < ownedPlots ? <ConstructionLot harbour={slot.harbour} /> : <ForSaleLot harbour={slot.harbour} />}
+            </group>
+          )
         }
-    return out
+        return <Filler key={key} c={c} s={s} />
+      })}
+    </Rise>
+  )
+}
+
+// An island's land: the current outline, plus — for a few seconds after it
+// grows — the old outline on top while the new land rises underneath.
+function IslandGround({ s, stage }: { s: Island; stage: number }) {
+  const [shown, setShown] = useState(stage)
+  const [prev, setPrev] = useState<number | null>(null)
+  if (stage !== shown) {
+    setPrev(shown)
+    setShown(stage)
+  }
+  const cellsAt = (k: number) => s.cells.filter((c) => c.stage <= k)
+  const cells = useMemo(() => s.cells.filter((c) => c.stage <= stage), [s, stage])
+  useFrame(() => {
+    // Drop the old outline once the new land has come up.
+    if (prev !== null && performance.now() - risenAt.current > 3200) setPrev(null)
+  })
+  const risenAt = useRef(0)
+  useLayoutEffect(() => {
+    risenAt.current = performance.now()
+  }, [stage])
+  return (
+    <>
+      {prev !== null && prev >= 0 && (
+        <group position={[0, 0.006, 0]}>
+          <Land s={s} cells={cellsAt(prev)} />
+        </group>
+      )}
+      <Rise key={stage}>
+        <Land s={s} cells={cells} />
+        {s.id === 'houses' && <BeachLife cells={cells} />}
+      </Rise>
+    </>
+  )
+}
+
+export default function World({ ownedPlots, grownKey, landBuild }: { ownedPlots: number; grownKey: string; landBuild: string | null }) {
+  const grown = useMemo(() => parseGrown(grownKey), [grownKey])
+  const allRoads = useMemo(() => ROADS.filter((r) => !r.bridge && roadOpen(r, grown)), [grown])
+  const merged = useMemo(() => mergeSegments(allRoads), [allRoads])
+  const [building, buildingStage] = landBuild ? [landBuild.split(':')[0] as IslandId, Number(landBuild.split(':')[1])] : [null, -1]
+  useLayoutEffect(() => {
+    // Give the first load a moment, then new land rises.
+    const t = setTimeout(() => (riseArmed = true), 1500)
+    return () => clearTimeout(t)
   }, [])
-  const open = useMemo(() => new Set(openIslands), [openIslands])
-  const segs = useMemo(() => ROADS.filter((r) => !r.bridge && r.island && open.has(r.island)), [open])
 
   return (
     <group>
-      {ISLANDS.map((s) => (
-        <group key={s.id}>
-          <IslandReveal open={open.has(s.id)}>
-            <IslandLand s={s} />
-            {s.id === 'city' && <Harbour />}
-            <Roads built={(r) => r.island === s.id} />
-            {PLOT_SLOTS.filter((slot) => slot.island === s.id).map((slot) => (
-              <group key={slot.id} position={[slot.x, 0, slot.z]}>
-                {slot.id < ownedPlots ? <ConstructionLot /> : <ForSaleLot />}
-              </group>
+      {ISLANDS.map((s) => {
+        const stage = grown[s.id]
+        const prev = ISLANDS[s.index - 1]
+        const reachable = !prev || grown[prev.id] >= prev.stages.length - 1
+        return (
+          <group key={s.id}>
+            {stage >= 0 && <IslandGround s={s} stage={stage} />}
+            {Array.from({ length: stage + 1 }, (_, k) => (
+              <StageContents key={k} s={s} stage={k} ownedPlots={ownedPlots} allRoads={allRoads} />
             ))}
-            {blocks
-              .filter((b) => b.island === s.id)
-              .map((b) =>
-                b.island === 'industrial' ? (
-                  <IndustrialBlock key={`${b.x},${b.z}`} bx={b.x} bz={b.z} seed={b.seed} />
-                ) : (
-                  <FillerBlock key={`${b.x},${b.z}`} bx={b.x} bz={b.z} seed={b.seed} island={b.island} />
-                )
-              )}
-          </IslandReveal>
-          {s.unlock && <FogBank s={s} show={!open.has(s.id)} />}
-        </group>
-      ))}
+            {building === s.id && buildingStage > 0 && <LandWorks cells={s.cells.filter((c) => c.stage === buildingStage)} />}
+            {stage < 0 && <FogBank s={s} show={reachable} />}
+          </group>
+        )
+      })}
       {BRIDGES.map((b) => (
-        <Bridge key={b.to} b={b} state={open.has(b.to) ? 'built' : bridgeBuilding === b.to ? 'building' : 'none'} />
+        <Bridge key={b.to} b={b} state={grown[b.to] >= 0 ? 'built' : building === b.to && buildingStage === 0 ? 'building' : 'none'} />
       ))}
 
       {/* Ad billboards by the home lot, angled toward the camera. */}
       <Billboard position={[PLOT_SLOTS[0].x - 6, 0, PLOT_SLOTS[0].z - 11.5 - 2.2]} rotationY={Math.PI / 8} />
-      <Billboard position={[PLOT_SLOTS[0].x - 11.5 - 2.2, 0, PLOT_SLOTS[0].z - 1]} rotationY={Math.PI / 2 - Math.PI / 8} />
+      <Billboard seed={1} position={[PLOT_SLOTS[0].x - 11.5 - 2.2, 0, PLOT_SLOTS[0].z - 1]} rotationY={Math.PI / 2 - Math.PI / 8} />
 
       <Sea />
-      <Streets open={open} />
-      <Waterside open={open} />
-      <Traffic segs={segs} />
+      <Streets segs={merged} />
+      <Waterside grown={grown} />
+      <Traffic segs={merged} />
     </group>
   )
 }

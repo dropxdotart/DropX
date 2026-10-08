@@ -12,6 +12,7 @@ import Prop from './Prop'
 import { BrickWorks, SmelterWorks, TimberWorks, UnloadFX, YardGround } from './YardWorks'
 import { pointer } from './drag'
 import { Logo } from './SiteProps'
+import { AdFace, FenceBanner } from './WorldAds'
 import { brickGeometry, brickMaterial } from './Building'
 
 // Each station is built from simple shapes (plus a few Kenney models) and
@@ -301,8 +302,9 @@ function FleetTruck({
     <group ref={group} onClick={select}>
       {/* Models face +z; logos on both sides. */}
       <Prop url={look.url} size={look.size} />
-      <Logo size={look.logo} position={[look.half, look.size * 0.55, -0.3]} rotationY={Math.PI / 2} />
-      <Logo size={look.logo} position={[-look.half, look.size * 0.55, -0.3]} rotationY={-Math.PI / 2} />
+      {/* Ad panels on both sides (the house poster when there's no ad) */}
+      <AdFace seed={id * 3} width={look.logo * 1.7} position={[look.half + 0.01, look.size * 0.55, -0.3]} rotation={[0, Math.PI / 2, 0]} />
+      <AdFace seed={id * 3 + 1} width={look.logo * 1.7} position={[-look.half - 0.01, look.size * 0.55, -0.3]} rotation={[0, -Math.PI / 2, 0]} />
       <instancedMesh
         key={tier}
         ref={heap}
@@ -403,15 +405,6 @@ function YardLook({ theme, setting, tier, size, docks }: { theme: YardTheme; set
         position={[0, 0.02, (YARD_FRONT_Z + Math.max(back, BLOCK_BACK_Z)) / 2]}
         color={ground}
       />
-      {/* A pier yard stands over the water on posts all the way */}
-      {setting === 'pier' && (
-        <>
-          <Box size={[hw * 2 + 1, 0.3, YARD_FRONT_Z - BLOCK_BACK_Z + 4]} position={[0, -0.12, (YARD_FRONT_Z + BLOCK_BACK_Z) / 2 + 2]} color="#8d7a5e" />
-          {Array.from({ length: 7 }, (_, k) => BLOCK_BACK_Z + k * 3.6).flatMap((z) =>
-            [-hw - 0.2, hw + 0.2].map((x) => <Box key={`p${x},${z}`} size={[0.4, 1.6, 0.4]} position={[x, -0.7, z]} color="#5f4f3a" />)
-          )}
-        </>
-      )}
       {pierDepth > 0 && (
         <>
           <Box size={[hw * 2, 0.2, pierDepth]} position={[0, 0.0, BLOCK_BACK_Z - pierDepth / 2]} color="#9a8466" />
@@ -424,6 +417,10 @@ function YardLook({ theme, setting, tier, size, docks }: { theme: YardTheme; set
         <Prop key={i} url="/models/roads/construction-fence.glb" size={0.9} position={f.pos} rotationY={f.rot} />
       ))}
       {/* Gate posts: green light IN, orange light OUT */}
+      {/* Ad banners hung on the front fence either side of the gates */}
+      {[-6.6, 6.6].map((x, i) => (
+        <FenceBanner key={x} seed={i + (theme === 'brick' ? 4 : theme === 'smelter' ? 8 : 0)} position={[x, 0.95, YARD_FRONT_Z + 0.08]} width={2.6} />
+      ))}
       {YARD_GATES.map((x, i) => (
         <group key={x} position={[x, 0, LOT_HALF]}>
           <Box size={[0.2, 1.6, 0.2]} position={[-1.3, 0.8, 0]} color="#5b6470" />

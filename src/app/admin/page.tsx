@@ -9,7 +9,6 @@ const TOOLS = [
   { href: '/admin/ads', label: 'Ads', description: 'Upload ads, pick where they run, see their stats' },
   { href: '/admin/buildings', label: 'Buildings', description: 'Design your own buildings for players to demolish' },
   { href: '/admin/live', label: 'Events & messages', description: 'Double bricks, sales, messages and gifts for every player' },
-  { href: '/admin/tuning', label: 'Game balance', description: 'Sliders to make the game easier or harder, no update needed' },
   { href: '/admin/codes', label: 'Redeem codes', description: 'Create codes that give bricks, boosts or free upgrades' },
   { href: '/admin/players', label: 'Players', description: 'Look up players, rename them, set balances, send gifts' },
   { href: '/admin/words', label: 'Banned words', description: 'Words players can’t use in their usernames' },

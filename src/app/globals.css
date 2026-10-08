@@ -306,3 +306,40 @@ input[type='datetime-local']::-webkit-date-and-time-value {
   text-align: left;
   min-height: 1.25em;
 }
+
+/* Chest opening: the chest bounces in. */
+@keyframes chest-pop {
+  0% { transform: scale(0.4) rotate(-8deg); opacity: 0; }
+  60% { transform: scale(1.15) rotate(4deg); opacity: 1; }
+  100% { transform: scale(1) rotate(0deg); }
+}
+.chest-pop {
+  animation: chest-pop 0.5s ease-out both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .chest-pop { animation: none; }
+}
+
+/* Things that need you: a gentle bob so they catch the eye. */
+@keyframes needs-you {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-4px); }
+}
+.needs-you {
+  animation: needs-you 1.2s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .needs-you { animation: none; }
+}
+
+/* Hazard tape: black and yellow stripes. */
+.hazard-tape {
+  background: repeating-linear-gradient(-45deg, #f2c230 0 8px, #1d1d1f 8px 16px);
+  border: 2px solid #1d3a6e;
+}
+
+/* Caution tape wrapped round the BREAK! button. */
+.caution-ring {
+  background: repeating-conic-gradient(#f2c230 0 15deg, #1d1d1f 15deg 30deg);
+  border: 2px solid #1d3a6e;
+}

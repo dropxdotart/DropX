@@ -6,6 +6,7 @@ import { isMaintenanceOn } from '@/lib/maintenance'
 export const dynamic = 'force-dynamic'
 
 export default async function Home() {
-  if ((await isMaintenanceOn()) && !(await isAdminSession())) return <BuildingScreen />
+  // The local dev server always runs the game.
+  if (process.env.NODE_ENV !== 'development' && (await isMaintenanceOn()) && !(await isAdminSession())) return <BuildingScreen />
   return <Game />
 }

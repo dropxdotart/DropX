@@ -43,6 +43,25 @@ export async function getAdByPlacement(placement: 'rewarded' | 'interstitial' | 
   return { ...ad, unlockSeconds: setting?.unlock_seconds ?? DEFAULT_UNLOCK_SECONDS[placement] ?? 0 }
 }
 
+// Every live creative for a placement — the 3D world shows billboard ads
+// on many signs, trucks and fences at once and spreads them across these.
+export async function getAdsByPlacement(placement: 'billboard'): Promise<AdCreative[]> {
+  const supabase = await createClient()
+  const { data } = await supabase
+    .from('ads')
+    .select('id, ad_media!inner(kind, media_url, click_url)')
+    .eq('active', true)
+    .eq('placement', placement)
+  return (data ?? []).map((row) => {
+    const media = (Array.isArray(row.ad_media) ? row.ad_media[0] : row.ad_media) as {
+      kind: 'image' | 'video'
+      media_url: string
+      click_url: string | null
+    }
+    return { id: row.id, kind: media.kind, media_url: media.media_url, click_url: media.click_url, unlockSeconds: 0 }
+  })
+}
+
 export type AdEvent = 'view' | 'complete' | 'skip' | 'click'
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
