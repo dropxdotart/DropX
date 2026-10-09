@@ -38,6 +38,7 @@ const STAT_NAMES: Record<string, string> = {
   unload: 'Unloading',
   pay: 'Brick pay',
   dumpster: 'Dumpster size',
+  fork: 'Forklifts & barge',
 }
 const AUTO_NAMES: Record<string, string> = {
   claim: 'Claims cleared sites',
@@ -46,13 +47,14 @@ const AUTO_NAMES: Record<string, string> = {
   empty: 'Empties dumpsters',
 }
 
-const STATION_LABEL: Record<string, string> = { crew: 'Crew', truck: 'Trucks', yard: 'Any yard', dumpster: 'Dumpsters', tools: 'Tools', any: 'Any station' }
+const STATION_LABEL: Record<string, string> = { crew: 'Crew', truck: 'Trucks', yard: 'Any yard', dumpster: 'Dumpsters', tools: 'Tools', forklift: 'Forklifts', any: 'Any station' }
 
 export function slotName(slot: Slot) {
   if (slot === 'crew') return 'Crew'
   if (slot === 'truck') return 'Trucks'
   if (slot === 'dumpster') return 'Dumpsters'
   if (slot === 'tools') return 'Tools'
+  if (slot.startsWith('fork')) return `Forklifts · ${ISLANDS[Number(slot.slice(4))]?.yard.name ?? 'Yard'}`
   return ISLANDS[Number(slot.slice(4))]?.yard.name ?? 'Yard'
 }
 

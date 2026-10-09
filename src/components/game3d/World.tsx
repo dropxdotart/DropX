@@ -26,6 +26,7 @@ import { PLOT_SLOTS } from '@/lib/game/plots'
 import Prop from './Prop'
 import { Billboard } from './SiteProps'
 import { RoofBillboard } from './WorldAds'
+import { Bus, DeliveryVan, RubblePickup, VehicleLights } from './Vehicles'
 import { BlockDressing, Sea, Streets, Waterside } from './Scenery'
 
 // The world: islands of blocks that grow a stage at a time (new land rises
@@ -568,18 +569,20 @@ function Filler({ c, s }: { c: Cell; s: Island }) {
 
 // Background cars driving to and fro along the islands' streets. Trucks own
 // the near lane, so cars use the far one.
-type Car = { url: string; seg: Segment; dir: 1 | -1; offset: number; speed: number }
+type Car = { kind: string; seg: Segment; dir: 1 | -1; offset: number; speed: number }
+// A mix: the car models plus our own built vehicles (see Vehicles.tsx).
 const CAR_MODELS = ['/models/vehicles/taxi.glb', '/models/vehicles/van.glb', '/models/vehicles/sedan.glb', '/models/vehicles/suv.glb']
+const TRAFFIC_KINDS = [...CAR_MODELS, 'bus', 'delivery', '/models/vehicles/sedan.glb', 'pickup', '/models/vehicles/taxi.glb', 'delivery', '/models/vehicles/garbage-truck.glb']
 
 function Traffic({ segs }: { segs: Segment[] }) {
   const cars: Car[] = useMemo(() => {
     const roads = segs.filter((r) => !r.bridge && r.until - r.from > 30)
     return Array.from({ length: Math.min(26, roads.length) }, (_, i) => ({
-      url: CAR_MODELS[i % CAR_MODELS.length],
+      kind: TRAFFIC_KINDS[i % TRAFFIC_KINDS.length],
       seg: roads[Math.floor(seeded(i + 80) * roads.length)],
       dir: (seeded(i + 90) < 0.5 ? 1 : -1) as 1 | -1,
       offset: seeded(i + 40) * 100,
-      speed: 4 + seeded(i + 60) * 1.8,
+      speed: (TRAFFIC_KINDS[i % TRAFFIC_KINDS.length] === 'bus' ? 3.2 : 4) + seeded(i + 60) * 1.8,
     }))
   }, [segs])
   const refs = useRef<(THREE.Group | null)[]>([])
@@ -607,11 +610,17 @@ function Traffic({ segs }: { segs: Segment[] }) {
           }}
         >
           {/* Models face +z. */}
-          <Prop
-            url={car.url}
-            size={1.45}
-            rotationY={car.seg.axis === 'z' ? (car.dir > 0 ? Math.PI / 2 : -Math.PI / 2) : car.dir > 0 ? 0 : Math.PI}
-          />
+          <group rotation={[0, car.seg.axis === 'z' ? (car.dir > 0 ? Math.PI / 2 : -Math.PI / 2) : car.dir > 0 ? 0 : Math.PI, 0]}>
+            {car.kind === 'bus' ? (
+              <Bus color={i % 2 ? '#2d7ff9' : '#3fa064'} />
+            ) : car.kind === 'delivery' ? (
+              <DeliveryVan seed={i * 2 + 7} />
+            ) : car.kind === 'pickup' ? (
+              <RubblePickup />
+            ) : (
+              <Prop url={car.kind} size={car.kind.includes('garbage') ? 1.8 : 1.45} />
+            )}
+          </group>
         </group>
       ))}
     </>
@@ -786,6 +795,7 @@ export default function World({ ownedPlots, grownKey, landBuild }: { ownedPlots:
       <Streets segs={merged} />
       <Waterside grown={grown} />
       <Traffic segs={merged} />
+      <VehicleLights />
     </group>
   )
 }

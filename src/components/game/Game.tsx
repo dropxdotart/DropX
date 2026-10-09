@@ -602,7 +602,7 @@ export default function Game() {
             const island = islandIndex(PLOT_SLOTS[plot.id]?.island ?? 'houses')
             if (id === 'truck') setSelected({ id, plot: island, truck: 0 })
             else if (id === 'dumpster') setSelected({ id, plot: plot.id, index: 0 })
-            else setSelected({ id, plot: id === 'yard' ? island : id === 'tools' || id === 'crew' ? 0 : plot.id })
+            else setSelected({ id, plot: id === 'yard' || id === 'forklift' ? island : id === 'tools' || id === 'crew' ? 0 : plot.id })
           }}
           onClose={() => setMapOpen(false)}
         />

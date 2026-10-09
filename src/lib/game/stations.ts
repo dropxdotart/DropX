@@ -2,6 +2,7 @@ import {
   DUMPSTER,
   LOT_HALF,
   MILESTONES,
+  NEW_YARD,
   stats,
   truckUpgradeCost,
   upgradeCost,
@@ -17,7 +18,7 @@ import { ISLANDS } from './islands'
 
 // The tappable, upgradable things on the site. Each one opens its own
 // upgrade panel and changes its look at milestone levels.
-export type StationId = 'tools' | 'crew' | 'dumpster' | 'truck' | 'yard'
+export type StationId = 'tools' | 'crew' | 'dumpster' | 'truck' | 'yard' | 'forklift'
 
 export { MILESTONES }
 
@@ -144,6 +145,32 @@ export const STATIONS: StationDef[] = [
       },
     ],
   },
+  {
+    // Each yard's forklifts and barge (or freight trailer): bricks wait on
+    // the pile until they're carried to the dock and shipped — and paid.
+    id: 'forklift',
+    name: 'Forklifts & shipping',
+    emoji: '🚜',
+    upgrades: ['forkSpeed', 'forkPallet', 'forkCount', 'shipCap', 'shipSpeed'],
+    // Relative to the yard's block: by the shipping dock at the back.
+    position: { x: -6, z: -6 },
+    level: (u) => 1 + u.forkSpeed + u.forkPallet,
+    tierNames: ['Hand Truck', 'Forklift', 'Big Forklift', 'Telehandler'],
+    effects: (u) => {
+      const up = (k: UpgradeKey) => ({ ...u, [k]: (u[k] as number) + 1 })
+      return [
+        { label: 'Forklifts', now: `${stats.forklifts(u)}`, next: (k) => `${stats.forklifts(k === 'forkCount' ? up(k) : u)}` },
+        { label: 'Speed', now: `${stats.forkSpeed(u).toFixed(1)}`, next: (k) => `${stats.forkSpeed(k === 'forkSpeed' ? up(k) : u).toFixed(1)}` },
+        {
+          label: 'Bricks a trip',
+          now: `${stats.palletBricks(u) * stats.palletsPerTrip(u)}`,
+          next: (k) => `${(k === 'forkPallet' || k === 'forkSpeed' ? [up(k)] : [u]).map((v) => stats.palletBricks(v) * stats.palletsPerTrip(v))[0]}`,
+        },
+        { label: 'Barge holds', now: `${stats.shipCapacity(u)}`, next: (k) => `${stats.shipCapacity(k === 'shipCap' ? up(k) : u)}` },
+        { label: 'Barge trip', now: `${Math.round(stats.shipAwaySeconds(u))}s`, next: (k) => `${Math.round(stats.shipAwaySeconds(k === 'shipSpeed' ? up(k) : u))}s` },
+      ]
+    },
+  },
 ]
 
 // A single truck's level drives its look (Flatbed → Mega Hauler).
@@ -175,8 +202,21 @@ export function upgradeReady(key: UpgradeKey, snap: Snapshot, yard = 0): boolean
 
 // The upgrades as one yard sees them (its own size, docks, speed, bonus).
 export function yardUpgrades(snap: Snapshot, yard: number): Upgrades {
-  const l = snap.islands[yard]?.yard ?? { size: 0, docks: 0, speed: 0, bonus: 0 }
-  return { ...snap.upgrades, yardSize: l.size, yardDocks: l.docks, yardSpeed: l.speed, yardBonus: l.bonus, yardMax: ISLANDS[yard]?.yard.maxSize }
+  const l = snap.islands[yard]?.yard ?? NEW_YARD
+  return {
+    ...snap.upgrades,
+    yardSize: l.size,
+    yardDocks: l.docks,
+    yardSpeed: l.speed,
+    yardBonus: l.bonus,
+    forkSpeed: l.forkSpeed,
+    forkPallet: l.forkPallet,
+    forkCount: l.forkCount,
+    shipCap: l.shipCap,
+    shipSpeed: l.shipSpeed,
+    yardMax: ISLANDS[yard]?.yard.maxSize,
+    yardIndex: yard,
+  }
 }
 
 // Anything to buy for the fleet: another truck, or any truck's upgrade.

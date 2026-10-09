@@ -13,6 +13,7 @@ import { BrickWorks, SmelterWorks, TimberWorks, UnloadFX, YardGround } from './Y
 import { pointer } from './drag'
 import { Logo } from './SiteProps'
 import { AdFace, FenceBanner } from './WorldAds'
+import { Cab } from './ToolTrucks'
 import { brickGeometry, brickMaterial } from './Building'
 
 // Each station is built from simple shapes (plus a few Kenney models) and
@@ -199,11 +200,13 @@ export function DumpsterStation({
 
 // `cargo` is where the load heap sits on each look (local, truck facing
 // +z): the Flatbed's open bed, and the top of the closed bodies.
+// The fleet's dump trucks by tier: the shared detailed cab (scaled) and a
+// tipping bed sized to the tier.
 const TRUCK_TIERS = [
-  { url: '/models/vehicles/truck-flat.glb', size: 1.5, half: 0.78, logo: 0.6, cargo: { y: 0.72, z: -0.45, w: 0.85, d: 1.0 } },
-  { url: '/models/vehicles/truck.glb', size: 1.75, half: 0.9, logo: 0.75, cargo: { y: 1.75, z: -0.4, w: 0.9, d: 1.3 } },
-  { url: '/models/vehicles/garbage-truck.glb', size: 1.9, half: 0.87, logo: 0.8, cargo: { y: 1.9, z: -0.5, w: 0.9, d: 1.2 } },
-  { url: '/models/vehicles/garbage-truck.glb', size: 2.45, half: 1.11, logo: 1.05, cargo: { y: 2.45, z: -0.6, w: 1.1, d: 1.6 } },
+  { scale: 0.5, color: '#ff8a1a', bed: '#5b6470', len: 1.6, w: 0.95, wall: 0.42 },
+  { scale: 0.56, color: '#2d7ff9', bed: '#3a3f47', len: 1.9, w: 1.05, wall: 0.5 },
+  { scale: 0.62, color: '#3fa064', bed: '#5b6470', len: 2.1, w: 1.15, wall: 0.6 },
+  { scale: 0.72, color: '#d64545', bed: '#2b2b2e', len: 2.5, w: 1.3, wall: 0.7 },
 ]
 
 // How many bricks show for each step of fullness: empty, a little,
@@ -221,8 +224,9 @@ function loadStep(cargo: number, capacity: number) {
 // then narrower layers on top, so a little load still covers the bed.
 function heapLayout(w: number, d: number): [number, number, number][] {
   const out: [number, number, number][] = []
-  for (let layer = 0; layer < 4 && out.length < LOAD_STEPS[4]; layer++) {
-    const cols = Math.max(1, Math.floor(w / HEAP_BRICK) - layer)
+  // At most three layers, shrinking slowly, so a narrow bed doesn't stack a tower.
+  for (let layer = 0; layer < 3 && out.length < LOAD_STEPS[4]; layer++) {
+    const cols = Math.max(1, Math.floor(w / HEAP_BRICK) - (layer > 1 ? 1 : 0))
     const rows = Math.max(1, Math.floor(d / HEAP_BRICK) - layer)
     for (let r = 0; r < rows; r++) {
       for (let c = 0; c < cols; c++) {
@@ -239,7 +243,7 @@ const heapColor = new THREE.Color('#b4553c')
 
 // One truck of the fleet, in world space, driven by the engine each frame.
 // Tapping it opens that truck's own upgrades.
-function FleetTruck({
+export function FleetTruck({
   engine,
   id,
   tier,
@@ -251,11 +255,18 @@ function FleetTruck({
   onSelect: (truck: number) => void
 }) {
   const group = useRef<THREE.Group>(null)
+  const bed = useRef<THREE.Group>(null)
+  const gate = useRef<THREE.Group>(null)
   const heap = useRef<THREE.InstancedMesh>(null)
+  const spin = useRef(0)
   const shownStep = useRef(-1)
   const drawnMesh = useRef<THREE.InstancedMesh | null>(null)
   const look = TRUCK_TIERS[tier]
-  const spots = useMemo(() => heapLayout(look.cargo.w, look.cargo.d), [look])
+  const s = look.scale
+  const floorY = 0.72 * s + 0.04
+  const front = 1.05 * s
+  const rear = front - look.len
+  const spots = useMemo(() => heapLayout(look.w - 0.2, look.len - 0.2), [look])
 
   useFrame(() => {
     const g = group.current
@@ -264,7 +275,6 @@ function FleetTruck({
     // Show the load in steps, re-laying the heap only when the step changes.
     const step = loadStep(t.cargo, stats.truckCargo(t.load))
     const mesh = heap.current
-    // A new look means a new heap mesh: draw it from scratch.
     if (mesh !== drawnMesh.current) {
       drawnMesh.current = mesh
       shownStep.current = -1
@@ -285,6 +295,15 @@ function FleetTruck({
       mesh.instanceMatrix.needsUpdate = true
       if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true
     }
+    spin.current = t.state === 'driving' && !t.broken ? 1 : 0
+    // Unloading at the yard: the bed tips up on its rear hinge and back.
+    let tip = 0
+    if (t.state === 'unloading') {
+      const total = stats.unloadSeconds(engine.yardU(t.yard))
+      tip = Math.sin(Math.min(1, 1 - t.timer / Math.max(0.01, total)) * Math.PI) * 0.85
+    }
+    if (bed.current) bed.current.rotation.x = -tip
+    if (gate.current) gate.current.rotation.x = tip * 0.9
     g.position.set(t.x, 0.02, t.z)
     // Ease the turn so corners don't snap.
     let d = t.heading - g.rotation.y
@@ -300,19 +319,51 @@ function FleetTruck({
 
   return (
     <group ref={group} onClick={select}>
-      {/* Models face +z; logos on both sides. */}
-      <Prop url={look.url} size={look.size} />
-      {/* Ad panels on both sides (the house poster when there's no ad) */}
-      <AdFace seed={id * 3} width={look.logo * 1.7} position={[look.half + 0.01, look.size * 0.55, -0.3]} rotation={[0, Math.PI / 2, 0]} />
-      <AdFace seed={id * 3 + 1} width={look.logo * 1.7} position={[-look.half - 0.01, look.size * 0.55, -0.3]} rotation={[0, -Math.PI / 2, 0]} />
-      <instancedMesh
-        key={tier}
-        ref={heap}
-        args={[brickGeometry, brickMaterial, LOAD_STEPS[4]]}
-        position={[0, look.cargo.y, look.cargo.z]}
-        castShadow
-        frustumCulled={false}
-      />
+      {/* The detailed cab and chassis, scaled to the tier (nose toward +z) */}
+      <group scale={s}>
+        <Cab color={look.color} spin={spin} />
+      </group>
+      {/* Hydraulic ram under the bed */}
+      <Box size={[0.12 * s * 2, 0.25, 0.12 * s * 2]} position={[0, floorY - 0.1, front - 0.25]} color="#9aa5b1" />
+      {/* The tipping bed: hinged at the rear */}
+      <group ref={bed} position={[0, floorY, rear]}>
+        <Box size={[look.w, 0.08, look.len]} position={[0, 0.04, look.len / 2]} color={look.bed} />
+        {[-1, 1].map((sd) => (
+          <group key={sd}>
+            <Box size={[0.06, look.wall, look.len]} position={[(sd * look.w) / 2, look.wall / 2 + 0.06, look.len / 2]} color={look.bed} />
+            {/* Ad panels on both sides (the house poster when there's no ad) */}
+            <AdFace
+              seed={id * 3 + (sd > 0 ? 0 : 1)}
+              width={look.len * 0.78}
+              height={look.wall * 0.8}
+              position={[sd * (look.w / 2 + 0.035), look.wall / 2 + 0.06, look.len / 2]}
+              rotation={[0, (sd * Math.PI) / 2, 0]}
+            />
+          </group>
+        ))}
+        {/* Front wall with a guard over the cab */}
+        <Box size={[look.w, look.wall + 0.18, 0.07]} position={[0, (look.wall + 0.18) / 2 + 0.06, look.len]} color={look.bed} />
+        <Box size={[look.w, 0.05, 0.35]} position={[0, look.wall + 0.24, look.len + 0.15]} color={look.bed} />
+        {/* Tailgate, hinged at the top, swings open as the bed tips */}
+        <group ref={gate} position={[0, look.wall + 0.06, 0]}>
+          <Box size={[look.w, look.wall, 0.06]} position={[0, -look.wall / 2, 0]} color={look.color} />
+        </group>
+        <instancedMesh
+          key={tier}
+          ref={heap}
+          args={[brickGeometry, brickMaterial, LOAD_STEPS[4]]}
+          position={[0, 0.08, look.len / 2]}
+          castShadow
+          frustumCulled={false}
+        />
+      </group>
+      {/* Mud flaps and tail lights */}
+      {[-1, 1].map((sd) => (
+        <group key={sd}>
+          <Box size={[0.2, 0.22, 0.03]} position={[(sd * look.w) / 2 - sd * 0.12, 0.25, rear - 0.05]} color="#1d1d1f" />
+          <Box size={[0.12, 0.08, 0.03]} position={[(sd * look.w) / 2 - sd * 0.1, floorY - 0.05, rear - 0.04]} color="#e23f3f" />
+        </group>
+      ))}
     </group>
   )
 }
@@ -380,7 +431,8 @@ function yardFence(size: number) {
   const back = yardBackZ(size)
   const out: { pos: [number, number, number]; rot: number }[] = []
   for (let t = -hw + 1; t <= hw - 1 + 0.01; t += 2) {
-    out.push({ pos: [t, 0, back], rot: Math.PI / 2 })
+    // A gate in the back fence for the forklifts to the shipping dock.
+    if (t < -4.6 || t > -0.4) out.push({ pos: [t, 0, back], rot: Math.PI / 2 })
     if (YARD_GATES.every((g) => Math.abs(t - g) > 1.6)) out.push({ pos: [t, 0, YARD_FRONT_Z], rot: Math.PI / 2 })
   }
   for (let t = back + 1; t <= YARD_FRONT_Z - 1 + 0.01; t += 2) {

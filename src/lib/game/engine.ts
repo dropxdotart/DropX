@@ -84,10 +84,10 @@ export const BOOST_SECONDS = 3
 // and the instant dumpster empty can be watched for.
 export const AD_BOOST_MINUTES = 5
 // Tool animation timing (ms after use): when the ball hits, when it blows.
-export const BALL_HITS_MS = [3500, 4700]
-export const BALL_FX_MS = 7500
-export const DYNAMITE_BOOM_MS = 4500
-export const DYNAMITE_FX_MS = 8000
+export const BALL_HITS_MS = [4500, 5700]
+export const BALL_FX_MS = 9300
+export const DYNAMITE_BOOM_MS = 5500
+export const DYNAMITE_FX_MS = 9200
 // The ad for extra hands: this many fast workers, for this long.
 export const HELPERS = 4
 export const HELPER_MINUTES = 3
@@ -117,6 +117,12 @@ export type Upgrades = {
   yardDocks: number // extra unloading docks (docks = 1 + this)
   yardSpeed: number
   yardBonus: number
+  // Forklifts and shipping (per yard)
+  forkSpeed: number
+  forkPallet: number
+  forkCount: number
+  shipCap: number
+  shipSpeed: number
 }
 export type UpgradeKey = Exclude<keyof Upgrades, 'yardMax' | 'yardIndex'>
 
@@ -129,6 +135,11 @@ export const UPGRADE_INFO: Record<UpgradeKey, { label: string; base: number; gro
   yardDocks: { label: 'Add an unloading dock', base: 5000, growth: 10 },
   yardSpeed: { label: 'Faster unloading', base: 60, growth: 1.55 },
   yardBonus: { label: 'Better prices', base: 120, growth: 1.7 },
+  forkSpeed: { label: 'Faster forklifts', base: 90, growth: 1.55 },
+  forkPallet: { label: 'Bigger pallets', base: 130, growth: 1.6 },
+  forkCount: { label: 'Buy a forklift', base: 600, growth: 3 },
+  shipCap: { label: 'Bigger barge', base: 260, growth: 1.75 },
+  shipSpeed: { label: 'Faster shipping', base: 200, growth: 1.65 },
 }
 
 // Each dumpster is bought per plot and sized up on its own.
@@ -140,7 +151,7 @@ export const DUMPSTER_UPGRADE = { label: 'Bigger dumpster', base: 30, growth: 1.
 const PACE = { crew: 0.8, truck: 0.8, pay: 0.8 }
 // Manager boosts (and abilities) in force right now, as multipliers — set
 // by Engine.recalcManagers. Yard boosts are per yard.
-const MGR = { walk: 1, pick: 1, truckSpeed: 1, truckLoad: 1, dumpster: 1, unload: [1, 1, 1], pay: [1, 1, 1] }
+const MGR = { walk: 1, pick: 1, truckSpeed: 1, truckLoad: 1, dumpster: 1, unload: [1, 1, 1], pay: [1, 1, 1], fork: [1, 1, 1] }
 
 // What each brick / completion bonus is actually worth (for payout labels).
 export const PAY_RATE = PACE.pay
@@ -315,6 +326,15 @@ export const stats = {
   truckSpeed: (speedLevel: number) => 6 * (1 + 0.12 * speedLevel) * PACE.truck * MGR.truckSpeed,
   unloadSeconds: (u: Upgrades) => Math.max(0.2, (2 * Math.pow(0.88, u.yardSpeed)) / (MGR.unload[u.yardIndex ?? 0] ?? 1)),
   priceBonus: (u: Upgrades) => 0.05 * u.yardBonus,
+  // Forklifts carry pallets from the pile to the shipping dock; the barge
+  // (or freight trailer) leaves when full and the load is paid for then.
+  forklifts: (u: Upgrades) => 1 + u.forkCount,
+  forkSpeed: (u: Upgrades) => 2.2 * (1 + 0.12 * u.forkSpeed) * (MGR.fork[u.yardIndex ?? 0] ?? 1),
+  palletBricks: (u: Upgrades) => 12 + 6 * u.forkPallet,
+  // Pallets per trip: a bigger forklift at the station's milestones.
+  palletsPerTrip: (u: Upgrades) => 1 + MILESTONES.filter((m) => 1 + u.forkSpeed + u.forkPallet >= m).length,
+  shipCapacity: (u: Upgrades) => 100 + 50 * u.shipCap,
+  shipAwaySeconds: (u: Upgrades) => Math.max(8, 45 * Math.pow(0.88, u.shipSpeed)) / Math.sqrt(MGR.fork[u.yardIndex ?? 0] ?? 1),
 }
 
 export type WorkerState = 'idle' | 'toPick' | 'picking' | 'toDumpster' | 'waiting' | 'holding'
@@ -425,6 +445,8 @@ export type Snapshot = {
   raining: boolean
   yardBuild: { yard: number; toSize: number; secondsLeft: number; totalSeconds: number } | null
   islands: { id: IslandId; open: boolean; stage: number; yard: YardLevels }[]
+  // Each yard's pile and barge.
+  yardOps: { pile: number; shipLoad: number; shipCap: number; shipAway: number; forklifts: number }[]
   truckCapacity: number
   // You on site: tools, things needing you, goals.
   tools: { ballIn: number; dynamiteIn: number; ballCharges: number; dynamiteCharges: number; ballPack: { gems: number; bricks: number }; dynamitePack: { gems: number; bricks: number } }
@@ -483,6 +505,7 @@ export type SaveData = {
   lastSeen: number
   yardBuild?: YardBuild | null
   yards?: YardLevels[]
+  yardOps?: { pile: number; pileValue: number; ship: { away: number; load: number; value: number; idle: number } }[]
   grown?: Grown
   landBuild?: LandBuild | null
   you?: {
@@ -513,9 +536,31 @@ export type SaveData = {
 export type YardBuild = { yard: number; level: number; startedAt: number; endsAt: number }
 
 // Each island's yard has its own upgrade levels.
-export type YardLevels = { size: number; docks: number; speed: number; bonus: number }
-export const YARD_KEYS = ['yardSize', 'yardDocks', 'yardSpeed', 'yardBonus'] as const
-const YARD_FIELD: Record<(typeof YARD_KEYS)[number], keyof YardLevels> = { yardSize: 'size', yardDocks: 'docks', yardSpeed: 'speed', yardBonus: 'bonus' }
+export type YardLevels = { size: number; docks: number; speed: number; bonus: number; forkSpeed: number; forkPallet: number; forkCount: number; shipCap: number; shipSpeed: number }
+export const YARD_KEYS = ['yardSize', 'yardDocks', 'yardSpeed', 'yardBonus', 'forkSpeed', 'forkPallet', 'forkCount', 'shipCap', 'shipSpeed'] as const
+const YARD_FIELD: Record<(typeof YARD_KEYS)[number], keyof YardLevels> = {
+  yardSize: 'size',
+  yardDocks: 'docks',
+  yardSpeed: 'speed',
+  yardBonus: 'bonus',
+  forkSpeed: 'forkSpeed',
+  forkPallet: 'forkPallet',
+  forkCount: 'forkCount',
+  shipCap: 'shipCap',
+  shipSpeed: 'shipSpeed',
+}
+// ── Yard operations: the pile, forklifts and shipping ──────────────────
+
+export type Fork = { state: 'toPile' | 'loading' | 'toDock' | 'unloading'; t: number; carry: number; value: number }
+export type YardOps = { pile: number; pileValue: number; forks: Fork[]; ship: { away: number; load: number; value: number; idle: number }; shipped: number }
+// A forklift's run from the pile to the dock (world units), how long a
+// pick-up or drop-off takes, and how long a part-loaded barge waits.
+export const FORK_RUN = 12
+const FORK_HANDLE = 1.2
+const SHIP_WAIT = 40
+const newOps = (): YardOps => ({ pile: 0, pileValue: 0, forks: [], ship: { away: 0, load: 0, value: 0, idle: 0 }, shipped: 0 })
+
+export const NEW_YARD: YardLevels = { size: 0, docks: 0, speed: 0, bonus: 0, forkSpeed: 0, forkPallet: 0, forkCount: 0, shipCap: 0, shipSpeed: 0 }
 export const isYardKey = (k: UpgradeKey): k is (typeof YARD_KEYS)[number] => (YARD_KEYS as readonly string[]).includes(k)
 
 // Land being raised on an island (real-world times, ms).
@@ -845,7 +890,7 @@ export class Engine {
   time = 0
   scrap = 0
   xp = 0
-  upgrades: Upgrades = { tools: 0, speed: 0, workers: 0, fleet: 0, yardSize: 0, yardDocks: 0, yardSpeed: 0, yardBonus: 0 }
+  upgrades: Upgrades = { tools: 0, speed: 0, workers: 0, fleet: 0, yardSize: 0, yardDocks: 0, yardSpeed: 0, yardBonus: 0, forkSpeed: 0, forkPallet: 0, forkCount: 0, shipCap: 0, shipSpeed: 0 }
   sitesCleared = 0
   offlineEarnings = 0
 
@@ -879,7 +924,84 @@ export class Engine {
 
   // ── Islands and yards ─────────────────────────────────────────────────
 
-  yardLevels: YardLevels[] = ISLANDS.map(() => ({ size: 0, docks: 0, speed: 0, bonus: 0 }))
+  yardLevels: YardLevels[] = ISLANDS.map(() => ({ ...NEW_YARD }))
+  yardOps: YardOps[] = ISLANDS.map(newOps)
+
+  // Forklifts shuttle pallets from the pile to the dock; the barge leaves
+  // when full (or after waiting a while part-loaded) and is paid for then.
+  private tickYards(dt: number) {
+    for (const y of this.openYards()) {
+      const ops = this.yardOps[y]
+      const u = this.yardU(y)
+      while (ops.forks.length < stats.forklifts(u)) ops.forks.push({ state: 'toPile', t: ops.forks.length * 0.35, carry: 0, value: 0 })
+      const ship = ops.ship
+      const cap = stats.shipCapacity(u)
+      if (ship.away > 0) {
+        ship.away -= dt
+        if (ship.away <= 0) ops.ship = { away: 0, load: 0, value: 0, idle: 0 }
+      } else if (ship.load > 0) {
+        ship.idle += dt
+        if (ship.load >= cap || ship.idle > SHIP_WAIT) this.shipOut(y)
+      }
+      const leg = FORK_RUN / stats.forkSpeed(u)
+      const lift = stats.palletBricks(u) * stats.palletsPerTrip(u)
+      for (const f of ops.forks) {
+        switch (f.state) {
+          case 'toPile':
+            f.t += dt / leg
+            if (f.t >= 1) {
+              f.t = 0
+              f.state = 'loading'
+            }
+            break
+          case 'loading': {
+            if (ops.pile <= 0) break // waiting for bricks
+            f.t += dt / FORK_HANDLE
+            if (f.t < 1) break
+            const take = Math.min(lift, ops.pile)
+            const value = (ops.pileValue * take) / ops.pile
+            ops.pile -= take
+            ops.pileValue -= value
+            f.carry = take
+            f.value = value
+            f.t = 0
+            f.state = 'toDock'
+            break
+          }
+          case 'toDock':
+            f.t += dt / leg
+            if (f.t >= 1) {
+              f.t = 0
+              f.state = 'unloading'
+            }
+            break
+          case 'unloading':
+            if (ops.ship.away > 0) break // waiting for the barge to come back
+            f.t += dt / FORK_HANDLE
+            if (f.t < 1) break
+            ops.ship.load += f.carry
+            ops.ship.value += f.value
+            ops.ship.idle = 0
+            f.carry = 0
+            f.value = 0
+            f.t = 0
+            f.state = 'toPile'
+            if (ops.ship.load >= cap) this.shipOut(y)
+            break
+        }
+      }
+    }
+  }
+
+  private shipOut(y: number) {
+    const ops = this.yardOps[y]
+    if (ops.ship.load <= 0) return
+    this.pay(ops.ship.load, ops.ship.value)
+    ops.shipped++
+    ops.ship.away = stats.shipAwaySeconds(this.yardU(y))
+    ops.ship.idle = 0
+    this.markDirty()
+  }
   // How far each island has grown (−1 = not reached) and what's being raised.
   grown: Grown = { ...START_GROWN }
   landBuild: LandBuild | null = null
@@ -1211,6 +1333,7 @@ export class Engine {
     this.activeAbilities = this.activeAbilities.filter((a) => a.until > now)
     MGR.walk = MGR.pick = MGR.truckSpeed = MGR.truckLoad = MGR.dumpster = 1
     MGR.unload = ISLANDS.map(() => 1)
+    MGR.fork = ISLANDS.map(() => 1)
     MGR.pay = ISLANDS.map(() => 1)
     for (const [slot, id] of Object.entries(this.assigned) as [Slot, string][]) {
       const m = manager(id)
@@ -1227,6 +1350,10 @@ export class Engine {
         MGR.unload[y] *= b.unload ?? 1
         MGR.pay[y] *= b.pay ?? 1
       }
+      if (slot.startsWith('fork')) {
+        const fy = Number(slot.slice(4))
+        MGR.fork[fy] *= b.fork ?? 1
+      }
     }
     // A traffic jam slows every truck until someone waves it through.
     if (this.jamSince >= 0) MGR.truckSpeed *= 0.6
@@ -1238,6 +1365,7 @@ export class Engine {
       if (a.id === 'express' || a.id === 'bossMode') MGR.truckSpeed *= 3
       if (a.id === 'bossMode') MGR.unload = MGR.unload.map((u) => u * 3)
       if (a.id === 'market') MGR.pay = MGR.pay.map((p) => p * 2)
+      if (a.id === 'rush' || a.id === 'bossMode') MGR.fork = MGR.fork.map((f) => f * 3)
     }
   }
 
@@ -1338,7 +1466,7 @@ export class Engine {
 
   // The slots there are: the four stations plus each open island's yard.
   managerSlots(): Slot[] {
-    return ['crew', 'truck', 'dumpster', 'tools', ...this.openYards().map((y) => `yard${y}` as Slot)]
+    return ['crew', 'truck', 'dumpster', 'tools', ...this.openYards().flatMap((y) => [`yard${y}` as Slot, `fork${y}` as Slot])]
   }
 
   useAbility(slot: Slot): string | null {
@@ -1461,8 +1589,8 @@ export class Engine {
 
   // The upgrades as seen from one yard (its own yard levels).
   yardU(y: number): Upgrades {
-    const l = this.yardLevels[y] ?? { size: 0, docks: 0, speed: 0, bonus: 0 }
-    return { ...this.upgrades, yardSize: l.size, yardDocks: l.docks, yardSpeed: l.speed, yardBonus: l.bonus, yardMax: ISLANDS[y]?.yard.maxSize, yardIndex: y }
+    const l = this.yardLevels[y] ?? NEW_YARD
+    return { ...this.upgrades, yardSize: l.size, yardDocks: l.docks, yardSpeed: l.speed, yardBonus: l.bonus, forkSpeed: l.forkSpeed, forkPallet: l.forkPallet, forkCount: l.forkCount, shipCap: l.shipCap, shipSpeed: l.shipSpeed, yardMax: ISLANDS[y]?.yard.maxSize, yardIndex: y }
   }
 
   // Parking bays across every open yard.
@@ -1674,7 +1802,8 @@ export class Engine {
       this.rewardedLevel = save.mgr.rewardedLevel ?? levelForXp(save.xp ?? 0)
     } else this.rewardedLevel = levelForXp(save.xp ?? 0)
     this.recalcManagers()
-    if (save.yards) this.yardLevels = ISLANDS.map((_, i) => ({ ...{ size: 0, docks: 0, speed: 0, bonus: 0 }, ...(save.yards![i] ?? {}) }))
+    if (save.yardOps) this.yardOps = ISLANDS.map((_, i) => ({ ...newOps(), ...(save.yardOps![i] ?? {}), forks: [] }))
+    if (save.yards) this.yardLevels = ISLANDS.map((_, i) => ({ ...NEW_YARD, ...(save.yards![i] ?? {}) }))
     if (this.yardBuild || this.landBuild) {
       this.checkYardBuild()
       this.checkLandBuild()
@@ -1731,6 +1860,7 @@ export class Engine {
       lastSeen: Date.now(),
       yardBuild: this.yardBuild,
       yards: this.yardLevels,
+      yardOps: this.yardOps.map((o) => ({ pile: o.pile, pileValue: o.pileValue, ship: o.ship })),
       grown: this.grown,
       landBuild: this.landBuild,
       adCooldowns: this.adCooldowns,
@@ -2773,6 +2903,7 @@ export class Engine {
     this.runAutomation()
     this.checkLevelRewards()
     this.tickHiccups(dt)
+    this.tickYards(dt)
     this.runPendingKnocks()
     if (this.helpersUntil) this.syncHelpers()
     this.tickGoals()
@@ -3135,7 +3266,10 @@ export class Engine {
         case 'unloading':
           truck.timer -= dt
           if (truck.timer <= 0) {
-            this.pay(truck.cargo, truck.cargoValue * (1 + stats.priceBonus(this.yardU(truck.yard))) * (MGR.pay[truck.yard] ?? 1))
+            // Tipped onto the yard's pile — paid when it ships.
+            const ops = this.yardOps[truck.yard]
+            ops.pile += truck.cargo
+            ops.pileValue += truck.cargoValue * (1 + stats.priceBonus(this.yardU(truck.yard))) * (MGR.pay[truck.yard] ?? 1)
             truck.cargo = 0
             truck.cargoValue = 0
             if (truck.lap >= this.plots.length) truck.lap = 0
@@ -3282,6 +3416,7 @@ export class Engine {
         synced: this.synced,
         ban: this.ban,
         islands: ISLANDS.map((s) => ({ id: s.id, open: this.islandOpen(s.id), stage: this.grown[s.id], yard: this.yardLevels[s.index] })),
+        yardOps: this.yardOps.map((o, i) => ({ pile: Math.round(o.pile), shipLoad: Math.round(o.ship.load), shipCap: stats.shipCapacity(this.yardU(i)), shipAway: Math.ceil(o.ship.away), forklifts: o.forks.length })),
         truckCapacity: this.truckCapacity(),
         freeUpgradeIn: Math.max(0, Math.ceil((this.adCooldowns.freeUpgrade - Date.now()) / 1000)),
         dumpsterAdIn: Math.max(0, Math.ceil((this.adCooldowns.dumpsters - Date.now()) / 1000)),
@@ -3378,6 +3513,11 @@ function migrateLegacy(old: LegacySave): SaveData {
       yardDocks: 0,
       yardSpeed: 0,
       yardBonus: 0,
+      forkSpeed: 0,
+      forkPallet: 0,
+      forkCount: 0,
+      shipCap: 0,
+      shipSpeed: 0,
     },
     trucks: [{ load: u.truck ?? 0, speed: 0 }],
     crewPlan: null,

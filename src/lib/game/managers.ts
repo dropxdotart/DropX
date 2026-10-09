@@ -10,17 +10,17 @@
 // works any station, with the biggest boost and the Boss Mode ability.
 
 export type Rarity = 'common' | 'rare' | 'epic' | 'legendary'
-export type StationKind = 'crew' | 'truck' | 'yard' | 'dumpster' | 'tools'
+export type StationKind = 'crew' | 'truck' | 'yard' | 'dumpster' | 'tools' | 'forklift'
 // A slot: a station, or a particular island's yard.
-export type Slot = 'crew' | 'truck' | 'dumpster' | 'tools' | `yard${number}`
+export type Slot = 'crew' | 'truck' | 'dumpster' | 'tools' | `yard${number}` | `fork${number}`
 
-export const slotKind = (slot: Slot): StationKind => (slot.startsWith('yard') ? 'yard' : (slot as StationKind))
+export const slotKind = (slot: Slot): StationKind => (slot.startsWith('yard') ? 'yard' : slot.startsWith('fork') ? 'forklift' : (slot as StationKind))
 
 // What a boost multiplies.
-export type BoostStat = 'walk' | 'pick' | 'truckSpeed' | 'truckLoad' | 'unload' | 'pay' | 'dumpster'
+export type BoostStat = 'walk' | 'pick' | 'truckSpeed' | 'truckLoad' | 'unload' | 'pay' | 'dumpster' | 'fork'
 
 export type Automation = 'claim' | 'restart' | 'upgrade' | 'empty'
-export type AbilityId = 'rally' | 'express' | 'market' | 'emptyAll' | 'charge' | 'bossMode'
+export type AbilityId = 'rally' | 'express' | 'market' | 'emptyAll' | 'charge' | 'bossMode' | 'rush'
 
 export type Ability = { id: AbilityId; name: string; emoji: string; text: string; seconds: number; cooldownMinutes: number }
 
@@ -31,6 +31,7 @@ export const ABILITIES: Record<AbilityId, Ability> = {
   emptyAll: { id: 'emptyAll', name: 'Empty them all', emoji: '🗑️', text: 'Every dumpster hauled away and paid now', seconds: 0, cooldownMinutes: 15 },
   charge: { id: 'charge', name: 'Demolition charge', emoji: '🧨', text: 'Blasts a chunk off every building', seconds: 0, cooldownMinutes: 15 },
   bossMode: { id: 'bossMode', name: 'Boss Mode', emoji: '😎', text: 'Everything runs 3× faster', seconds: 60, cooldownMinutes: 15 },
+  rush: { id: 'rush', name: 'Rush hour', emoji: '⚡', text: 'Forklifts and barges work 3× faster', seconds: 60, cooldownMinutes: 10 },
 }
 
 // How a person looks (see Person.tsx). Managers wear one fixed look; the
@@ -233,6 +234,35 @@ export const MANAGERS: ManagerDef[] = [
     ability: 'charge',
     look: { skin: '#e8b48f', hair: '#5a2a1a', hat: 'hardhat', hatColor: '#d64545', top: '#2b2b2e', vest: '#f2c230', legs: '#2b2b2e', shoes: '#2b2b2e', item: 'radio' },
   },
+  // Forklifts
+  {
+    id: 'frankie',
+    name: 'Frankie',
+    title: 'Forklift Driver',
+    rarity: 'common',
+    station: 'forklift',
+    boost: [{ stat: 'fork', base: 12, perLevel: 3 }],
+    look: { skin: '#e8b48f', hair: '#3a2a1a', hat: 'hardhat', hatColor: '#f2c230', top: '#2d7ff9', vest, legs: '#2d3e57', shoes: '#3a2a1a', item: 'none' },
+  },
+  {
+    id: 'pat',
+    name: 'Pat',
+    title: 'Dock Boss',
+    rarity: 'rare',
+    station: 'forklift',
+    boost: [{ stat: 'fork', base: 20, perLevel: 4 }],
+    look: { skin: '#8d5a3b', hair: '#1a1a1a', hat: 'cap', hatColor: '#ff6b1a', top: '#24365a', vest, legs: '#2b2b2e', shoes: '#2b2b2e', item: 'clipboard' },
+  },
+  {
+    id: 'vic',
+    name: 'Vic',
+    title: 'Harbour Master',
+    rarity: 'epic',
+    station: 'forklift',
+    boost: [{ stat: 'fork', base: 30, perLevel: 5 }],
+    ability: 'rush',
+    look: { skin: '#f0c7a0', hair: '#9a9a9a', hat: 'cap', hatColor: '#24365a', top: '#ffffff', legs: '#24365a', shoes: '#2b2b2e', item: 'radio' },
+  },
   // Legendary: the player's own character.
   {
     id: 'boss',
@@ -321,6 +351,7 @@ export const STATION_STATS: Record<StationKind, BoostStat[]> = {
   yard: ['unload', 'pay'],
   dumpster: ['dumpster'],
   tools: ['pick'],
+  forklift: ['fork'],
 }
 
 export function fits(m: ManagerDef, slot: Slot) {

@@ -16,7 +16,9 @@ import Worker, { vestMaterial } from './Worker'
 import World from './World'
 import BonusDrop from './BonusDrop'
 import ManagerWalkers from './ManagerWalkers'
-import NeedsYou, { ToolFx, type Need } from './NeedsYou'
+import NeedsYou, { type Need } from './NeedsYou'
+import ToolFx from './ToolTrucks'
+import YardShipping from './YardShipping'
 import type { Slot } from '@/lib/game/managers'
 import { Sky } from './Scenery'
 import { BrickYard, CrewStation, DumpsterStation, Fleet, ToolStation, TruckDepot } from './Stations'
@@ -104,7 +106,7 @@ function CameraRig({
     } else if (focus) {
       // A yard and its truck depot sign sit on their island's yard block
       // (for those, `plot` is the island's index).
-      const base = focus.id === 'yard' || focus.id === 'truck' ? (ISLANDS[focus.plot] ?? ISLANDS[0]).yard : PLOT_SLOTS[focus.plot]
+      const base = focus.id === 'yard' || focus.id === 'truck' || focus.id === 'forklift' ? (ISLANDS[focus.plot] ?? ISLANDS[0]).yard : PLOT_SLOTS[focus.plot]
       const p = focus.id === 'dumpster' ? DUMPSTER_SLOTS[focus.index ?? 0] : getStation(focus.id).position
       target.set(base.x + p.x, -1.5, base.z + p.z)
     } else {
@@ -376,7 +378,6 @@ export default function Scene({
             return (
               <group key={site.id} position={[slot.x, 0, slot.z]}>
                 <Building engine={engine} site={site} onBreakTap={onBreakTap} />
-                {snap.toolFx?.plot === site.id && <ToolFx key={snap.toolFx.at} fx={snap.toolFx} />}
                 {site.dumpsters.map((_, i) => (
                   <DumpsterStation
                     key={i}
@@ -418,6 +419,8 @@ export default function Scene({
                   building={snap.yardBuild?.yard === s.index}
                   onSelect={(id) => onSelectStation(id, s.index)}
                 />
+                {/* The pile, forklifts and the barge out the back */}
+                <YardShipping engine={engine} yard={s.index} setting={s.yard.setting} size={stats.yardSize(u)} onSelect={() => onSelectStation('forklift', s.index)} />
                 {/* Truck upgrades live by the yard's parking bays */}
                 <TruckDepot size={stats.yardSize(u)} affordable={station.truck.affordable} onSelect={(id) => onSelectStation(id, s.index)} />
               </group>
@@ -427,6 +430,7 @@ export default function Scene({
           <PlotLabels snap={snap} onPlotAction={onPlotAction} />
           <ManagerWalkers snap={snap} onTap={onSelectManager} />
           <NeedsYou engine={engine} snap={snap} onNeed={onNeed} />
+          {snap.toolFx && <ToolFx key={snap.toolFx.at} fx={snap.toolFx} />}
           <SceneReady onReady={() => onLoadProgress(100)} />
         </Suspense>
       </Canvas>

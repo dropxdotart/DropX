@@ -50,25 +50,7 @@ export function YardGround({ theme }: { theme: YardTheme }) {
           <meshStandardMaterial color="#3a3a3e" transparent opacity={0.35} />
         </mesh>
       ))}
-      {/* Front-left: pallets and barrels */}
-      <group position={[-5.6, 0, 6.3]}>
-        {[0, 1].map((k) => (
-          <group key={k} position={[0, k * 0.32, 0]}>
-            <Box size={[1.2, 0.12, 1]} position={[0, 0.06, 0]} color="#a06a3a" />
-            <Box size={[1, 0.18, 0.85]} position={[0, 0.21, 0]} color={c.load[k]} />
-          </group>
-        ))}
-        {[
-          [0.9, -1.1, '#2d7ff9'],
-          [0.3, -1.4, '#d64545'],
-          [0.95, -1.75, '#3fa064'],
-        ].map(([x, z, col]) => (
-          <mesh key={`${x},${z}`} position={[x as number, 0.35, z as number]} castShadow>
-            <cylinderGeometry args={[0.24, 0.24, 0.7, 10]} />
-            <meshStandardMaterial color={col as string} roughness={0.5} />
-          </mesh>
-        ))}
-      </group>
+      {/* (Front-left is the brick pile — see YardShipping.) */}
       {/* Front-right: the site office, in the yard's colours */}
       <group position={[5.4, 0, 6.5]}>
         <Box size={[1.8, 1.3, 2.1]} position={[0, 0.65, 0]} color="#f2f0ea" />

@@ -258,6 +258,16 @@ ICONS['☁️'] = (
     <path d="M12 16.5 V11.5 M9.8 13.6 L12 11.4 L14.2 13.6" fill="none" stroke="#2d7ff9" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round" />
   </>
 )
+ICONS['🚜'] = (
+  <>
+    <rect x="3" y="11" width="11" height="6" rx="1" fill="#f2c230" {...S} />
+    <path d="M6 11 V5 H12 V11" fill="none" stroke={N} strokeWidth={1.6} strokeLinejoin="round" />
+    <path d="M15 4 V18 M15 17 H21" stroke="#5b6470" strokeWidth={2} strokeLinecap="round" />
+    <rect x="16.5" y="12" width="4.5" height="3" fill="#c4553a" {...S} />
+    <circle cx="6" cy="18.5" r="2" fill="#2b2b2e" {...S} />
+    <circle cx="12" cy="18.5" r="2" fill="#2b2b2e" {...S} />
+  </>
+)
 // Variants that share a drawing.
 ICONS['🏗️'] = ICONS['🏗']
 ICONS['🗑️'] = ICONS['🗑']

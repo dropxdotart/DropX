@@ -33,7 +33,7 @@ export default function StationPanel({
   onClose: () => void
 }) {
   const station = getStation(id)
-  const isYard = id === 'yard'
+  const isYard = id === 'yard' || id === 'forklift'
   const u = isYard ? yardUpgrades(snap, yard) : snap.upgrades
   const level = station.level(u)
   const tier = tierFor(level)
@@ -48,7 +48,7 @@ export default function StationPanel({
           <div className="flex items-center gap-3">
             <span className="flex h-12 w-12 items-center justify-center rounded-xl bg-[#eef2f8] text-2xl">{station.emoji}</span>
             <div>
-              <p className="font-display text-2xl leading-none text-[#1d3a6e]">{isYard ? ISLANDS[yard].yard.name : station.name}</p>
+              <p className="font-display text-2xl leading-none text-[#1d3a6e]">{id === 'yard' ? ISLANDS[yard].yard.name : station.name}</p>
               <p className="mt-1 text-sm text-[#5b6f93]">
                 Lv {level} · {station.tierNames[tier]}
               </p>
