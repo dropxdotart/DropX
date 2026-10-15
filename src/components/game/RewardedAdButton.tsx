@@ -1,24 +1,29 @@
 'use client'
 
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { getAdByPlacement, type AdCreative } from '@/app/actions'
-import { trackAd } from '@/lib/adTracking'
+import type { AdCreative } from '@/app/actions'
+import { fetchAd, trackAd } from '@/lib/adTracking'
 import AdPlayer, { type AdPlayerHandle } from './AdPlayer'
 
 // Watch-to-claim. The ad is loaded ahead of time so tapping the button can
-// start it straight away — with sound, since it's started by the tap. It
-// can't be closed until it has played for the admin-set time (or a shorter
-// video ends); closing it after that gives the reward.
+// start it straight away — with sound, since it's started by the tap. The
+// reward is given once it has played for the admin-set time (or a shorter
+// video ends) and the player claims it; leaving early gives nothing.
 export default function RewardedAdButton({
   onReward,
   onStart,
+  onCancel,
+  reward,
   rewardBricks = 0,
   className,
   children,
 }: {
   onReward: () => void
   onStart?: () => void // the ad is opening
-  // Recorded with the "watched" stat as bricks given out through this ad.
+  onCancel?: () => void // left early, no reward
+  // Shown in the ad: what the player gets, e.g. "+1,200 🧱".
+  reward?: string
+  // Logged with the completion as bricks given out through this ad.
   rewardBricks?: number
   className?: string
   children: ReactNode
@@ -28,9 +33,7 @@ export default function RewardedAdButton({
   const player = useRef<AdPlayerHandle>(null)
 
   const load = () => {
-    getAdByPlacement('rewarded')
-      .then(setAd)
-      .catch(() => setAd(null))
+    fetchAd('rewarded').then(setAd)
   }
   useEffect(load, [])
 
@@ -38,16 +41,17 @@ export default function RewardedAdButton({
     if (open) return
     onStart?.()
     setOpen(true)
-    if (ad) trackAd(ad.id, 'view')
+    if (ad) trackAd(ad, 'view')
     // Same tap, so the browser lets it play with sound.
     player.current?.start(true)
   }
 
-  const finish = () => {
-    if (ad) trackAd(ad.id, 'complete', rewardBricks)
+  const close = (watched: boolean, seconds: number) => {
+    if (ad) trackAd(ad, watched ? 'complete' : 'skip', { seconds, bricks: watched ? rewardBricks : 0 })
     setOpen(false)
-    onReward()
-    // A fresh ad for next time.
+    if (watched) onReward()
+    else onCancel?.()
+    // A fresh ad for next time (targeting and caps may have changed).
     load()
   }
 
@@ -56,7 +60,7 @@ export default function RewardedAdButton({
       <button className={className} onClick={start} disabled={open || ad === undefined}>
         {children}
       </button>
-      {ad !== undefined && <AdPlayer ref={player} ad={ad} open={open} mode="rewarded" onClose={finish} />}
+      {ad !== undefined && <AdPlayer ref={player} ad={ad} open={open} mode="rewarded" reward={reward} onClose={close} />}
     </>
   )
 }

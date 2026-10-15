@@ -24,7 +24,7 @@ import {
   type ShapeSize,
   type WindowStyle,
 } from '@/lib/game/shapes'
-import { SchedulePanel, StatusBadge } from '../ads/AdInsights'
+import { SchedulePanel, StatusBadge } from '../schedule'
 import { deleteBuilding, saveBuilding, setBuildingActive, setBuildingSchedule, type CustomBuilding } from './actions'
 
 // three.js needs the browser.

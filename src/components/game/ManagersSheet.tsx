@@ -444,6 +444,7 @@ export default function ManagersSheet({ engine, snap, focusSlot, onClose }: { en
                         <span className="font-display text-[11px] text-[#5b6f93]">Ad chest in {clock(snap.adChestIn)}</span>
                       ) : (
                         <RewardedAdButton
+                          reward="🧰 Wooden chest"
                           onReward={() => act(engine.adChest())}
                           className="rounded-lg bg-[#3fbf4a] px-2 py-1 font-display text-xs text-white disabled:opacity-60"
                         >

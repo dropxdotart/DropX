@@ -60,6 +60,7 @@ export default function BoostsSheet({ engine, snap, onClose }: { engine: Engine;
                 <span className="shrink-0 rounded-xl bg-white px-3 py-2 font-display text-sm tabular-nums text-[#1d3a6e]">{clock(r.on)}</span>
               ) : (
                 <RewardedAdButton
+                  reward={r.title}
                   onReward={() => {
                     r.onReward()
                     engine.notify()

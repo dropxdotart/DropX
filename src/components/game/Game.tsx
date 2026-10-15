@@ -439,6 +439,7 @@ export default function Game() {
               Your crew kept hauling — <span className="text-[#e8701f]">+<Emo e="🧱" />{formatNumber(snap.offlineEarnings)}</span> while you were away!
             </p>
             <RewardedAdButton
+              reward={`+🧱 ${formatNumber(snap.offlineEarnings)}`}
               rewardBricks={snap.offlineEarnings}
               onReward={() => {
                 engine.doubleOffline()

@@ -109,6 +109,8 @@ export default function BonusTab({
           <p className="mt-2 text-center font-display text-3xl"><IconText text={drop.chest ? (drop.chest === 'iron' ? '🧰 Iron chest' : '🧰 Wooden chest') : `+${formatNumber(drop.amount)} 🧱`} /></p>
           <RewardedAdButton
             onStart={() => setWatching(true)}
+            onCancel={() => setWatching(false)}
+            reward={drop.chest ? (drop.chest === 'iron' ? '🧰 Iron chest' : '🧰 Wooden chest') : `+🧱 ${formatNumber(drop.amount)}`}
             rewardBricks={drop.chest ? 0 : drop.amount}
             onReward={() => {
               setWatching(false)

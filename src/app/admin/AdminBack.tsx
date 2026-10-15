@@ -8,8 +8,10 @@ import { ChevronLeft } from 'lucide-react'
 export default function AdminBack() {
   const pathname = usePathname()
   if (pathname === '/admin') return null
+  // The ads tool is wider (tables and charts).
+  const wide = pathname.startsWith('/admin/ads')
   return (
-    <div className="mx-auto w-full max-w-lg px-4 pt-4">
+    <div className={`mx-auto w-full px-4 pt-4 ${wide ? 'max-w-4xl' : 'max-w-lg'}`}>
       <Link
         href="/admin"
         className="inline-flex items-center gap-1 rounded-full py-1.5 pr-3 text-sm font-medium text-muted-foreground hover:text-foreground"

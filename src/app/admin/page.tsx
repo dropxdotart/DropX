@@ -6,7 +6,7 @@ import { getDashboard } from './statsActions'
 
 const TOOLS = [
   { href: '/admin/maintenance', label: 'Maintenance', description: 'Switch the game off (“Sorry, building!”) while it’s being worked on' },
-  { href: '/admin/ads', label: 'Ads', description: 'Upload ads, pick where they run, see their stats' },
+  { href: '/admin/ads', label: 'Ads', description: 'Campaigns: schedule, targeting, limits and reports' },
   { href: '/admin/buildings', label: 'Buildings', description: 'Design your own buildings for players to demolish' },
   { href: '/admin/live', label: 'Events & messages', description: 'Double bricks, sales, messages and gifts for every player' },
   { href: '/admin/codes', label: 'Redeem codes', description: 'Create codes that give bricks, boosts or free upgrades' },

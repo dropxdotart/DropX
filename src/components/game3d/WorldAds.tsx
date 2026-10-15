@@ -2,8 +2,8 @@
 
 import { useEffect, useState } from 'react'
 import * as THREE from 'three'
-import { getAdsByPlacement, type AdCreative } from '@/app/actions'
-import { trackAd } from '@/lib/adTracking'
+import type { AdCreative } from '@/app/actions'
+import { fetchWorldAds, trackAd } from '@/lib/adTracking'
 
 // Ads painted into the world — billboards, truck sides, yard fence banners.
 // The billboard creatives are fetched once and every sign shares their
@@ -17,7 +17,7 @@ const viewed = new Set<string>()
 let fallback: THREE.Texture | null = null
 
 function loadCreatives() {
-  creatives ??= getAdsByPlacement('billboard').catch(() => [])
+  creatives ??= fetchWorldAds()
   return creatives
 }
 
@@ -122,7 +122,7 @@ export function useWorldAd(seed: number): { ad: AdCreative | null; map: THREE.Te
       if (!ad) return setState({ ad: null, map: fallbackPoster() })
       if (!viewed.has(ad.id)) {
         viewed.add(ad.id)
-        trackAd(ad.id, 'view')
+        trackAd(ad, 'view')
       }
       // The house poster until the ad itself is ready.
       setState({ ad: null, map: fallbackPoster() })
@@ -139,7 +139,7 @@ export function useWorldAd(seed: number): { ad: AdCreative | null; map: THREE.Te
 
 function openAd(ad: AdCreative | null) {
   if (!ad?.click_url) return false
-  trackAd(ad.id, 'click')
+  trackAd(ad, 'click')
   window.open(ad.click_url, '_blank', 'noopener,noreferrer')
   return true
 }

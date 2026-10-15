@@ -125,6 +125,7 @@ export default function DumpsterPanel({
               </div>
               {snap.dumpsterAdIn === 0 && (
                 <RewardedAdButton
+                  reward={`+🧱 ${formatNumber(snap.dumpsterValue)}`}
                   rewardBricks={snap.dumpsterValue}
                   onReward={() => {
                     engine.emptyDumpstersByAd()

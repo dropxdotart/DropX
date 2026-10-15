@@ -8,7 +8,7 @@ import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
 import { EVENT_KINDS, eventInfo, eventTitle, type LiveEventKind } from '@/lib/liveEvents'
 import { rewardText, UPGRADE_OPTIONS } from '@/lib/rewards'
-import { StatusBadge } from '../ads/AdInsights'
+import { StatusBadge } from '../schedule'
 import {
   createBroadcast,
   createEvent,

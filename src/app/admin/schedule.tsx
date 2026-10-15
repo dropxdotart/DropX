@@ -3,24 +3,16 @@
 import { useState } from 'react'
 import { CalendarClock, Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
-import type { AdPlacement, AdStats, Result } from './actions'
 
-// Anything with an on/off switch and an optional time window: an upload
-// (master) or one of its ad-type assignments.
+// Result shape the admin's server actions return.
+type Result = { ok: true } | { ok: false; message: string }
+
+// Anything with an on/off switch and an optional time window: a live
+// event, a building, …
 export type LiveWindow = {
   active: boolean
   starts_at: string | null
   ends_at: string | null
-}
-
-const EMPTY: AdStats = { views: 0, uniques: 0, completes: 0, skips: 0, clicks: 0, bricks: 0 }
-
-function pct(part: number, whole: number) {
-  return whole > 0 ? `${Math.round((part / whole) * 100)}%` : '–'
-}
-
-function fmt(n: number) {
-  return n.toLocaleString()
 }
 
 function when(iso: string) {
@@ -45,58 +37,6 @@ export function StatusBadge({ ad }: { ad: LiveWindow }) {
   const tone =
     s.tone === 'live' ? 'bg-emerald-100 text-emerald-800' : s.tone === 'waiting' ? 'bg-amber-100 text-amber-800' : 'bg-secondary text-muted-foreground'
   return <span className={`inline-block rounded-full px-2 py-0.5 text-[11px] font-medium ${tone}`}>{s.label}</span>
-}
-
-// One line of numbers; only the stats that apply to the given ad type(s).
-export function StatsLine({ placements, stats }: { placements: AdPlacement[]; stats: AdStats | undefined }) {
-  const s = stats ?? EMPTY
-  const has = (p: AdPlacement) => placements.includes(p)
-  const watchable = has('rewarded') || has('interstitial')
-  const items: [string, string, string][] = [
-    ['👁', fmt(s.views), 'Views'],
-    ['👤', fmt(s.uniques), 'Unique players'],
-  ]
-  if (watchable) items.push(['✅', `${fmt(s.completes)} (${pct(s.completes, s.views)})`, 'Watched to the end'])
-  // Rewarded ads can't be skipped, so skips only apply to interstitials.
-  if (has('interstitial')) items.push(['⏭', fmt(s.skips), 'Skipped (closed before the video ended)'])
-  items.push(['👆', `${fmt(s.clicks)} (${pct(s.clicks, s.views)})`, 'Clicks (click rate)'])
-  if (has('rewarded')) items.push(['🧱', fmt(s.bricks), 'Bricks given out'])
-  return (
-    <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs tabular-nums text-muted-foreground">
-      {items.map(([icon, value, title]) => (
-        <span key={title} title={title}>
-          {icon} <span className="font-medium text-foreground">{value}</span>
-        </span>
-      ))}
-    </div>
-  )
-}
-
-// Views for each of the last 7 days (oldest on the left, today on the right).
-export function ViewsChart({ byDay }: { byDay: Record<string, number> | undefined }) {
-  const days: { key: string; label: string; views: number }[] = []
-  for (let i = 6; i >= 0; i--) {
-    const d = new Date()
-    d.setDate(d.getDate() - i)
-    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-    days.push({ key, label: d.toLocaleDateString(undefined, { weekday: 'short' }), views: byDay?.[key] ?? 0 })
-  }
-  const max = Math.max(1, ...days.map((d) => d.views))
-  return (
-    <div className="flex items-end gap-1" aria-label="Views over the last 7 days">
-      {days.map((d, i) => (
-        <div key={d.key} className="flex flex-col items-center gap-0.5" title={`${d.label}: ${d.views} views`}>
-          <div className="flex h-7 w-3.5 items-end rounded-sm bg-black/[0.06]">
-            <div
-              className={`w-full rounded-sm ${i === 6 ? 'bg-[#ff6b1a]' : 'bg-[#ff6b1a]/55'}`}
-              style={{ height: `${Math.max(d.views > 0 ? 8 : 0, (d.views / max) * 100)}%` }}
-            />
-          </div>
-          <span className="text-[8px] leading-none text-muted-foreground">{d.label.slice(0, 1)}</span>
-        </div>
-      ))}
-    </div>
-  )
 }
 
 // <input type="datetime-local"> works in local time without a zone.

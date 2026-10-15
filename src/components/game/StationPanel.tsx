@@ -91,6 +91,7 @@ export default function StationPanel({
                       </div>
                     </div>
                     <RewardedAdButton
+                      reward={`−${formatDuration(build.totalSeconds * YARD_AD_SHARE)} build time`}
                       onReward={() => {
                         engine.speedUpYard()
                         engine.notify()
@@ -137,6 +138,7 @@ export default function StationPanel({
                     {/* Can't afford it yet: one free upgrade for an ad, every so often. */}
                     {!lock && !affordable && key !== 'yardSize' && snap.freeUpgradeIn === 0 && (
                       <RewardedAdButton
+                        reward={`Free ${UPGRADE_INFO[key].label}`}
                         rewardBricks={cost}
                         onReward={() => {
                           engine.freeUpgrade(key, yard)

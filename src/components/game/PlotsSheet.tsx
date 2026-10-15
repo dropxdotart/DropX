@@ -48,6 +48,7 @@ function GrowCard({ engine, snap, island }: { engine: Engine; snap: Snapshot; is
             </div>
           </div>
           <RewardedAdButton
+            reward={`−${duration(build.totalSeconds * LAND_AD_SHARE)} build time`}
             onReward={() => {
               engine.speedUpLand()
               engine.notify()

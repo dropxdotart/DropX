@@ -102,8 +102,8 @@ export async function getPlayerActivity(playerId: string): Promise<ActivityItem[
       .order('created_at', { ascending: false })
       .limit(100),
     admin
-      .from('ad_events')
-      .select('event, bricks, created_at, ads(placement)')
+      .from('ad_log')
+      .select('event, bricks, created_at, placement')
       .eq('player_id', playerId)
       .in('event', ['complete', 'skip', 'click'])
       .order('created_at', { ascending: false })
@@ -118,11 +118,7 @@ export async function getPlayerActivity(playerId: string): Promise<ActivityItem[
       name: e.building_name,
       seconds: e.seconds,
     })),
-    ...(ads.data ?? []).map((a) => {
-      const ad = a.ads as unknown as { placement: string } | { placement: string }[] | null
-      const placement = Array.isArray(ad) ? (ad[0]?.placement ?? null) : (ad?.placement ?? null)
-      return { type: 'ad' as const, at: a.created_at, event: a.event, placement, bricks: a.bricks }
-    }),
+    ...(ads.data ?? []).map((a) => ({ type: 'ad' as const, at: a.created_at, event: a.event, placement: a.placement, bricks: a.bricks })),
   ]
   return items.sort((a, b) => b.at.localeCompare(a.at)).slice(0, 150)
 }
