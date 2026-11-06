@@ -23,6 +23,7 @@ import type { Slot } from '@/lib/game/managers'
 import { Sky } from './Scenery'
 import { BrickYard, CrewStation, DumpsterStation, Fleet, ToolStation, TruckDepot } from './Stations'
 import { pointer } from './drag'
+import { TeaserBoat, TeaserPlane } from './Teasers'
 
 const MAX_VISIBLE_WORKERS = 24
 const CAMERA_DIR = new THREE.Vector3(1, 0.95, 1).normalize()
@@ -431,6 +432,8 @@ export default function Scene({
           <ManagerWalkers snap={snap} onTap={onSelectManager} />
           <NeedsYou engine={engine} snap={snap} onNeed={onNeed} />
           {snap.toolFx && <ToolFx key={snap.toolFx.at} fx={snap.toolFx} />}
+          <TeaserBoat center={center} />
+          <TeaserPlane center={center} />
           <SceneReady onReady={() => onLoadProgress(100)} />
         </Suspense>
       </Canvas>

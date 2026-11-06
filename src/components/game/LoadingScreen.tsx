@@ -38,7 +38,11 @@ export default function LoadingScreen({ progress, leaving }: { progress: number 
           <div className="h-full rounded-full bg-[#ff6b1a] transition-[width] duration-300" style={{ width: `${Math.max(8, progress)}%` }} />
         )}
       </div>
-      <p className="-mt-3 font-display text-sm text-[#1d3a6e]">Setting up the site…</p>
+      <div className="loading-hints relative -mt-3 h-5 w-full text-center font-display text-sm text-[#1d3a6e]">
+        <p>Setting up the site…</p>
+        <p>Something big is coming…</p>
+        <p>Bigger machines on the way…</p>
+      </div>
     </div>
   )
 }

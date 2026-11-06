@@ -24,6 +24,7 @@ import ProfileSheet from './ProfileSheet'
 import ManagersSheet from './ManagersSheet'
 import GoalsSheet from './GoalsSheet'
 import BoostsSheet from './BoostsSheet'
+import TeaserButton from './TeaserButton'
 import { CatchBricksGame, FixTruckGame } from './MiniGames'
 import type { Need } from '@/components/game3d/NeedsYou'
 import type { Slot } from '@/lib/game/managers'
@@ -381,6 +382,7 @@ export default function Game() {
                 {dot && <span className="absolute -right-1 -top-1 h-3.5 w-3.5 rounded-full border-2 border-white bg-[#ff6b1a]" />}
               </button>
             ))}
+            <TeaserButton />
           </div>
         </div>
 

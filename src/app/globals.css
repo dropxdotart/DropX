@@ -344,6 +344,24 @@ input[type='datetime-local']::-webkit-date-and-time-value {
   border: 2px solid #1d3a6e;
 }
 
+/* Loading screen: the status line and teasers take turns. */
+.loading-hints p {
+  position: absolute;
+  inset-inline: 0;
+  opacity: 0;
+  animation: loading-hint 9s linear infinite;
+}
+.loading-hints p:nth-child(2) { animation-delay: 3s; }
+.loading-hints p:nth-child(3) { animation-delay: 6s; }
+@keyframes loading-hint {
+  0%, 30% { opacity: 1; }
+  33.4%, 100% { opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .loading-hints p { animation: none; }
+  .loading-hints p:first-child { opacity: 1; }
+}
+
 /* Portrait only: phones turned sideways see the "turn upright" screen. */
 @media (orientation: landscape) and (max-height: 540px) {
   .rotate-lock { display: flex; }
